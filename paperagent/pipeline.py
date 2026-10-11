@@ -7,7 +7,7 @@ from pathlib import Path
 
 import anthropic
 
-from . import agent, cardnews, config, db, pdfs
+from . import agent, cardnews, config, db, pdfs, storage
 from .collectors import arxiv, openalex, trending
 
 log = logging.getLogger(__name__)
@@ -15,7 +15,18 @@ _lock = threading.Lock()
 
 
 def is_running() -> bool:
-    return _lock.locked()
+    """True while a run is going here or in another process/dyno."""
+    return _lock.locked() or db.active_run() is not None
+
+
+def is_due(settings=None) -> bool:
+    """Whether interval_hours have passed since the last successful run.
+    Lets an hourly Heroku Scheduler job honour the dashboard's interval."""
+    settings = settings or db.pipeline_settings()
+    last = db.last_finished_run()
+    if not last:
+        return True
+    return last["started_at"] <= db.ago_iso(hours=settings["interval_hours"], minutes=-10)
 
 
 class RunLogger:
@@ -71,12 +82,12 @@ def collect(keywords, settings, say):
     return new
 
 
-def screen_new(keywords, settings, say):
+def screen_new(keywords, settings, say, meter=None):
     pending = db.papers_by_status("new", limit=200)
     if not pending:
         return 0
     say(f"screening {len(pending)} new papers with {config.SCREEN_MODEL}")
-    scores = agent.screen(pending, keywords)
+    scores = agent.screen(pending, keywords, meter=meter)
     kept = 0
     for p in pending:
         rel, reason = scores.get(p["id"], (0.0, "평가 누락"))
@@ -88,33 +99,43 @@ def screen_new(keywords, settings, say):
 
 
 def process_paper(paper: dict, keywords, say=log.info) -> bool:
-    """Fully review one paper and render its cards.
+    """Fully review one paper and render its cards. Returns the review cost in
+    USD, or None if it failed.
 
     The PDF is downloaded into a temporary directory and deleted as soon as
-    Claude has read it and the figures are extracted; nothing but the figure
-    PNGs and cards stays on disk."""
+    Claude has read it and the figures are extracted; only the figure PNGs and
+    the cards are kept (in storage)."""
     pid = paper["id"]
     db.update_paper(pid, status="reading", error=None)
     say(f"reading #{pid}: {paper['title'][:90]}")
     try:
         with tempfile.TemporaryDirectory(prefix="paperagent-") as tmp:
-            pdf_path, figures = None, []
+            tmp = Path(tmp)
+            pdf_path, figures, page1_key = None, [], None
             try:
-                pdf_path = pdfs.download_pdf(paper, Path(tmp))
-                figures = pdfs.extract_figures(pdf_path, config.FIGURE_DIR / str(pid))
-                paper["_page1"] = str(config.FIGURE_DIR / str(pid) / "page1.png")
+                pdf_path = pdfs.download_pdf(paper, tmp)
+                figures = pdfs.extract_figures(pdf_path, tmp / "figs")
                 say(f"  downloaded PDF ({pdf_path.stat().st_size // 1024} KB, {len(figures)} figures)")
             except Exception as exc:
                 say(f"  no PDF ({exc}); reviewing from abstract")
             review, depth = agent.review(paper, keywords, pdf_path, figures)
+            # Keep only the figure images (for the cards and the detail page).
+            storage.delete_prefix(f"figures/{pid}/")
+            for f in figures:
+                f["key"] = storage.put_file(f"figures/{pid}/{Path(f['path']).name}", f.pop("path"))
+            if (tmp / "figs" / "page1.png").exists():
+                page1_key = storage.put_file(f"figures/{pid}/page1.png", tmp / "figs" / "page1.png")
         # The temporary PDF is gone from here on.
         review["_figures"] = figures
-        review["_page1"] = paper.get("_page1")
-        say(f"  reviewed ({depth}): method {review['methodology_score']} / novelty {review['novelty_score']}")
+        review["_page1"] = page1_key
+        cost = review["_cost"]["total_usd"]
+        breakdown = ", ".join("{} {} ${:.3f}".format(c["stage"], c["model"], c["usd"]) for c in review["_cost"]["calls"])
+        say(f"  reviewed ({depth}): method {review['methodology_score']} / novelty {review['novelty_score']}"
+            f" · ${cost:.3f} ({breakdown})")
 
         card_paths = []
         try:
-            card_paths = cardnews.render(paper, review, figures, config.CARD_DIR / str(pid))
+            card_paths = cardnews.render_and_store({**paper, "id": pid}, review)
             say(f"  rendered {len(card_paths)} cards")
         except Exception as exc:
             say(f"  card rendering failed: {exc}")
@@ -128,26 +149,24 @@ def process_paper(paper: dict, keywords, say=log.info) -> bool:
             score_novelty=review["novelty_score"],
             score_overall=review["overall_score"],
             card_paths=card_paths,
+            cost_usd=cost,
         )
-        return True
+        return cost
     except (agent.ReviewError, anthropic.APIError, ValueError) as exc:
         say(f"  review failed: {exc}")
         db.update_paper(pid, status="error", error=str(exc)[:1000])
-        return False
+        return None
     except Exception as exc:
         say(f"  unexpected error: {exc}")
         db.update_paper(pid, status="error", error=traceback.format_exc()[-2000:])
-        return False
+        return None
 
 
 def rerender_cards(paper_id: int):
     paper = db.get_paper(paper_id)
-    review = paper["review"]
-    figures = [f for f in review.get("_figures", []) if Path(f["path"]).exists()]
-    paper["_page1"] = review.get("_page1")
-    paths = cardnews.render(paper, review, figures, config.CARD_DIR / str(paper_id))
-    db.update_paper(paper_id, card_paths=paths)
-    return paths
+    keys = cardnews.render_and_store(paper, paper["review"])
+    db.update_paper(paper_id, card_paths=keys)
+    return keys
 
 
 def add_arxiv_paper(arxiv_id: str):
@@ -162,8 +181,7 @@ def add_arxiv_paper(arxiv_id: str):
     p["matched_keywords"] = match_keywords(f"{p['title']} {p['abstract']}", keywords)
     p["source_name"] = f"arXiv · {p.get('primary_category') or ''}"
     db.insert_paper(p)
-    with db.connect() as conn:
-        row = conn.execute("SELECT id, status FROM papers WHERE uid=?", (p["uid"],)).fetchone()
+    row = db.get_paper_by_uid(p["uid"])
     if row["status"] != "done":
         db.update_paper(row["id"], status="screened", relevance=10.0, relevance_reason="직접 추가한 논문")
     return row["id"]
@@ -173,9 +191,13 @@ def run(trigger: str = "schedule", paper_ids=None):
     """One full cycle. Returns the run id, or None if a run is already in progress."""
     if not _lock.acquire(blocking=False):
         return None
+    if db.active_run() is not None:  # running in another dyno/process
+        _lock.release()
+        return None
     run_id = db.start_run(trigger)
     say = RunLogger(run_id)
-    stats = {"new": 0, "screened_in": 0, "reviewed": 0, "failed": 0}
+    stats = {"new": 0, "screened_in": 0, "reviewed": 0, "failed": 0, "cost_usd": 0.0}
+    meter = agent.CostMeter()
     status = "ok"
     try:
         settings = db.pipeline_settings()
@@ -187,13 +209,15 @@ def run(trigger: str = "schedule", paper_ids=None):
         else:
             resolve_journals(say)
             stats["new"] = collect(keywords, settings, say)
-            stats["screened_in"] = screen_new(keywords, settings, say)
-            targets = db.papers_by_status("screened", limit=settings["max_full_reads"], order="relevance DESC, created_at DESC")
+            stats["screened_in"] = screen_new(keywords, settings, say, meter)
+            targets = db.papers_by_status("screened", limit=settings["max_full_reads"], order="relevance")
         for p in targets:
             if p is None:
                 continue
-            if process_paper(p, keywords, say):
+            cost = process_paper(p, keywords, say)
+            if cost is not None:
                 stats["reviewed"] += 1
+                stats["cost_usd"] += cost
             else:
                 stats["failed"] += 1
         if not paper_ids:
@@ -202,6 +226,8 @@ def run(trigger: str = "schedule", paper_ids=None):
         status = "error"
         say(f"run failed: {exc}\n{traceback.format_exc()[-1500:]}")
     finally:
+        stats["cost_usd"] = round(stats["cost_usd"] + meter.total_usd, 4)
+        say(f"run cost ${stats['cost_usd']:.3f}")
         db.finish_run(run_id, status, stats)
         _lock.release()
     return run_id

@@ -11,13 +11,14 @@
 ```
  ┌──────────── 매 N시간 (APScheduler) ────────────────────────────────────────────┐
  │ 1. 수집      arXiv API(BeautifulSoup 파싱) · OpenAlex(저널/학회)               │
- │ 2. 스크리닝  Claude가 초록으로 관련도 0~10 판단 → 기준 미만은 건너뜀            │
- │ 3. 정독      PDF를 서버 임시 폴더에 받음 → Claude가 전문(본문·표·그림)을 읽고    │
- │              평점·요약 (JSON 스키마) → Figure 추출 후 PDF 삭제                   │
+ │ 2. 스크리닝  Haiku가 초록으로 관련도 0~10 판단 → 기준(7) 미만은 건너뜀          │
+ │ 3. 정독      PDF를 임시 폴더에 받음 → Haiku가 전문을 읽고 근거 노트 작성        │
+ │    평가      Opus가 노트로 방법론·참신성 채점 → Sonnet이 한국어 리뷰·카드 문구   │
+ │              Figure 추출 후 PDF 삭제                                            │
  │ 4. 카드뉴스  추출한 Figure + 리뷰 → HTML 템플릿 → Chromium으로 PNG 렌더         │
  │ 5. 트렌드    HF Daily Papers 화제성 · OpenAlex 인용 급증/다인용 · 인용 스냅샷    │
  └────────────────────────────────────────────────────────────────────────────────┘
-                     ↓ SQLite (data/paperagent.db)
+                     ↓ SQLite (로컬) / Heroku Postgres
          Flask 대시보드: 오늘의 논문 · 논문 상세 · 트렌드 · 대기열 · 관심 설정
 ```
 
@@ -27,7 +28,7 @@
 |---|---|
 | 논문 수집 | arXiv 카테고리(cs.AI/CL/LG/CV 기본)와 저널(JMLR, TPAMI, Nature MI, TMLR 기본)에서 키워드에 맞는 새 논문 수집 |
 | PDF 처리 | PDF는 서버 임시 폴더에 받아 Claude가 읽고 그림을 뽑은 뒤 바로 삭제. 사용자에게는 arXiv 같은 **원문 PDF 링크**를 제공 (서버에 PDF를 쌓지 않음) |
-| 에이전트 리뷰 | Claude(`claude-opus-5-5`)가 PDF를 문서 블록으로 직접 읽음(텍스트·표·그림 포함). 한 줄 요약, TL;DR, 문제, 방법, 핵심 결과, 기여, 한계, 의의, 추천 독자를 작성 |
+| 에이전트 리뷰 | 단계마다 모델을 나눔: Haiku가 PDF 전문(텍스트·표·그림)을 읽고 근거 노트 작성 → Opus가 노트로 채점 → Sonnet이 한국어 리뷰와 카드 문구 작성. 논문당 비용이 대시보드에 표시됨 |
 | 평점 | **방법론 신뢰도**(베이스라인·ablation·재현성·근거의 충분성)와 **참신성·기여도**를 각각 1~10점으로 매기고 근거를 함께 적음. 종합 점수는 두 점수의 평균 |
 | 대시보드 | 최신순·평점순·관련도순 정렬, 키워드·기간 필터, 검색, 공유 링크(OG 이미지 포함), JSON API(`/api/papers`) |
 | 트렌드 | 🔥 오늘 화제(Hugging Face Daily Papers 추천 수) · 📈 인용 급증(올해 연환산 인용 − 작년 인용) · 🧪 최근 1년 다인용 · ⭐ 리뷰한 논문의 7일 인용 증가(Semantic Scholar 스냅샷) · 키워드별 14일 신규 논문 차트 |
@@ -52,7 +53,11 @@
 - **장식 대신 여백과 헤어라인**: 그라데이션·아이콘·이모지 장식을 쓰지 않습니다. 카드는 1px 테두리와 아주 옅은 그림자만 씁니다.
 - **카드뉴스 한 장에 메시지 하나**: 단계 → 헤드라인 → 두 줄 설명 → 논문 그림·핵심 수치 순서로 위계를 고정했습니다. 로고와 쪽수는 늘 같은 자리에 둡니다.
 
-## 빠른 시작
+## Heroku 배포
+
+`Procfile`, `app.json`, `.python-version`이 들어 있습니다. Postgres와 Scheduler 애드온, Chrome 빌드팩을 붙이고 `git push heroku main` 하면 됩니다. 단계별 명령은 [docs/SETUP.md 6장](docs/SETUP.md#6-heroku에-배포하기-권장)에 있습니다.
+
+## 빠른 시작 (로컬)
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -71,7 +76,8 @@ python -m paperagent serve --port 8000
 
 ```bash
 python -m paperagent serve            # 대시보드 + 스케줄러
-python -m paperagent run              # 파이프라인 1회 즉시 실행 (cron으로 돌릴 때도 사용)
+python -m paperagent run              # 파이프라인 1회 즉시 실행
+python -m paperagent run --if-due     # 설정한 간격이 지났을 때만 실행 (Heroku Scheduler·cron용)
 python -m paperagent review 2410.01234  # 특정 arXiv 논문을 바로 리뷰
 python -m paperagent cards 12         # 12번 논문 카드뉴스 다시 렌더
 python -m paperagent trending         # 트렌드 패널만 갱신
@@ -95,7 +101,7 @@ gunicorn -w 1 --threads 8 -b 0.0.0.0:8000 wsgi:app
 - **전문 읽기**: PDF(최대 약 30MB·600쪽)를 base64 문서 블록으로 그대로 보내므로, Claude가 본문뿐 아니라 표와 그림도 봅니다. 이보다 크면 추출한 텍스트를 보내고, 오픈 액세스 PDF가 없는 저널 논문은 초록만 읽은 뒤 `초록만` 배지를 붙입니다.
 - **구조화 출력**: 리뷰와 카드 문구는 JSON 스키마(`output_config.format`)로 받으므로 파싱이 실패하지 않습니다. 점수는 1~10 범위로 고정하고, 추출하지 못한 Figure 번호는 버립니다.
 - **거절 대비**: Claude API의 서버 측 `fallbacks: "default"`를 켜 두었습니다. Bedrock/Vertex/Foundry를 쓴다면 `CLAUDE_FALLBACKS=0`으로 끄세요.
-- **비용 조절**: 실행당 정독 수(`MAX_FULL_READS`, 기본 5)와 최소 관련도(`MIN_RELEVANCE`, 기본 6)로 조절합니다. 스크리닝만 저렴한 모델로 돌리려면 `SCREEN_MODEL=claude-haiku-5-5`를 쓰세요. 전문 리뷰 1건은 대략 PDF 30~80k 입력 토큰입니다.
+- **비용**: 입력이 가장 큰 PDF 정독은 Haiku가, 점수를 정하는 평가만 Opus가 맡습니다. Opus는 PDF 대신 수천 토큰짜리 노트만 읽습니다. 기본값(12시간마다, 정독 3편, 관련도 7 이상)으로 하루 약 $1~1.4입니다. 단계별 모델과 비용은 [docs/SETUP.md](docs/SETUP.md#2-3-비용-감-잡기-단계마다-다른-모델) 참고.
 - **Figure 추출**: PyMuPDF로 각 "Figure N" 캡션 바로 위에 있는 래스터·벡터 그래픽 영역을 잘라 냅니다. Claude가 슬라이드마다 어떤 Figure를 쓸지 고릅니다(방법 슬라이드에는 개요도, 결과 슬라이드에는 결과 그래프나 표).
 
 ## 카드뉴스 커스터마이징

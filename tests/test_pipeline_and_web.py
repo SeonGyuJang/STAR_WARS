@@ -17,36 +17,86 @@ def _paper(**kw):
     return p
 
 
-def _fake_message(payload, stop_reason="end_turn"):
-    return SimpleNamespace(stop_reason=stop_reason, stop_details=None,
+JUDGE_KEYS = ("methodology_score", "methodology_reason", "novelty_score", "novelty_reason", "read_confidence")
+NOTES = {"research_question": "q", "method": "m", "claimed_contributions": ["c"], "experimental_setup": "s",
+         "baselines": ["b"], "main_results": [{"claim": "c", "evidence": "+12.4%p on MATH", "location": "Table 1"}],
+         "ablations_and_analysis": "a", "statistical_rigor": "3 seeds", "reproducibility": "code released",
+         "stated_limitations": ["l"], "possible_concerns": ["p"], "closest_prior_work": "w",
+         "figures": [{"number": 1, "shows": "accuracy bars"}], "headline_numbers": [{"value": "+12.4%p", "meaning": "MATH"}]}
+
+
+def _stage_payloads():
+    """What the reader, judge and writer each return, split from the sample review."""
+    sample = json.loads((FIXTURES / "sample_review.json").read_text())
+    judge = {k: sample[k] for k in JUDGE_KEYS}
+    judge.update(strengths=["s"], weaknesses=["w"], verdict="v")
+    write = {k: v for k, v in sample.items() if k not in JUDGE_KEYS and not k.startswith("_") and k != "overall_score"}
+    return {id(agent.NOTES_SCHEMA): NOTES, id(agent.JUDGE_SCHEMA): judge, id(agent.WRITE_SCHEMA): write}
+
+
+def _fake_message(payload, stop_reason="end_turn", model="m", usage=(1000, 100)):
+    return SimpleNamespace(stop_reason=stop_reason, stop_details=None, model=model,
+                           usage=SimpleNamespace(input_tokens=usage[0], output_tokens=usage[1]),
                            content=[SimpleNamespace(type="text", text=json.dumps(payload, ensure_ascii=False))])
 
 
-def _fake_client(payload, stop_reason="end_turn"):
-    stream_cm = mock.MagicMock()
-    stream_cm.__enter__.return_value.get_final_message.return_value = _fake_message(payload, stop_reason)
+def _fake_client(payload=None, stop_reason="end_turn", by_schema=None, usage=(1000, 100)):
+    """Claude client double. Returns `payload`, or picks one by the request's schema."""
+    calls = []
+
+    def stream(**kwargs):
+        calls.append(kwargs)
+        schema = kwargs["output_config"]["format"]["schema"]
+        body = by_schema[id(schema)] if by_schema else payload
+        cm = mock.MagicMock()
+        cm.__enter__.return_value.get_final_message.return_value = _fake_message(
+            body, stop_reason, model=kwargs["model"], usage=usage)
+        return cm
+
     client = mock.Mock()
-    client.beta.messages.stream.return_value = stream_cm
+    client.beta.messages.stream.side_effect = stream
+    client.messages.stream.side_effect = stream
+    client.calls = calls
     return client
 
 
-def test_review_request_shape_and_postprocessing(sample_pdf):
-    review = json.loads((FIXTURES / "sample_review.json").read_text())
-    review["methodology_score"] = 11  # out of range -> clamped
-    review["card"]["slides"][0]["figure_number"] = 7  # not extracted -> 0
-    client = _fake_client(review)
+def test_review_uses_cheap_reader_and_strong_judge(sample_pdf):
+    payloads = _stage_payloads()
+    payloads[id(agent.JUDGE_SCHEMA)]["methodology_score"] = 11  # out of range -> clamped
+    payloads[id(agent.WRITE_SCHEMA)]["card"]["slides"][0]["figure_number"] = 7  # not extracted -> 0
+    client = _fake_client(by_schema=payloads, usage=(50_000, 2_000))
     with mock.patch.object(agent, "client", return_value=client):
         out, depth = agent.review(_paper(), ["AI agent"], sample_pdf, [{"number": 1, "page": 1, "caption": "Figure 1: x", "path": "x"}])
-    kwargs = client.beta.messages.stream.call_args.kwargs
-    assert kwargs["model"] == "claude-opus-5-5"
-    assert kwargs["output_config"]["format"]["type"] == "json_schema"
-    assert kwargs["fallbacks"] == "default" and kwargs["betas"] == ["server-side-fallback-2026-07-01"]
-    doc = kwargs["messages"][0]["content"][0]
+    read, judge, write = client.calls
+    # 1. the cheap model gets the whole PDF; Haiku has no server-side fallback
+    assert read["model"] == "claude-haiku-5-5" and "fallbacks" not in read
+    doc = read["messages"][0]["content"][0]
     assert doc["type"] == "document" and doc["source"]["media_type"] == "application/pdf"
+    # 2. the strong model only sees the notes, never the PDF
+    assert judge["model"] == "claude-opus-5-5" and judge["fallbacks"] == "default"
+    assert isinstance(judge["messages"][0]["content"], str) and "+12.4%p on MATH" in judge["messages"][0]["content"]
+    # 3. the writer
+    assert write["model"] == "claude-sonnet-5-5"
     assert depth == "full_pdf"
-    assert out["methodology_score"] == 10.0
-    assert out["overall_score"] == 9.0
+    assert out["methodology_score"] == 10.0 and out["overall_score"] == 9.0
     assert out["card"]["slides"][0]["figure_number"] == 0
+    # cost: 50k in / 2k out on each model
+    expected = (50_000 * 0.10 + 2_000 * 0.50 + 50_000 * 4 + 2_000 * 20 + 50_000 * 2 + 2_000 * 10) / 1e6
+    assert abs(out["_cost"]["total_usd"] - expected) < 1e-4
+    assert [c["stage"] for c in out["_cost"]["calls"]] == ["read", "judge", "write"]
+
+
+def test_abstract_only_skips_reader():
+    client = _fake_client(by_schema=_stage_payloads())
+    with mock.patch.object(agent, "client", return_value=client):
+        out, depth = agent.review(_paper(pdf_url=None), ["AI agent"])
+    assert depth == "abstract" and out["read_confidence"] == "low"
+    assert [c["model"] for c in client.calls] == ["claude-opus-5-5", "claude-sonnet-5-5"]
+
+
+def test_haiku_long_prompt_price():
+    assert agent.price("claude-haiku-5-5", 100_000, 0) == 0.01
+    assert agent.price("claude-haiku-5-5", 200_000, 0) == 0.1
 
 
 def test_refusal_raises():
@@ -65,15 +115,15 @@ def test_screen_maps_indices(fresh_db):
     fresh_db.insert_paper(_paper(uid="arxiv:2610.00002", title="Other"))
     papers = fresh_db.papers_by_status("new")
     client = _fake_client({"results": [{"index": 0, "relevance": 8, "reason": "관련"}, {"index": 1, "relevance": 2, "reason": "무관"}, {"index": 9, "relevance": 9, "reason": "bogus"}]})
+    meter = agent.CostMeter()
     with mock.patch.object(agent, "client", return_value=client):
-        scores = agent.screen(papers, ["AI agent"])
+        scores = agent.screen(papers, ["AI agent"], meter=meter)
     assert scores == {papers[0]["id"]: (8.0, "관련"), papers[1]["id"]: (2.0, "무관")}
+    assert client.calls[0]["model"] == "claude-haiku-5-5" and meter.total_usd > 0
 
 
 def _full_run(fresh_db, sample_pdf, tmp_path):
     """collect -> screen -> review -> cards, with network and Claude mocked."""
-    review = json.loads((FIXTURES / "sample_review.json").read_text())
-
     downloaded = []
 
     def fake_download(paper, dest_dir):
@@ -82,18 +132,15 @@ def _full_run(fresh_db, sample_pdf, tmp_path):
         downloaded.append(dst)
         return dst
 
-    screen_client = {"results": [{"index": 0, "relevance": 9, "reason": "핵심 주제"}]}
-    calls = []
-
-    def fake_call(model, system, content, schema, effort, max_tokens):
-        calls.append(schema)
-        return json.loads(json.dumps(screen_client if schema is agent.SCREEN_SCHEMA else review))
+    payloads = _stage_payloads()
+    payloads[id(agent.SCREEN_SCHEMA)] = {"results": [{"index": 0, "relevance": 9, "reason": "핵심 주제"}]}
+    client = _fake_client(by_schema=payloads)
 
     with mock.patch.object(pipeline.arxiv, "fetch_category", return_value=[_paper()]), \
          mock.patch.object(pipeline.openalex, "resolve_source", return_value=None), \
          mock.patch.object(pipeline.pdfs, "download_pdf", side_effect=fake_download), \
          mock.patch.object(pipeline.trending, "refresh_all"), \
-         mock.patch.object(agent, "_call", side_effect=fake_call):
+         mock.patch.object(agent, "client", return_value=client):
         run_id = pipeline.run("test")
 
     run = fresh_db.recent_runs(1)[0]
@@ -108,6 +155,12 @@ def _full_run(fresh_db, sample_pdf, tmp_path):
     # the PDF was only kept for the review, then deleted with its temp dir
     assert downloaded and not downloaded[0].exists() and not downloaded[0].parent.exists()
     assert p["pdf_url"] == "https://arxiv.org/pdf/2610.01234"
+    # figures and cards live in storage, keyed by paper id
+    assert p["review"]["_figures"][0]["key"] == f"figures/{p['id']}/fig1.png"
+    assert p["card_paths"][0] == f"cards/{p['id']}/card_01.png"
+    # screen + read + judge + write were all priced
+    assert p["cost_usd"] > 0 and run["stats"]["cost_usd"] > p["cost_usd"]
+    assert [c["stage"] for c in p["review"]["_cost"]["calls"]] == ["read", "judge", "write"]
     return p
 
 
@@ -168,3 +221,45 @@ def test_admin_password_gates_changes(fresh_db, monkeypatch):
     c.post("/login", data={"password": "pw", "_csrf": token})
     c.post("/settings/keywords", data={"term": "allowed", "_csrf": token})
     assert "allowed" in [k["term"] for k in fresh_db.list_keywords()]
+
+
+def test_is_due_follows_interval(fresh_db):
+    assert pipeline.is_due()  # never ran
+    run_id = fresh_db.start_run("test")
+    fresh_db.finish_run(run_id, "ok", {})
+    assert not pipeline.is_due()  # just ran, interval is 12h
+    fresh_db.set_setting("interval_hours", 1)
+    with fresh_db.engine().begin() as conn:
+        conn.execute(fresh_db.runs.update().values(started_at=fresh_db.ago_iso(hours=2)))
+    assert pipeline.is_due()
+
+
+def test_run_skips_while_another_process_runs(fresh_db):
+    other = fresh_db.start_run("schedule")  # e.g. a Heroku Scheduler dyno
+    assert pipeline.is_running()
+    assert pipeline.run("manual") is None
+    # a run that died long ago no longer blocks
+    with fresh_db.engine().begin() as conn:
+        conn.execute(fresh_db.runs.update().where(fresh_db.runs.c.id == other).values(started_at=fresh_db.ago_iso(hours=5)))
+    fresh_db.mark_stale_runs()
+    assert fresh_db.recent_runs(1)[0]["status"] == "aborted"
+    assert not pipeline.is_running()
+
+
+def test_cli_run_if_due_skips_when_not_due(fresh_db, capsys):
+    from paperagent.__main__ import main
+
+    fresh_db.finish_run(fresh_db.start_run("test"), "ok", {})
+    with mock.patch.object(pipeline, "run") as run:
+        main(["run", "--if-due"])
+    run.assert_not_called()
+    assert "not due" in capsys.readouterr().out
+
+
+def test_storage_roundtrip(fresh_db):
+    from paperagent import storage
+
+    storage.put("cards/99/card_01.png", b"\x89PNG data")
+    assert storage.get("cards/99/card_01.png") == (b"\x89PNG data", "image/png")
+    storage.delete_prefix("cards/99/")
+    assert storage.get("cards/99/card_01.png") is None

@@ -67,7 +67,7 @@
       <div class="score-num"><b>{{ r.overall_score }}</b><span>/ 10</span></div>
       <div class="crit">{{ bar('방법론', r.methodology_score) }}<p>{{ r.methodology_reason }}</p></div>
       <div class="crit">{{ bar('참신성', r.novelty_score, 'alt') }}<p>{{ r.novelty_reason }}</p></div>
-      <div class="relevance">관심 주제 관련도 {{ p.relevance }} · {{ p.relevance_reason }}</div>
+      <div class="relevance">관심 주제 관련도 {{ p.relevance }} · {{ p.relevance_reason }}{% if p.cost_usd is not none %}<br>리뷰 비용 ${{ '%.3f' % p.cost_usd }}{% endif %}</div>
     </section>
 
     <section class="card" id="cards">

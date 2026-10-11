@@ -1,90 +1,111 @@
-"""SQLite storage. One short-lived connection per call keeps it safe across the
-Flask request threads and the background scheduler thread."""
+"""Storage for papers, settings, runs and blobs.
+
+SQLAlchemy Core keeps one code path for SQLite (local runs) and Postgres
+(Heroku, where the filesystem is wiped on every dyno restart). Timestamps are
+stored as ISO-8601 UTC strings and compared as strings, which keeps queries
+free of dialect-specific date functions."""
 import json
-import sqlite3
-from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+
+from sqlalchemy import (Column, Float, Integer, LargeBinary, MetaData, String, Table, Text, UniqueConstraint,
+                        create_engine, delete, event, func, select, update)
+from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy.pool import NullPool
 
 from . import config
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS keywords (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    term TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    created_at TEXT NOT NULL
-);
+metadata = MetaData()
 
--- kind: 'arxiv' (value = arXiv category, e.g. cs.CL) or
---       'journal' (value = OpenAlex source id, e.g. S4306420609)
-CREATE TABLE IF NOT EXISTS sources (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    kind TEXT NOT NULL,
-    value TEXT NOT NULL,
-    name TEXT NOT NULL,
-    enabled INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    UNIQUE(kind, value)
-);
+keywords = Table(
+    "keywords", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("term", String(200), nullable=False, unique=True),
+    Column("created_at", String(32), nullable=False),
+)
 
-CREATE TABLE IF NOT EXISTS papers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    uid TEXT NOT NULL UNIQUE,
-    source_kind TEXT NOT NULL,
-    source_name TEXT,
-    title TEXT NOT NULL,
-    authors TEXT NOT NULL DEFAULT '[]',
-    abstract TEXT,
-    published TEXT,
-    url TEXT,
-    pdf_url TEXT,
-    doi TEXT,
-    categories TEXT NOT NULL DEFAULT '[]',
-    matched_keywords TEXT NOT NULL DEFAULT '[]',
-    relevance REAL,
-    relevance_reason TEXT,
-    status TEXT NOT NULL DEFAULT 'new',
-    read_depth TEXT,
-    review TEXT,
-    score_method REAL,
-    score_novelty REAL,
-    score_overall REAL,
-    card_paths TEXT NOT NULL DEFAULT '[]',
-    citation_count INTEGER,
-    error TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_papers_status ON papers(status);
-CREATE INDEX IF NOT EXISTS idx_papers_created ON papers(created_at);
+# kind: 'arxiv' (value = arXiv category, e.g. cs.CL) or
+#       'journal' (value = OpenAlex source id, e.g. S4306420609, or 'name:<journal>' until resolved)
+sources = Table(
+    "sources", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("kind", String(20), nullable=False),
+    Column("value", String(300), nullable=False),
+    Column("name", String(300), nullable=False),
+    Column("enabled", Integer, nullable=False, default=1),
+    Column("created_at", String(32), nullable=False),
+    UniqueConstraint("kind", "value"),
+)
 
-CREATE TABLE IF NOT EXISTS runs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    trigger TEXT NOT NULL,
-    status TEXT NOT NULL,
-    started_at TEXT NOT NULL,
-    finished_at TEXT,
-    stats TEXT NOT NULL DEFAULT '{}',
-    log TEXT NOT NULL DEFAULT ''
-);
+papers = Table(
+    "papers", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("uid", String(300), nullable=False, unique=True),
+    Column("source_kind", String(20), nullable=False),
+    Column("source_name", String(300)),
+    Column("title", Text, nullable=False),
+    Column("authors", Text, nullable=False, default="[]"),
+    Column("abstract", Text),
+    Column("published", String(40)),
+    Column("url", Text),
+    Column("pdf_url", Text),
+    Column("doi", String(300)),
+    Column("categories", Text, nullable=False, default="[]"),
+    Column("matched_keywords", Text, nullable=False, default="[]"),
+    Column("relevance", Float),
+    Column("relevance_reason", Text),
+    Column("status", String(20), nullable=False, default="new", index=True),
+    Column("read_depth", String(20)),
+    Column("review", Text),
+    Column("score_method", Float),
+    Column("score_novelty", Float),
+    Column("score_overall", Float),
+    Column("cost_usd", Float),
+    Column("card_paths", Text, nullable=False, default="[]"),
+    Column("citation_count", Integer),
+    Column("error", Text),
+    Column("created_at", String(32), nullable=False, index=True),
+    Column("updated_at", String(32), nullable=False),
+)
 
-CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-);
+runs = Table(
+    "runs", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("trigger", String(20), nullable=False),
+    Column("status", String(20), nullable=False),
+    Column("started_at", String(32), nullable=False),
+    Column("finished_at", String(32)),
+    Column("stats", Text, nullable=False, default="{}"),
+    Column("log", Text, nullable=False, default=""),
+)
 
-CREATE TABLE IF NOT EXISTS citation_snapshots (
-    uid TEXT NOT NULL,
-    day TEXT NOT NULL,
-    count INTEGER NOT NULL,
-    PRIMARY KEY (uid, day)
-);
+settings_t = Table(
+    "settings", metadata,
+    Column("key", String(100), primary_key=True),
+    Column("value", Text, nullable=False),
+)
 
-CREATE TABLE IF NOT EXISTS trending_cache (
-    kind TEXT PRIMARY KEY,
-    payload TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-"""
+citation_snapshots = Table(
+    "citation_snapshots", metadata,
+    Column("uid", String(300), primary_key=True),
+    Column("day", String(10), primary_key=True),
+    Column("count", Integer, nullable=False),
+)
+
+trending_cache = Table(
+    "trending_cache", metadata,
+    Column("kind", String(40), primary_key=True),
+    Column("payload", Text, nullable=False),
+    Column("updated_at", String(32), nullable=False),
+)
+
+# Card images and extracted figures when STORAGE_BACKEND=db (see storage.py).
+blobs = Table(
+    "blobs", metadata,
+    Column("key", String(300), primary_key=True),
+    Column("content_type", String(80), nullable=False),
+    Column("data", LargeBinary, nullable=False),
+    Column("updated_at", String(32), nullable=False),
+)
 
 JSON_FIELDS = ("authors", "categories", "matched_keywords", "review", "card_paths")
 
@@ -110,27 +131,44 @@ DEFAULT_JOURNALS = [
     "Transactions on Machine Learning Research",
 ]
 
+_engine = None
+_engine_url = None
+
+
+def engine():
+    global _engine, _engine_url
+    url = config.database_url()
+    if _engine is None or url != _engine_url:
+        if url.startswith("sqlite"):
+            _engine = create_engine(url, poolclass=NullPool, connect_args={"check_same_thread": False, "timeout": 30})
+
+            @event.listens_for(_engine, "connect")
+            def _wal(dbapi_conn, _):
+                dbapi_conn.execute("PRAGMA journal_mode=WAL")
+        else:
+            _engine = create_engine(url, pool_pre_ping=True, pool_size=5, max_overflow=5)
+        _engine_url = url
+    return _engine
+
+
+def _insert(table):
+    """Dialect insert that supports on_conflict_do_nothing / do_update."""
+    dialect = postgresql if engine().dialect.name == "postgresql" else sqlite
+    return dialect.insert(table)
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-@contextmanager
-def connect():
-    conn = sqlite3.connect(config.DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    try:
-        yield conn
-        conn.commit()
-    finally:
-        conn.close()
+def ago_iso(**delta) -> str:
+    return (datetime.now(timezone.utc) - timedelta(**delta)).replace(microsecond=0).isoformat()
 
 
-def row_to_dict(row):
+def _row(row):
     if row is None:
         return None
-    d = dict(row)
+    d = dict(row._mapping)
     for f in JSON_FIELDS:
         if f in d and isinstance(d[f], str):
             try:
@@ -140,47 +178,41 @@ def row_to_dict(row):
     return d
 
 
+def _rows(result):
+    return [_row(r) for r in result]
+
+
 def init_db(seed: bool = True):
-    with connect() as conn:
-        conn.executescript(SCHEMA)
-        if not seed:
-            return
-        if conn.execute("SELECT COUNT(*) FROM settings WHERE key='seeded'").fetchone()[0]:
-            return
-        ts = now_iso()
-        conn.executemany(
-            "INSERT OR IGNORE INTO keywords(term, created_at) VALUES (?, ?)",
-            [(k, ts) for k in DEFAULT_KEYWORDS],
-        )
-        conn.executemany(
-            "INSERT OR IGNORE INTO sources(kind, value, name, created_at) VALUES ('arxiv', ?, ?, ?)",
-            [(v, n, ts) for v, n in DEFAULT_ARXIV],
-        )
-        # Unresolved journals are stored with value 'name:<journal name>' and
-        # replaced with their OpenAlex id the first time the pipeline runs.
-        conn.executemany(
-            "INSERT OR IGNORE INTO sources(kind, value, name, created_at) VALUES ('journal', ?, ?, ?)",
-            [(f"name:{n}", n, ts) for n in DEFAULT_JOURNALS],
-        )
-        conn.execute("INSERT INTO settings(key, value) VALUES ('seeded', '1')")
+    metadata.create_all(engine())
+    if not seed or get_setting("seeded"):
+        return
+    ts = now_iso()
+    with engine().begin() as conn:
+        for term in DEFAULT_KEYWORDS:
+            conn.execute(_insert(keywords).values(term=term, created_at=ts).on_conflict_do_nothing())
+        for value, name in DEFAULT_ARXIV:
+            conn.execute(_insert(sources).values(kind="arxiv", value=value, name=name, enabled=1, created_at=ts)
+                         .on_conflict_do_nothing())
+        # Unresolved journals keep value 'name:<journal name>' until the pipeline
+        # looks up their OpenAlex id.
+        for name in DEFAULT_JOURNALS:
+            conn.execute(_insert(sources).values(kind="journal", value=f"name:{name}", name=name, enabled=1, created_at=ts)
+                         .on_conflict_do_nothing())
+    set_setting("seeded", True)
 
 
 # --- settings ---------------------------------------------------------------
 
 def get_setting(key, default=None):
-    with connect() as conn:
-        row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
-    if row is None:
-        return default
-    return json.loads(row["value"])
+    with engine().connect() as conn:
+        value = conn.execute(select(settings_t.c.value).where(settings_t.c.key == key)).scalar()
+    return default if value is None else json.loads(value)
 
 
 def set_setting(key, value):
-    with connect() as conn:
-        conn.execute(
-            "INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            (key, json.dumps(value)),
-        )
+    stmt = _insert(settings_t).values(key=key, value=json.dumps(value))
+    with engine().begin() as conn:
+        conn.execute(stmt.on_conflict_do_update(index_elements=["key"], set_={"value": stmt.excluded.value}))
 
 
 def pipeline_settings() -> dict:
@@ -196,57 +228,53 @@ def pipeline_settings() -> dict:
 # --- keywords & sources -----------------------------------------------------
 
 def list_keywords():
-    with connect() as conn:
-        return [dict(r) for r in conn.execute("SELECT * FROM keywords ORDER BY term")]
+    with engine().connect() as conn:
+        return _rows(conn.execute(select(keywords).order_by(func.lower(keywords.c.term))))
 
 
 def add_keyword(term: str) -> bool:
     term = term.strip()
     if not term:
         return False
-    with connect() as conn:
-        cur = conn.execute("INSERT OR IGNORE INTO keywords(term, created_at) VALUES (?, ?)", (term, now_iso()))
-        return cur.rowcount > 0
+    with engine().begin() as conn:
+        exists = conn.execute(select(keywords.c.id).where(func.lower(keywords.c.term) == term.lower())).first()
+        if exists:
+            return False
+        conn.execute(keywords.insert().values(term=term, created_at=now_iso()))
+        return True
 
 
 def delete_keyword(keyword_id: int):
-    with connect() as conn:
-        conn.execute("DELETE FROM keywords WHERE id=?", (keyword_id,))
+    with engine().begin() as conn:
+        conn.execute(delete(keywords).where(keywords.c.id == keyword_id))
 
 
 def list_sources(kind=None, enabled_only=False):
-    q = "SELECT * FROM sources WHERE 1=1"
-    args = []
+    q = select(sources)
     if kind:
-        q += " AND kind=?"
-        args.append(kind)
+        q = q.where(sources.c.kind == kind)
     if enabled_only:
-        q += " AND enabled=1"
-    q += " ORDER BY kind, name"
-    with connect() as conn:
-        return [dict(r) for r in conn.execute(q, args)]
+        q = q.where(sources.c.enabled == 1)
+    with engine().connect() as conn:
+        return _rows(conn.execute(q.order_by(sources.c.kind, sources.c.name)))
 
 
 def add_source(kind: str, value: str, name: str) -> bool:
-    with connect() as conn:
-        cur = conn.execute(
-            "INSERT OR IGNORE INTO sources(kind, value, name, created_at) VALUES (?, ?, ?, ?)",
-            (kind, value, name, now_iso()),
-        )
-        return cur.rowcount > 0
+    with engine().begin() as conn:
+        result = conn.execute(_insert(sources).values(kind=kind, value=value, name=name, enabled=1, created_at=now_iso())
+                              .on_conflict_do_nothing().returning(sources.c.id))
+        return result.first() is not None
 
 
 def update_source(source_id: int, **fields):
-    if not fields:
-        return
-    cols = ", ".join(f"{k}=?" for k in fields)
-    with connect() as conn:
-        conn.execute(f"UPDATE sources SET {cols} WHERE id=?", (*fields.values(), source_id))
+    if fields:
+        with engine().begin() as conn:
+            conn.execute(update(sources).where(sources.c.id == source_id).values(**fields))
 
 
 def delete_source(source_id: int):
-    with connect() as conn:
-        conn.execute("DELETE FROM sources WHERE id=?", (source_id,))
+    with engine().begin() as conn:
+        conn.execute(delete(sources).where(sources.c.id == source_id))
 
 
 # --- papers -----------------------------------------------------------------
@@ -254,169 +282,206 @@ def delete_source(source_id: int):
 def insert_paper(p: dict) -> bool:
     """Insert a newly collected paper. Returns False if it was already known."""
     ts = now_iso()
-    with connect() as conn:
-        cur = conn.execute(
-            """INSERT OR IGNORE INTO papers
-               (uid, source_kind, source_name, title, authors, abstract, published, url, pdf_url, doi,
-                categories, matched_keywords, citation_count, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                p["uid"], p["source_kind"], p.get("source_name"), p["title"],
-                json.dumps(p.get("authors", []), ensure_ascii=False), p.get("abstract"),
-                p.get("published"), p.get("url"), p.get("pdf_url"), p.get("doi"),
-                json.dumps(p.get("categories", [])),
-                json.dumps(p.get("matched_keywords", []), ensure_ascii=False),
-                p.get("citation_count"), ts, ts,
-            ),
-        )
-        return cur.rowcount > 0
+    values = dict(
+        uid=p["uid"], source_kind=p["source_kind"], source_name=p.get("source_name"), title=p["title"],
+        authors=json.dumps(p.get("authors", []), ensure_ascii=False), abstract=p.get("abstract"),
+        published=p.get("published"), url=p.get("url"), pdf_url=p.get("pdf_url"), doi=p.get("doi"),
+        categories=json.dumps(p.get("categories", [])),
+        matched_keywords=json.dumps(p.get("matched_keywords", []), ensure_ascii=False),
+        citation_count=p.get("citation_count"), status="new", card_paths="[]", created_at=ts, updated_at=ts,
+    )
+    with engine().begin() as conn:
+        # rowcount is unreliable for ON CONFLICT on Postgres; RETURNING works on both.
+        result = conn.execute(_insert(papers).values(**values).on_conflict_do_nothing().returning(papers.c.id))
+        return result.first() is not None
 
 
 def update_paper(paper_id: int, **fields):
     if not fields:
         return
     fields["updated_at"] = now_iso()
-    vals = []
-    for k, v in fields.items():
-        vals.append(json.dumps(v, ensure_ascii=False) if k in JSON_FIELDS and not isinstance(v, str) else v)
-    cols = ", ".join(f"{k}=?" for k in fields)
-    with connect() as conn:
-        conn.execute(f"UPDATE papers SET {cols} WHERE id=?", (*vals, paper_id))
+    for k in JSON_FIELDS:
+        if k in fields and not isinstance(fields[k], str) and fields[k] is not None:
+            fields[k] = json.dumps(fields[k], ensure_ascii=False)
+    with engine().begin() as conn:
+        conn.execute(update(papers).where(papers.c.id == paper_id).values(**fields))
 
 
 def get_paper(paper_id: int):
-    with connect() as conn:
-        return row_to_dict(conn.execute("SELECT * FROM papers WHERE id=?", (paper_id,)).fetchone())
+    with engine().connect() as conn:
+        return _row(conn.execute(select(papers).where(papers.c.id == paper_id)).first())
 
 
-def papers_by_status(status: str, limit: int = 1000, order: str = "created_at DESC"):
-    with connect() as conn:
-        rows = conn.execute(f"SELECT * FROM papers WHERE status=? ORDER BY {order} LIMIT ?", (status, limit))
-        return [row_to_dict(r) for r in rows]
+def get_paper_by_uid(uid: str):
+    with engine().connect() as conn:
+        return _row(conn.execute(select(papers).where(papers.c.uid == uid)).first())
+
+
+_ORDERS = {
+    "recent": (papers.c.created_at.desc(),),
+    "score": (papers.c.score_overall.desc(), papers.c.created_at.desc()),
+    "relevance": (papers.c.relevance.desc(), papers.c.created_at.desc()),
+}
+
+
+def papers_by_status(status: str, limit: int = 1000, order: str = "recent"):
+    q = select(papers).where(papers.c.status == status).order_by(*_ORDERS[order]).limit(limit)
+    with engine().connect() as conn:
+        return _rows(conn.execute(q))
 
 
 def query_papers(status="done", keyword=None, search=None, sort="recent", days=None, limit=60, offset=0):
-    q = "SELECT * FROM papers WHERE status=?"
-    args = [status]
+    q = select(papers).where(papers.c.status == status)
     if keyword:
-        q += " AND matched_keywords LIKE ?"
-        args.append(f'%"{keyword}"%')
+        q = q.where(papers.c.matched_keywords.like(f'%{json.dumps(keyword, ensure_ascii=False)}%'))
     if search:
-        q += " AND (title LIKE ? OR abstract LIKE ? OR review LIKE ?)"
-        args += [f"%{search}%"] * 3
+        pat = f"%{search}%"
+        q = q.where(papers.c.title.ilike(pat) | papers.c.abstract.ilike(pat) | papers.c.review.ilike(pat))
     if days:
-        q += " AND created_at >= datetime('now', ?)"
-        args.append(f"-{int(days)} days")
-    q += {
-        "score": " ORDER BY score_overall DESC, created_at DESC",
-        "relevance": " ORDER BY relevance DESC, created_at DESC",
-    }.get(sort, " ORDER BY created_at DESC")
-    q += " LIMIT ? OFFSET ?"
-    args += [limit, offset]
-    with connect() as conn:
-        return [row_to_dict(r) for r in conn.execute(q, args)]
+        q = q.where(papers.c.created_at >= ago_iso(days=int(days)))
+    q = q.order_by(*_ORDERS.get(sort, _ORDERS["recent"])).limit(limit).offset(offset)
+    with engine().connect() as conn:
+        return _rows(conn.execute(q))
 
 
 def paper_counts():
-    with connect() as conn:
-        rows = conn.execute("SELECT status, COUNT(*) AS n FROM papers GROUP BY status").fetchall()
-        today = conn.execute(
-            "SELECT COUNT(*) FROM papers WHERE status='done' AND updated_at >= datetime('now','-1 day')"
-        ).fetchone()[0]
-    counts = {r["status"]: r["n"] for r in rows}
+    with engine().connect() as conn:
+        rows = conn.execute(select(papers.c.status, func.count()).group_by(papers.c.status)).all()
+        today = conn.execute(select(func.count()).select_from(papers)
+                             .where(papers.c.status == "done", papers.c.updated_at >= ago_iso(days=1))).scalar()
+    counts = {status: n for status, n in rows}
     counts["today"] = today
     return counts
 
 
 def keyword_activity(days: int = 14):
     """Collected-paper counts per matched keyword per day, for the trend chart."""
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT matched_keywords, substr(created_at, 1, 10) AS day FROM papers WHERE created_at >= datetime('now', ?)",
-            (f"-{days} days",),
-        ).fetchall()
+    with engine().connect() as conn:
+        rows = conn.execute(select(papers.c.matched_keywords, papers.c.created_at)
+                            .where(papers.c.created_at >= ago_iso(days=days))).all()
     out = {}
-    for r in rows:
-        for kw in json.loads(r["matched_keywords"] or "[]"):
-            out.setdefault(kw, {}).setdefault(r["day"], 0)
-            out[kw][r["day"]] += 1
+    for matched, created in rows:
+        day = created[:10]
+        for kw in json.loads(matched or "[]"):
+            out.setdefault(kw, {}).setdefault(day, 0)
+            out[kw][day] += 1
     return out
+
+
+def cost_summary(days: int = 30):
+    """Total API spend and reviewed-paper count over the last `days`."""
+    with engine().connect() as conn:
+        total, n = conn.execute(select(func.coalesce(func.sum(papers.c.cost_usd), 0.0), func.count(papers.c.cost_usd))
+                                .where(papers.c.updated_at >= ago_iso(days=days))).one()
+    return {"days": days, "total_usd": round(total or 0.0, 4), "papers": n,
+            "per_paper_usd": round((total or 0.0) / n, 4) if n else None}
 
 
 # --- runs -------------------------------------------------------------------
 
 def start_run(trigger: str) -> int:
-    with connect() as conn:
-        cur = conn.execute(
-            "INSERT INTO runs(trigger, status, started_at) VALUES (?, 'running', ?)", (trigger, now_iso())
-        )
-        return cur.lastrowid
+    with engine().begin() as conn:
+        result = conn.execute(runs.insert().values(trigger=trigger, status="running", started_at=now_iso(), stats="{}", log=""))
+        return result.inserted_primary_key[0]
+
+
+def active_run(max_age_hours: float = 3):
+    """A run still marked 'running' that started recently (any process/dyno)."""
+    with engine().connect() as conn:
+        return _row(conn.execute(select(runs).where(runs.c.status == "running", runs.c.started_at >= ago_iso(hours=max_age_hours))
+                                 .order_by(runs.c.id.desc()).limit(1)).first())
+
+
+def last_finished_run():
+    with engine().connect() as conn:
+        return _row(conn.execute(select(runs).where(runs.c.status == "ok").order_by(runs.c.id.desc()).limit(1)).first())
 
 
 def append_run_log(run_id: int, line: str):
-    with connect() as conn:
-        conn.execute("UPDATE runs SET log = log || ? WHERE id=?", (f"[{now_iso()[11:19]}] {line}\n", run_id))
+    with engine().begin() as conn:
+        conn.execute(update(runs).where(runs.c.id == run_id)
+                     .values(log=runs.c.log.concat(f"[{now_iso()[11:19]}] {line}\n")))
 
 
 def finish_run(run_id: int, status: str, stats: dict):
-    with connect() as conn:
-        conn.execute(
-            "UPDATE runs SET status=?, finished_at=?, stats=? WHERE id=?",
-            (status, now_iso(), json.dumps(stats), run_id),
-        )
+    with engine().begin() as conn:
+        conn.execute(update(runs).where(runs.c.id == run_id)
+                     .values(status=status, finished_at=now_iso(), stats=json.dumps(stats)))
 
 
 def recent_runs(limit=10):
-    with connect() as conn:
-        rows = conn.execute("SELECT * FROM runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    with engine().connect() as conn:
+        rows = conn.execute(select(runs).order_by(runs.c.id.desc()).limit(limit)).all()
     out = []
     for r in rows:
-        d = dict(r)
+        d = dict(r._mapping)
         d["stats"] = json.loads(d["stats"] or "{}")
         out.append(d)
     return out
 
 
-def mark_stale_runs():
-    """Runs left 'running' by a crashed/restarted process."""
-    with connect() as conn:
-        conn.execute("UPDATE runs SET status='aborted', finished_at=? WHERE status='running'", (now_iso(),))
-        conn.execute("UPDATE papers SET status='screened' WHERE status='reading'")
+def mark_stale_runs(max_age_hours: float = 3):
+    """Runs and papers left in progress by a process that died. Only touches old
+    ones, so a run happening in another dyno right now is left alone."""
+    cutoff = ago_iso(hours=max_age_hours)
+    with engine().begin() as conn:
+        conn.execute(update(runs).where(runs.c.status == "running", runs.c.started_at < cutoff)
+                     .values(status="aborted", finished_at=now_iso()))
+        conn.execute(update(papers).where(papers.c.status == "reading", papers.c.updated_at < cutoff)
+                     .values(status="screened"))
 
 
 # --- trending & citations ---------------------------------------------------
 
 def save_trending(kind: str, payload):
-    with connect() as conn:
-        conn.execute(
-            """INSERT INTO trending_cache(kind, payload, updated_at) VALUES (?, ?, ?)
-               ON CONFLICT(kind) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at""",
-            (kind, json.dumps(payload, ensure_ascii=False), now_iso()),
-        )
+    stmt = _insert(trending_cache).values(kind=kind, payload=json.dumps(payload, ensure_ascii=False), updated_at=now_iso())
+    with engine().begin() as conn:
+        conn.execute(stmt.on_conflict_do_update(index_elements=["kind"],
+                                                set_={"payload": stmt.excluded.payload, "updated_at": stmt.excluded.updated_at}))
 
 
 def get_trending(kind: str):
-    with connect() as conn:
-        row = conn.execute("SELECT payload, updated_at FROM trending_cache WHERE kind=?", (kind,)).fetchone()
+    with engine().connect() as conn:
+        row = conn.execute(select(trending_cache.c.payload, trending_cache.c.updated_at)
+                           .where(trending_cache.c.kind == kind)).first()
     if not row:
         return None, None
-    return json.loads(row["payload"]), row["updated_at"]
+    return json.loads(row.payload), row.updated_at
 
 
 def snapshot_citations(uid: str, count: int):
-    with connect() as conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO citation_snapshots(uid, day, count) VALUES (?, date('now'), ?)", (uid, count)
-        )
+    stmt = _insert(citation_snapshots).values(uid=uid, day=date.today().isoformat(), count=count)
+    with engine().begin() as conn:
+        conn.execute(stmt.on_conflict_do_update(index_elements=["uid", "day"], set_={"count": stmt.excluded.count}))
 
 
 def citation_growth(uid: str, days: int = 7):
     """Citations gained over the last `days`, from our own daily snapshots."""
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT day, count FROM citation_snapshots WHERE uid=? AND day >= date('now', ?) ORDER BY day",
-            (uid, f"-{days} days"),
-        ).fetchall()
+    since = (date.today() - timedelta(days=days)).isoformat()
+    with engine().connect() as conn:
+        rows = conn.execute(select(citation_snapshots.c.count)
+                            .where(citation_snapshots.c.uid == uid, citation_snapshots.c.day >= since)
+                            .order_by(citation_snapshots.c.day)).all()
     if len(rows) < 2:
         return None
-    return rows[-1]["count"] - rows[0]["count"]
+    return rows[-1][0] - rows[0][0]
+
+
+# --- blobs (used by storage.py when STORAGE_BACKEND=db) ---------------------
+
+def put_blob(key: str, data: bytes, content_type: str):
+    stmt = _insert(blobs).values(key=key, data=data, content_type=content_type, updated_at=now_iso())
+    with engine().begin() as conn:
+        conn.execute(stmt.on_conflict_do_update(index_elements=["key"], set_={
+            "data": stmt.excluded.data, "content_type": stmt.excluded.content_type, "updated_at": stmt.excluded.updated_at}))
+
+
+def get_blob(key: str):
+    with engine().connect() as conn:
+        row = conn.execute(select(blobs.c.data, blobs.c.content_type).where(blobs.c.key == key)).first()
+    return (bytes(row.data), row.content_type) if row else None
+
+
+def delete_blobs(prefix: str):
+    with engine().begin() as conn:
+        conn.execute(delete(blobs).where(blobs.c.key.like(f"{prefix}%")))

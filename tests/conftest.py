@@ -10,6 +10,12 @@ _tmp = tempfile.mkdtemp(prefix="paperagent-test-")
 os.environ["DATA_DIR"] = _tmp
 os.environ["SCHEDULER_ENABLED"] = "0"
 os.environ["ADMIN_PASSWORD"] = ""
+# Run the suite against Postgres (as on Heroku) with e.g.
+#   TEST_DATABASE_URL=postgresql://app@127.0.0.1:5432/starwars pytest tests
+# That also switches figures/cards to the database blob storage.
+os.environ.pop("DATABASE_URL", None)
+if os.environ.get("TEST_DATABASE_URL"):
+    os.environ["DATABASE_URL"] = os.environ["TEST_DATABASE_URL"]
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -28,7 +34,9 @@ def sample_pdf():
 def fresh_db():
     from paperagent import config, db
 
-    if config.DB_PATH.exists():
+    if os.environ.get("DATABASE_URL"):
+        db.metadata.drop_all(db.engine())
+    elif config.DB_PATH.exists():
         config.DB_PATH.unlink()
     db.init_db()
     return db
