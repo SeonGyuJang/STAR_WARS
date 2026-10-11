@@ -53,7 +53,7 @@ SCHEDULER_ENABLED = os.environ.get("SCHEDULER_ENABLED", "1") == "1"
 OPENALEX_MAILTO = os.environ.get("OPENALEX_MAILTO", "")
 SEMANTIC_SCHOLAR_API_KEY = os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "")
 HTTP_USER_AGENT = os.environ.get(
-    "HTTP_USER_AGENT", "PaperPulse/1.0 (research digest bot; +https://github.com/SeonGyuJang/STAR_WARS)"
+    "HTTP_USER_AGENT", "STARWARS-Research/1.0 (paper digest bot; +https://github.com/SeonGyuJang/STAR_WARS)"
 )
 
 # Google Drive (optional). Either a service-account JSON (upload into a Shared
@@ -67,13 +67,17 @@ GOOGLE_OAUTH_TOKEN_FILE = os.environ.get("GOOGLE_OAUTH_TOKEN_FILE", str(DATA_DIR
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-me")
 # When set, adding/removing keywords & journals and manual runs require login.
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
-SITE_NAME = os.environ.get("SITE_NAME", "Paper Pulse")
+SITE_NAME = os.environ.get("SITE_NAME", "STAR WARS")
 
-# --- Card news ------------------------------------------------------------
-CARD_BRAND = os.environ.get("CARD_BRAND", "PAPER PULSE")
-CARD_HANDLE = os.environ.get("CARD_HANDLE", "@paper.pulse")
-CARD_OUTRO_LINES = [
-    s.strip() for s in os.environ.get("CARD_OUTRO_LINES", "READ,PAPERS,AS FAST AS,POSSIBLE").split(",") if s.strip()
+# --- Brand / card news ------------------------------------------------------
+# STAR WARS = Smart Topic Analysis & Rating : Worthwise Article Research System
+CARD_BRAND = os.environ.get("CARD_BRAND", "STAR WARS")
+CARD_HANDLE = os.environ.get("CARD_HANDLE", "@starwars.research")
+BRAND_TAGLINE = os.environ.get("BRAND_TAGLINE", "Smart Topic Analysis & Rating · Worthwise Article Research System")
+# (initial letter, rest of word) pairs spelled out on the closing slide
+BRAND_ACRONYM = [
+    ("S", "mart"), ("T", "opic"), ("A", "nalysis &"), ("R", "ating"),
+    ("W", "orthwise"), ("A", "rticle"), ("R", "esearch"), ("S", "ystem"),
 ]
 CHROMIUM_EXECUTABLE = os.environ.get("CHROMIUM_EXECUTABLE", "")
 

@@ -1,4 +1,6 @@
-"""Paper Pulse - a Claude agent that reads new papers and publishes a dashboard."""
+"""STAR WARS - Smart Topic Analysis & Rating : Worthwise Article Research System.
+
+A Claude agent that reads new papers, rates them and publishes a dashboard."""
 import logging
 import os
 

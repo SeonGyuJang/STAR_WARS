@@ -1,4 +1,8 @@
-# Paper Pulse — 논문을 읽고 평가하는 Claude 에이전트 + 대시보드
+# STAR✦WARS
+
+**S**mart **T**opic **A**nalysis & **R**ating : **W**orthwise **A**rticle **R**esearch **S**ystem
+
+읽을 가치가 있는 논문만 골라 읽고, 평가하고, 정리하는 Claude 에이전트 + 대시보드 + 인스타 카드뉴스.
 
 관심 키워드와 저널을 등록해 두면 에이전트가 **N시간마다** 새 논문을 찾습니다. 찾은 논문은 **PDF 전문을 읽고**
 **방법론 신뢰도·참신성**으로 평점을 매긴 뒤 한국어로 요약합니다. 결과는 누구나 볼 수 있는 Flask 대시보드에 올라가고,
@@ -30,9 +34,26 @@
 | 관리 | 대시보드에서 키워드 추가·삭제, 저널 검색 후 추가(OpenAlex), arXiv 카테고리 추가, 소스 켜기·끄기, 실행 간격·리뷰 수·관련도 기준 변경, 즉시 실행, arXiv 링크로 특정 논문 바로 리뷰 |
 | 카드뉴스 | 표지(헤드라인·평점) → 문제 → 방법 → 결과(논문 Figure와 핵심 수치) → 요약 표 → 아웃트로 순서의 6장. 슬라이드별 PNG와 ZIP을 내려받을 수 있고, 해시태그가 포함된 인스타 캡션도 만듦 |
 
-카드뉴스 예시(테스트용 샘플 데이터로 렌더링):
+카드뉴스 예시 (테스트용 가상 논문 데이터로 렌더링):
 
 <img src="docs/cardnews-sample.png" width="720">
+
+대시보드:
+
+<img src="docs/dashboard-sample.png" width="640">
+
+### 디자인 시스템
+
+학술지·리서치 리포트 같은 에디토리얼 톤입니다. 특정 영화나 IP의 시각 요소는 쓰지 않습니다.
+
+| 요소 | 값 |
+|---|---|
+| 배경 / 잉크 | 아이보리 `#F4F1EA` / 잉크 `#121317` (다크 모드는 반전) |
+| 포인트 컬러 | 버밀리언 `#E5481F` 한 가지 |
+| 워드마크 | `STAR✦WARS` — Playfair Display Bold, 넓은 자간. ✦는 "Rating"을 뜻하는 별점 마크 |
+| 본문 / 데이터 | Pretendard (한글) / JetBrains Mono (라벨·수치·메타데이터) |
+| 평점 표기 | 큰 세리프 숫자 + ✦, 방법론(잉크)·참신성(버밀리언) 10칸 세그먼트 미터 |
+| 카드 구성 | 01 표지 → 02 PROBLEM → 03 METHOD → 04 RESULT → 05 VERDICT → 06 STAR WARS 약어 아웃트로 |
 
 ## 빠른 시작
 
@@ -91,8 +112,8 @@ gunicorn -w 1 --threads 8 -b 0.0.0.0:8000 wsgi:app
 ## 카드뉴스 커스터마이징
 
 - 디자인: `paperagent/templates/cards/cards.html` (HTML/CSS 한 파일, 1080×1350)
-- 브랜드: `.env`의 `CARD_BRAND`, `CARD_HANDLE`, `CARD_OUTRO_LINES`
-- 폰트: Pretendard(본문), Playfair Display(브랜드)가 `paperagent/static/fonts`에 들어 있음 (SIL OFL 1.1)
+- 브랜드: `.env`의 `CARD_BRAND`, `CARD_HANDLE`(인스타 계정), `BRAND_TAGLINE` · 약어 풀이는 `config.BRAND_ACRONYM`
+- 폰트: Pretendard(본문), Playfair Display(워드마크·숫자), JetBrains Mono(데이터 라벨)가 `paperagent/static/fonts`에 들어 있음 (모두 SIL OFL 1.1)
 - 문구를 손보고 다시 만들고 싶으면 논문 상세 페이지의 "카드뉴스 다시 만들기"를 누르거나 `python -m paperagent cards <id>`를 실행
 
 ## 디렉터리

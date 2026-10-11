@@ -1,17 +1,21 @@
 {% extends "base.html" %}
-{% block title %}{{ r.title_ko or p.title }} · {{ site_name }}{% endblock %}
+{% from "_macros.html" import spark, meter, csrf with context %}
+{% block title %}{{ r.title_ko or p.title }} — {{ site_name }}{% endblock %}
 {% block meta %}
 <meta property="og:title" content="{{ r.title_ko or p.title }}">
 <meta property="og:description" content="{{ r.one_liner or (p.abstract or '')[:150] }}">
+<meta property="og:site_name" content="{{ site_name }}">
 {% if p.card_paths %}<meta property="og:image" content="{{ url_for('web.file_card', paper_id=p.id, n=1, _external=True) }}">{% endif %}
 {% endblock %}
 {% block content %}
 <article class="detail">
-  <div class="detail-head">
-    <div class="pcard-meta">
-      <span class="src">{{ p.source_name or p.source_kind }}</span><span>{{ p.published | short_date }}</span>
-      {% if p.read_depth %}<span class="tag {{ 'warn' if p.read_depth == 'abstract' }}">{{ {'full_pdf': 'PDF 전문 읽음', 'full_text': '전문 텍스트 읽음', 'abstract': '초록만 읽음'}[p.read_depth] }}</span>{% endif %}
-      <span class="tag status-{{ p.status }}">{{ p.status }}</span>
+  <header class="detail-head">
+    <div class="meta mono">
+      <span class="src">{{ (r.card or {}).category or p.source_name or p.source_kind }}</span>
+      <span>{{ p.source_name or p.source_kind }}</span>
+      <span>{{ p.published | short_date }}</span>
+      {% if p.read_depth %}<span class="{{ 'warn' if p.read_depth == 'abstract' }}">{{ {'full_pdf': 'FULL PDF READ', 'full_text': 'FULL TEXT READ', 'abstract': 'ABSTRACT ONLY'}[p.read_depth] }}</span>{% endif %}
+      {% if p.status != 'done' %}<span class="status-{{ p.status }}">{{ p.status | upper }}</span>{% endif %}
     </div>
     <h1>{{ r.title_ko or p.title }}</h1>
     <div class="orig-title big">{{ p.title }}</div>
@@ -21,69 +25,75 @@
       {% if p.drive_link %}<a class="btn" href="{{ p.drive_link }}" target="_blank" rel="noopener">PDF 열기 (Google Drive)</a>{% endif %}
       {% if p.local_pdf %}<a class="btn ghost" href="{{ url_for('web.file_pdf', paper_id=p.id) }}" target="_blank">PDF 다운로드</a>{% endif %}
       <button class="btn ghost" data-share="{{ share_url }}" data-title="{{ r.title_ko or p.title }}">공유하기</button>
-      {% if is_admin %}
-        <form method="post" action="{{ url_for('web.reprocess', paper_id=p.id) }}"><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="btn ghost">다시 읽기</button></form>
-      {% endif %}
+      {% if is_admin %}<form method="post" action="{{ url_for('web.reprocess', paper_id=p.id) }}">{{ csrf() }}<button class="btn ghost">다시 읽기</button></form>{% endif %}
     </div>
-  </div>
+  </header>
 
   {% if p.status != 'done' %}
-    <div class="empty">
+    <div class="empty left">
       {% if p.status == 'error' %}<h3>리뷰 중 오류가 발생했습니다</h3><pre class="log">{{ p.error }}</pre>
       {% elif p.status == 'skipped' %}<h3>관련도가 낮아 건너뛴 논문입니다</h3><p>관련도 {{ p.relevance }} — {{ p.relevance_reason }}</p>
       {% else %}<h3>에이전트가 아직 이 논문을 읽지 않았습니다</h3><p>{{ p.relevance_reason or '' }}</p>{% endif %}
-      <h4>초록</h4><p>{{ p.abstract }}</p>
+      <h4 class="mono">ABSTRACT</h4><p>{{ p.abstract }}</p>
     </div>
   {% else %}
   <div class="detail-grid">
-    <div>
-      <section class="box tldr">
-        <h2>한 줄 요약</h2>
+    <div class="read">
+      <section class="lede">
+        <div class="kicker mono">{{ spark() }} TL;DR</div>
         <p class="lead">{{ r.one_liner }}</p>
         <p>{{ r.tldr }}</p>
       </section>
-      <section class="box">
-        <h2>문제</h2><p>{{ r.problem }}</p>
-        <h2>방법</h2><p>{{ r.method }}</p>
-        <h2>핵심 결과</h2><ul>{% for x in r.key_results %}<li>{{ x }}</li>{% endfor %}</ul>
-        <h2>기여</h2><ul>{% for x in r.contributions %}<li>{{ x }}</li>{% endfor %}</ul>
-        <h2>한계</h2><ul>{% for x in r.limitations %}<li>{{ x }}</li>{% endfor %}</ul>
-        <h2>왜 중요한가</h2><p>{{ r.why_it_matters }}</p>
-        <h2>누가 읽으면 좋을까</h2><p>{{ r.who_should_read }}</p>
-      </section>
+      <section class="sec"><h2><span class="mono">01</span>문제</h2><p>{{ r.problem }}</p></section>
+      <section class="sec"><h2><span class="mono">02</span>방법</h2><p>{{ r.method }}</p></section>
+      <section class="sec"><h2><span class="mono">03</span>핵심 결과</h2><ul>{% for x in r.key_results %}<li>{{ x }}</li>{% endfor %}</ul></section>
+      <section class="sec"><h2><span class="mono">04</span>기여</h2><ul>{% for x in r.contributions %}<li>{{ x }}</li>{% endfor %}</ul></section>
+      <section class="sec"><h2><span class="mono">05</span>한계</h2><ul>{% for x in r.limitations %}<li>{{ x }}</li>{% endfor %}</ul></section>
+      <section class="sec"><h2><span class="mono">06</span>왜 중요한가</h2><p>{{ r.why_it_matters }}</p></section>
+      <section class="sec"><h2><span class="mono">07</span>누가 읽으면 좋을까</h2><p>{{ r.who_should_read }}</p></section>
       {% if figures %}
-      <section class="box">
-        <h2>주요 Figure</h2>
+      <section class="sec">
+        <h2><span class="mono">FIG</span>주요 Figure</h2>
         <div class="figs">{% for f in figures[:6] %}
-          <figure><a href="{{ url_for('web.file_figure', paper_id=p.id, name='fig%d.png' % f.number) }}" target="_blank"><img loading="lazy" src="{{ url_for('web.file_figure', paper_id=p.id, name='fig%d.png' % f.number) }}" alt=""></a><figcaption>{{ f.caption[:160] }}</figcaption></figure>
+          <figure><a href="{{ url_for('web.file_figure', paper_id=p.id, name='fig%d.png' % f.number) }}" target="_blank"><img loading="lazy" src="{{ url_for('web.file_figure', paper_id=p.id, name='fig%d.png' % f.number) }}" alt=""></a>
+            <figcaption><b class="mono">FIG. {{ f.number }}</b> {{ f.caption | replace('Figure ' ~ f.number ~ ':', '') | replace('Fig. ' ~ f.number ~ ':', '') | trim | truncate(160) }}</figcaption></figure>
         {% endfor %}</div>
       </section>
       {% endif %}
     </div>
 
-    <aside>
-      <section class="box score-box">
-        <div class="overall"><b>{{ r.overall_score }}</b><span>/10</span><div class="stars">{{ r.overall_score | stars }}</div></div>
-        <div class="bar"><div class="t"><span>방법론 신뢰도</span><b>{{ r.methodology_score }}</b></div><div class="track"><div class="fill" style="width: {{ r.methodology_score * 10 }}%"></div></div><p class="small">{{ r.methodology_reason }}</p></div>
-        <div class="bar"><div class="t"><span>참신성·기여도</span><b>{{ r.novelty_score }}</b></div><div class="track"><div class="fill" style="width: {{ r.novelty_score * 10 }}%"></div></div><p class="small">{{ r.novelty_reason }}</p></div>
-        <p class="small muted">관련도 {{ p.relevance }} · {{ p.relevance_reason }}</p>
+    <aside class="sticky">
+      <section class="panel scorecard">
+        <div class="panel-h"><h3 class="mono">Star Rating</h3><span class="mono muted small">{{ (r.read_confidence or '') | upper }} CONFIDENCE</span></div>
+        <div class="score-hero">{{ r.overall_score }}{{ spark() }}<small class="mono">/10</small></div>
+        <div class="crit">
+          <div class="crit-h mono"><span>METHOD · 방법론 신뢰도</span><b>{{ r.methodology_score }}</b></div>
+          {{ meter(r.methodology_score) }}
+          <p>{{ r.methodology_reason }}</p>
+        </div>
+        <div class="crit">
+          <div class="crit-h mono"><span>NOVELTY · 참신성·기여도</span><b>{{ r.novelty_score }}</b></div>
+          {{ meter(r.novelty_score, 'accent') }}
+          <p>{{ r.novelty_reason }}</p>
+        </div>
+        <p class="small muted mono">RELEVANCE {{ p.relevance }} — <span style="font-family: inherit">{{ p.relevance_reason }}</span></p>
         <div class="tags">{% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}</div>
       </section>
 
-      <section class="box" id="cards">
-        <div class="box-h"><h2>인스타 카드뉴스</h2>{% if p.card_paths %}<a class="btn sm" href="{{ url_for('web.file_cards_zip', paper_id=p.id) }}">전체 ZIP</a>{% endif %}</div>
+      <section class="panel" id="cards">
+        <div class="panel-h"><h3 class="mono">Instagram Cards</h3>{% if p.card_paths %}<a class="mono" href="{{ url_for('web.file_cards_zip', paper_id=p.id) }}">ZIP ↓</a>{% endif %}</div>
         {% if p.card_paths %}
           <div class="carousel" data-carousel>
             <div class="slides">{% for path in p.card_paths %}<img src="{{ url_for('web.file_card', paper_id=p.id, n=loop.index) }}" alt="카드 {{ loop.index }}">{% endfor %}</div>
-            <button class="nav prev" data-prev>‹</button><button class="nav next" data-next>›</button>
+            <button class="nav prev" data-prev aria-label="이전">‹</button><button class="nav next" data-next aria-label="다음">›</button>
             <div class="dots"></div>
           </div>
-          <div class="card-dl">{% for path in p.card_paths %}<a href="{{ url_for('web.file_card', paper_id=p.id, n=loop.index, dl=1) }}">{{ loop.index }}</a>{% endfor %}</div>
+          <div class="card-dl mono"><span>PNG</span>{% for path in p.card_paths %}<a href="{{ url_for('web.file_card', paper_id=p.id, n=loop.index, dl=1) }}">{{ '%02d' % loop.index }}</a>{% endfor %}</div>
         {% else %}<p class="muted small">카드뉴스가 아직 없습니다.</p>{% endif %}
-        {% if is_admin %}<form method="post" action="{{ url_for('web.rerender', paper_id=p.id) }}"><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="btn ghost sm">카드뉴스 다시 만들기</button></form>{% endif %}
+        {% if is_admin %}<form method="post" action="{{ url_for('web.rerender', paper_id=p.id) }}">{{ csrf() }}<button class="btn ghost sm">카드뉴스 다시 만들기</button></form>{% endif %}
         {% if caption %}
-          <h3>캡션</h3>
-          <textarea class="caption" readonly rows="10" id="caption">{{ caption }}</textarea>
+          <h4 class="mono cap-h">CAPTION</h4>
+          <textarea class="caption" readonly rows="9" id="caption">{{ caption }}</textarea>
           <button class="btn sm" data-copy="#caption">캡션 복사</button>
         {% endif %}
       </section>

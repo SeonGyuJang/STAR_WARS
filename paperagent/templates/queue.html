@@ -1,18 +1,20 @@
 {% extends "base.html" %}
+{% from "_macros.html" import spark %}
 {% block title %}대기열 · {{ site_name }}{% endblock %}
 {% block content %}
-<section class="hero"><div>
+<section class="hero"><div class="hero-text">
+  <div class="kicker mono">{{ spark() }} Queue</div>
   <h1>대기열</h1>
   <p class="muted">수집됐지만 아직 리뷰되지 않은 논문입니다. 관련도가 기준 이상이면 다음 실행 때 관련도 순으로 전문을 읽습니다.</p>
 </div></section>
 {% set titles = {'screened': '읽기 대기 (관련도 통과)', 'reading': '읽는 중', 'new': '스크리닝 대기', 'error': '오류', 'skipped': '관련도 낮음 (건너뜀)'} %}
 {% for status in ['reading', 'screened', 'new', 'error', 'skipped'] %}
   {% if lists[status] %}
-  <section class="box">
-    <h2>{{ titles[status] }} <span class="muted small">{{ lists[status]|length }}</span></h2>
+  <section class="panel">
+    <div class="panel-h"><h3 class="mono">{{ status | upper }} · {{ titles[status] }}</h3><span class="mono muted small">{{ lists[status]|length }}</span></div>
     {% for p in lists[status] %}
       <div class="trow">
-        <span class="rank">{{ p.relevance if p.relevance is not none else '–' }}</span>
+        <span class="rank mono">{{ p.relevance if p.relevance is not none else '–' }}</span>
         <div><a href="{{ url_for('web.paper_detail', paper_id=p.id) }}">{{ p.title }}</a>
           <div class="small muted">{{ p.source_name }} · {{ p.published | short_date }} · {{ p.matched_keywords | join(', ') }}{% if p.relevance_reason %} · {{ p.relevance_reason }}{% endif %}</div>
           {% if is_admin and status in ('skipped', 'error', 'screened') %}

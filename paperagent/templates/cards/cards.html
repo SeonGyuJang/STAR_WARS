@@ -9,187 +9,192 @@
 @font-face { font-family: "Pretendard"; font-weight: 800; src: url("{{ fonts }}/Pretendard-ExtraBold.woff2") format("woff2"); }
 @font-face { font-family: "Playfair"; font-weight: 400; src: url("{{ fonts }}/playfair-display-latin-400-normal.woff2") format("woff2"); }
 @font-face { font-family: "Playfair"; font-weight: 700; src: url("{{ fonts }}/playfair-display-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "Mono"; font-weight: 400; src: url("{{ fonts }}/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Mono"; font-weight: 700; src: url("{{ fonts }}/jetbrains-mono-latin-700-normal.woff2") format("woff2"); }
 
 :root {
-  --ink: #0b0c0f;
-  --panel: #08090b;
-  --paper: #eef0f3;
-  --text: #ffffff;
-  --muted: #b9bec8;
-  --dim: #7b818c;
-  --accent: #33b8cc;
-  --accent-2: #6d8dff;
-  --gold: #f4c55c;
+  --paper: #f4f1ea;
+  --paper-2: #ece7dc;
+  --white: #fffdf8;
+  --ink: #121317;
+  --ink-2: #3b3d43;
+  --mute: #8b8578;
+  --rule: #d3ccbd;
+  --accent: #e5481f;
+  --night: #111215;
+  --night-mute: #6f6a60;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { background: #000; }
-body { font-family: "Pretendard", system-ui, sans-serif; -webkit-font-smoothing: antialiased; word-break: keep-all; }
-.slide { width: 1080px; height: 1350px; position: relative; overflow: hidden; background: var(--ink); color: var(--text); }
+body { font-family: "Pretendard", system-ui, sans-serif; -webkit-font-smoothing: antialiased; word-break: keep-all; color: var(--ink); }
+.slide { width: 1080px; height: 1350px; position: relative; overflow: hidden; background: var(--paper);
+         display: flex; flex-direction: column; padding: 0 72px; }
+.slide.alt { background: var(--paper-2); }
+.slide.night { background: var(--night); color: var(--paper); }
+.word, .num, .rating .big, .rating .v, .scorebar .k b, .scorebar .ov, .acro div { font-variant-numeric: lining-nums; font-feature-settings: "lnum" 1; }
+.mono { font-family: "Mono", "Pretendard", monospace; letter-spacing: .04em; }
+.spark { display: inline-block; width: 1em; height: 1em; vertical-align: -0.12em; fill: currentColor; }
 
-/* ---------- shared bits ---------- */
-.brand { font-family: "Playfair", serif; font-weight: 700; letter-spacing: .14em; font-size: 26px; color: #fff; }
-.pager { position: absolute; top: 44px; right: 48px; font-size: 24px; font-weight: 600; color: #fff;
-         background: rgba(20,22,26,.55); padding: 10px 20px; border-radius: 999px; backdrop-filter: blur(6px); }
-.badge { position: absolute; top: -56px; left: 72px; width: 112px; height: 112px; border-radius: 50%;
-         background: radial-gradient(circle at 35% 30%, #5fd6e6, var(--accent) 60%, #1f8ea0);
-         border: 6px solid #fff; display: grid; place-items: center; font-size: 54px; font-weight: 800; color: #fff;
-         box-shadow: 0 8px 24px rgba(0,0,0,.35); }
-.label { display: flex; align-items: center; gap: 12px; font-size: 30px; font-weight: 700; color: var(--accent-2); letter-spacing: .02em; }
-.label::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: var(--accent-2); }
-.foot { position: absolute; left: 72px; right: 72px; bottom: 44px; display: flex; justify-content: space-between; align-items: center;
-        font-size: 24px; color: var(--dim); }
-.foot .brand { font-size: 22px; color: #d9dce2; }
+/* masthead + footer */
+.mast { flex: none; height: 128px; display: flex; align-items: flex-end; justify-content: space-between;
+        padding-bottom: 18px; border-bottom: 3px solid currentColor; }
+.slide:not(.night) .mast { color: var(--ink); }
+.word { font-family: "Playfair", serif; font-weight: 700; font-size: 34px; letter-spacing: .2em; line-height: 1; }
+.word .spark { width: .62em; height: .62em; color: var(--accent); margin: 0 .12em 0 -.06em; vertical-align: .06em; }
+.issue { font-size: 19px; color: var(--mute); }
+.foot { flex: none; height: 92px; margin-top: auto; display: flex; align-items: center; justify-content: space-between;
+        border-top: 1px solid var(--rule); font-size: 19px; color: var(--mute); }
+.night .foot { border-top-color: #2a2b30; color: var(--night-mute); }
+.foot b { color: var(--ink); font-weight: 700; }
+.night .foot b { color: var(--paper); }
 
-/* ---------- cover ---------- */
-.cover { background: radial-gradient(1200px 800px at 85% -10%, #1d3b52 0%, transparent 60%),
-                     radial-gradient(900px 700px at -10% 110%, #2a1f45 0%, transparent 55%), var(--ink); }
-.cover .top { position: absolute; top: 60px; left: 72px; right: 72px; display: flex; justify-content: space-between; align-items: center; }
-.pill { font-size: 26px; font-weight: 700; padding: 12px 26px; border-radius: 999px; background: rgba(51,184,204,.16); color: #7fe3f1; border: 2px solid rgba(51,184,204,.45); }
-.cover .visual { position: absolute; top: 170px; left: 72px; right: 72px; height: 470px; border-radius: 28px; overflow: hidden;
-                 background: #f6f7f9; display: grid; place-items: center; box-shadow: 0 30px 60px rgba(0,0,0,.45); }
-.cover .visual img { max-width: 100%; max-height: 100%; object-fit: contain; }
-.cover .visual::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 55%, rgba(11,12,15,.55)); }
-.cover .body { position: absolute; left: 72px; right: 72px; top: 690px; }
-.cover h1 { font-size: 86px; line-height: 1.16; font-weight: 800; letter-spacing: -0.02em; max-height: 210px; }
-.cover .sub { margin-top: 26px; font-size: 34px; line-height: 1.45; color: var(--muted); font-weight: 500; max-height: 100px; }
-.cover .orig { margin-top: 30px; font-size: 25px; line-height: 1.4; color: var(--dim); font-weight: 500; max-height: 72px; overflow: hidden; }
-.scores { position: absolute; left: 72px; right: 72px; bottom: 112px; display: flex; gap: 18px; }
-.score { flex: 1; border-radius: 22px; padding: 20px 24px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); }
-.score .k { font-size: 22px; color: var(--dim); font-weight: 600; }
-.score .v { font-size: 50px; font-weight: 800; margin-top: 4px; }
-.score .v small { font-size: 24px; color: var(--dim); font-weight: 600; margin-left: 4px; }
-.score.main { background: linear-gradient(135deg, rgba(51,184,204,.28), rgba(109,141,255,.22)); border-color: rgba(127,227,241,.5); }
+.kicker { font-size: 22px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .12em; display: flex; align-items: center; gap: 12px; }
+.kicker .ko { font-family: "Pretendard"; letter-spacing: 0; text-transform: none; font-weight: 700; color: var(--ink); }
 
-/* ---------- content slides ---------- */
-.visual-area { position: absolute; top: 0; left: 0; right: 0; height: 790px; background: #202226;
-               display: grid; place-items: center; padding: 120px 56px 56px; }
-.visual-area.light { background: var(--paper); }
-.figure-card { max-width: 100%; max-height: 100%; background: #fff; border-radius: 22px; padding: 22px;
-               box-shadow: 0 24px 50px rgba(0,0,0,.28); display: grid; place-items: center; }
-.figure-card img { display: block; max-width: 920px; max-height: 570px; object-fit: contain; }
-.fig-caption { position: absolute; right: 56px; bottom: 18px; max-width: 760px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 20px; color: #6b7280; font-weight: 500; }
-.visual-area:not(.light) .fig-caption { color: #9aa0aa; }
-.stat-big { text-align: center; }
-.stat-big .num { font-size: 210px; font-weight: 800; letter-spacing: -0.04em; line-height: 1;
-                 background: linear-gradient(135deg, #7fe3f1, #8ea6ff); -webkit-background-clip: text; color: transparent; }
-.stat-big .what { margin-top: 26px; font-size: 38px; color: var(--muted); font-weight: 600; }
-.stat-chip { position: absolute; top: 112px; left: 56px; background: var(--panel); color: #fff; border-radius: 18px; padding: 16px 24px;
-             box-shadow: 0 10px 30px rgba(0,0,0,.35); }
-.stat-chip .num { font-size: 52px; font-weight: 800; color: #7fe3f1; line-height: 1.05; }
-.stat-chip .what { font-size: 22px; color: var(--muted); font-weight: 600; max-width: 360px; }
-.panel { position: absolute; left: 0; right: 0; bottom: 0; height: 560px; background: var(--panel); padding: 96px 72px 0; }
-.panel h2 { margin-top: 22px; font-size: 68px; line-height: 1.22; font-weight: 800; letter-spacing: -0.02em; max-height: 170px; }
-.panel p { margin-top: 26px; font-size: 34px; line-height: 1.55; color: #d4d7dd; font-weight: 500; max-height: 108px; }
+/* ---------- 1. cover ---------- */
+.cover .kicker { margin-top: 44px; }
+.cover h1 { margin-top: 22px; font-size: 92px; line-height: 1.12; font-weight: 800; letter-spacing: -0.035em; max-height: 216px; }
+.cover .sub { margin-top: 22px; font-size: 31px; line-height: 1.5; color: var(--ink-2); font-weight: 500; max-height: 96px; }
+.frame { position: relative; background: var(--white); border: 1px solid var(--rule); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.frame img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.cover .frame { margin-top: 34px; flex: 1; min-height: 0; padding: 22px; }
+.figcap { flex: none; display: flex; gap: 14px; margin-top: 12px; font-size: 18px; color: var(--mute); white-space: nowrap; overflow: hidden; }
+.figcap b { color: var(--ink); }
+.figcap span { overflow: hidden; text-overflow: ellipsis; }
+.rating { flex: none; margin-top: 30px; display: grid; grid-template-columns: 1.15fr 1fr 1fr; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); }
+.rating > div { padding: 20px 0 22px 26px; border-left: 1px solid var(--rule); }
+.rating > div:first-child { border-left: 0; padding-left: 0; }
+.rating .k { font-size: 17px; color: var(--mute); letter-spacing: .14em; }
+.rating .big { font-family: "Playfair", serif; font-weight: 700; font-size: 92px; line-height: 1; margin-top: 8px; display: flex; align-items: flex-start; gap: 10px; }
+.rating .big .spark { color: var(--accent); width: 34px; height: 34px; margin-top: 10px; }
+.rating .big small { font-family: "Mono"; font-size: 22px; color: var(--mute); font-weight: 400; align-self: flex-end; margin: 0 0 10px -6px; }
+.rating .v { font-family: "Playfair", serif; font-weight: 700; font-size: 56px; line-height: 1; margin: 10px 0 14px; }
+.meter { display: flex; gap: 4px; }
+.meter i { flex: 1; height: 12px; background: var(--rule); position: relative; overflow: hidden; }
+.meter i::after { content: ""; position: absolute; inset: 0; width: var(--f); background: var(--ink); }
+.meter.accent i::after { background: var(--accent); }
 
-/* ---------- summary table ---------- */
-.table-area { position: absolute; top: 0; left: 0; right: 0; height: 790px; background: #e9ebef; padding: 120px 56px 0; }
-.table { background: #fbfbfc; border-radius: 30px; padding: 26px 26px 18px; box-shadow: 0 12px 34px rgba(0,0,0,.08); }
-.row { display: flex; align-items: center; background: #fff; border: 2px solid #e6e8ec; border-radius: 18px; padding: 16px 26px; margin-bottom: 14px; min-height: 96px; }
-.row .l { width: 230px; flex-shrink: 0; }
-.row .l b { display: block; font-size: 32px; font-weight: 800; color: #17191d; }
-.row .l span { font-size: 20px; color: #6b7280; font-weight: 500; }
-.row .r { flex: 1; text-align: center; }
-.row .r b { display: block; font-size: 29px; font-weight: 800; color: #17191d; line-height: 1.3; }
-.row .r span { display: block; margin-top: 4px; font-size: 21px; color: #6b7280; font-weight: 500; }
-.table .note { border-top: 2px dashed #e1e4e8; margin-top: 8px; padding-top: 14px; text-align: center; font-size: 21px; color: #6b7280; }
-.bars { margin-top: 30px; display: flex; gap: 36px; }
-.bar { flex: 1; }
-.bar .t { display: flex; justify-content: space-between; font-size: 26px; color: #d4d7dd; font-weight: 600; }
-.bar .t b { color: #fff; font-weight: 800; }
-.bar .track { margin-top: 12px; height: 14px; border-radius: 99px; background: #23262c; overflow: hidden; }
-.bar .fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+/* ---------- 2-4. content ---------- */
+.head { display: flex; align-items: flex-end; gap: 28px; margin-top: 40px; }
+.num { font-family: "Playfair", serif; font-weight: 700; font-size: 150px; line-height: .8; color: var(--accent); letter-spacing: -0.02em; }
+.head .kicker { padding-bottom: 6px; }
+.content h2 { margin-top: 36px; font-size: 72px; line-height: 1.17; font-weight: 800; letter-spacing: -0.03em; max-height: 170px; }
+.content p { margin-top: 22px; font-size: 32px; line-height: 1.56; color: var(--ink-2); font-weight: 500; max-height: 102px; }
+.content .frame { margin-top: 38px; flex: 1; min-height: 0; padding: 26px; }
+.chip { position: absolute; left: 0; top: 0; background: var(--ink); color: var(--paper); padding: 16px 24px 18px; }
+.chip .n { font-size: 54px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+.chip .n em { font-style: normal; color: var(--accent); }
+.chip .w { margin-top: 6px; font-size: 16px; color: #b8b2a5; max-width: 340px; }
+.statbox { margin-top: 38px; flex: 1; min-height: 0; border-top: 1px solid var(--ink); display: flex; flex-direction: column; justify-content: center; }
+.statbox .n { font-size: 230px; font-weight: 800; letter-spacing: -0.055em; line-height: .95; }
+.statbox .n::after { content: ""; display: block; width: 120px; height: 10px; background: var(--accent); margin-top: 34px; }
+.statbox .w { margin-top: 26px; font-size: 22px; color: var(--mute); letter-spacing: .1em; }
+.statbox.quiet .n { font-size: 130px; color: var(--rule); }
 
-/* ---------- outro ---------- */
-.outro { background: #0c0d0f; }
-.outro .noise { position: absolute; inset: 0; opacity: .5;
-  background-image: radial-gradient(rgba(255,255,255,.035) 1px, transparent 1px); background-size: 6px 6px; }
-.outro .words { position: absolute; left: 72px; right: 72px; top: 250px; }
-.outro .words div { font-family: "Playfair", serif; font-weight: 700; font-size: 150px; line-height: 1.08; letter-spacing: -0.01em; white-space: nowrap; }
-.outro .cta { position: absolute; left: 72px; right: 72px; bottom: 150px; font-size: 32px; color: var(--muted); line-height: 1.6; font-weight: 500; }
-.outro .cta b { color: #fff; }
+/* ---------- 5. verdict ---------- */
+.verdict h2 { margin-top: 22px; font-size: 68px; line-height: 1.15; font-weight: 800; letter-spacing: -0.03em; }
+.rows { margin-top: 30px; border-top: 1px solid var(--ink); }
+.r { display: grid; grid-template-columns: 210px 1fr; gap: 24px; padding: 17px 0; border-bottom: 1px solid var(--rule); align-items: baseline; }
+.r .l b { display: block; font-size: 28px; font-weight: 800; }
+.r .l span { font-size: 16px; color: var(--mute); }
+.r .x b { display: block; font-size: 29px; font-weight: 700; line-height: 1.3; }
+.r .x span { display: block; margin-top: 2px; font-size: 21px; color: var(--ink-2); }
+.scorebar { margin-top: 30px; display: grid; grid-template-columns: 1fr 1fr 210px; gap: 30px; align-items: end; }
+.scorebar .k { font-size: 17px; color: var(--mute); letter-spacing: .14em; display: flex; justify-content: space-between; margin-bottom: 10px; }
+.scorebar .k b { color: var(--ink); font-family: "Playfair"; font-size: 30px; letter-spacing: 0; line-height: .8; }
+.scorebar .ov { text-align: right; font-family: "Playfair", serif; font-weight: 700; font-size: 84px; line-height: .85; }
+.scorebar .ov .spark { color: var(--accent); width: 30px; height: 30px; vertical-align: top; }
+.quote { margin-top: 30px; padding-left: 26px; border-left: 6px solid var(--accent); font-size: 29px; line-height: 1.5; font-weight: 600; max-height: 92px; }
+
+/* ---------- 6. outro ---------- */
+.acro { margin-top: 70px; display: grid; grid-template-columns: 1fr 1fr; column-gap: 40px; }
+.acro div { font-family: "Playfair", serif; font-size: 78px; line-height: 1.22; white-space: nowrap; color: var(--night-mute); }
+.acro b { font-weight: 700; color: var(--paper); }
+.acro div:nth-child(5) b, .acro div:nth-child(1) b { color: var(--accent); }
+.outro .line { margin-top: 64px; height: 3px; background: var(--paper); width: 100%; }
+.outro .claim { margin-top: 40px; font-size: 52px; line-height: 1.25; font-weight: 800; letter-spacing: -0.03em; }
+.outro .cta { margin-top: 22px; font-size: 27px; line-height: 1.6; color: #b8b2a5; }
+.outro .cta b { color: var(--paper); }
 </style>
 </head>
 <body>
+{% macro spark() %}<svg class="spark" viewBox="0 0 24 24"><path d="M12 0C12.9 7.6 16.4 11.1 24 12C16.4 12.9 12.9 16.4 12 24C11.1 16.4 7.6 12.9 0 12C7.6 11.1 11.1 7.6 12 0Z"/></svg>{% endmacro %}
+{% macro mast() %}<header class="mast"><div class="word">STAR{{ spark() }}WARS</div><div class="issue mono">No.{{ issue_no }} — {{ issue_date }}</div></header>{% endmacro %}
+{% macro foot(n) %}<footer class="foot mono"><span>{{ source_ref }}</span><span>{{ handle }}</span><span><b>{{ '%02d' % n }}</b> / {{ '%02d' % total }}</span></footer>{% endmacro %}
+{% macro meter(score, cls='') %}<div class="meter {{ cls }}">{% for i in range(10) %}{% set f = [[score - i, 0] | max, 1] | min %}<i style="--f: {{ (f * 100) | round | int }}%"></i>{% endfor %}</div>{% endmacro %}
 
 {# ============ 1. COVER ============ #}
-<section class="slide cover" id="s1">
-  <div class="top"><div class="brand">{{ brand }}</div><div class="pill">{{ card.category }}</div></div>
-  <div class="visual">{% if cover_image %}<img src="{{ cover_image }}">{% endif %}</div>
-  <div class="body">
-    <h1 data-fit>{{ card.cover_headline | nl2br }}</h1>
-    <div class="sub" data-fit>{{ card.cover_sub }}</div>
-    <div class="orig">{{ paper.title }}<br>{{ authors_short }} · {{ source_label }}</div>
+<section class="slide cover">
+  {{ mast() }}
+  <div class="kicker mono">{{ spark() }} {{ card.category }}</div>
+  <h1 data-fit>{{ card.cover_headline | nl2br }}</h1>
+  <div class="sub" data-fit>{{ card.cover_sub }}</div>
+  <div class="frame">{% if cover_image %}<img src="{{ cover_image }}">{% endif %}</div>
+  <div class="figcap mono"><b>PAPER</b><span>{{ paper.title }} — {{ authors_short }}</span></div>
+  <div class="rating">
+    <div><div class="k mono">STAR RATING</div><div class="big">{{ review.overall_score }}{{ spark() }}<small>/10</small></div></div>
+    <div><div class="k mono">METHOD</div><div class="v">{{ review.methodology_score }}</div>{{ meter(review.methodology_score) }}</div>
+    <div><div class="k mono">NOVELTY</div><div class="v">{{ review.novelty_score }}</div>{{ meter(review.novelty_score, 'accent') }}</div>
   </div>
-  <div class="scores">
-    <div class="score"><div class="k">방법론 신뢰도</div><div class="v">{{ review.methodology_score }}<small>/10</small></div></div>
-    <div class="score"><div class="k">참신성·기여도</div><div class="v">{{ review.novelty_score }}<small>/10</small></div></div>
-    <div class="score main"><div class="k">종합 평점</div><div class="v">{{ review.overall_score }}<small>/10</small></div></div>
-  </div>
-  <div class="foot"><span>{{ source_ref }}</span><span>{{ handle }} · 1/{{ total }}</span></div>
+  {{ foot(1) }}
 </section>
 
 {# ============ 2-4. CONTENT ============ #}
+{% set eng = ['PROBLEM', 'METHOD', 'RESULT'] %}
 {% for s in slides %}
-<section class="slide" id="s{{ loop.index + 1 }}">
-  <div class="visual-area {% if s.figure %}light{% endif %}">
-    {% if s.figure %}
-      <div class="figure-card"><img src="{{ s.figure.uri }}"></div>
-      <div class="fig-caption">Figure {{ s.figure.number }} · {{ source_ref }}</div>
-      {% if s.highlight %}<div class="stat-chip"><div class="num">{{ s.highlight }}</div><div class="what">{{ s.highlight_label }}</div></div>{% endif %}
-    {% elif s.highlight %}
-      <div class="stat-big"><div class="num">{{ s.highlight }}</div><div class="what">{{ s.highlight_label }}</div></div>
-    {% else %}
-      <div class="stat-big"><div class="num" style="font-size:150px">{{ s.label }}</div></div>
-    {% endif %}
-  </div>
-  <div class="pager">{{ loop.index + 1 }}/{{ total }}</div>
-  <div class="panel">
-    <div class="badge">{{ loop.index }}</div>
-    <div class="label">{{ s.label }}</div>
-    <h2 data-fit>{{ s.headline | nl2br }}</h2>
-    <p data-fit>{{ s.body | nl2br }}</p>
-  </div>
-  <div class="foot"><span>출처: {{ source_ref }}</span><span class="brand">{{ brand }}</span></div>
+<section class="slide content">
+  {{ mast() }}
+  <div class="head"><div class="num">{{ '%02d' % loop.index }}</div><div class="kicker mono">{{ eng[loop.index0] }} <span class="ko">{{ s.label }}</span></div></div>
+  <h2 data-fit>{{ s.headline | nl2br }}</h2>
+  <p data-fit>{{ s.body | nl2br }}</p>
+  {% if s.figure %}
+    <div class="frame"><img src="{{ s.figure.uri }}">
+      {% if s.highlight %}<div class="chip"><div class="n">{{ s.highlight }}</div><div class="w mono">{{ s.highlight_label }}</div></div>{% endif %}
+    </div>
+    <div class="figcap mono"><b>FIG. {{ s.figure.number }}</b><span>{{ s.figure.caption | replace('Figure ' ~ s.figure.number ~ ':', '') | trim }}</span></div>
+  {% elif s.highlight %}
+    <div class="statbox"><div class="n" data-fit-width>{{ s.highlight }}</div><div class="w mono">{{ s.highlight_label }}</div></div>
+  {% else %}
+    <div class="statbox quiet"><div class="n">{{ eng[loop.index0] }}</div></div>
+  {% endif %}
+  {{ foot(loop.index + 1) }}
 </section>
 {% endfor %}
 
-{# ============ 5. SUMMARY TABLE ============ #}
-<section class="slide" id="s{{ total - 1 }}">
-  <div class="table-area">
-    <div class="table">
-      {% for r in card.summary_rows %}
-      <div class="row"><div class="l"><b>{{ r.label }}</b><span>{{ r.sub }}</span></div>
-        <div class="r"><b>{{ r.value }}</b><span>{{ r.value_sub }}</span></div></div>
-      {% endfor %}
-      <div class="note">{{ paper_short }} · {{ source_ref }} · {{ date_label }}</div>
-    </div>
+{# ============ 5. VERDICT ============ #}
+<section class="slide alt verdict">
+  {{ mast() }}
+  <div class="kicker mono" style="margin-top: 44px">{{ '%02d' % (slides|length + 1) }} — VERDICT <span class="ko">정리</span></div>
+  <h2>한눈에 보는<br>이 논문의 핵심</h2>
+  <div class="rows">
+    {% for r in card.summary_rows %}
+    <div class="r"><div class="l"><b>{{ r.label }}</b><span>{{ r.sub }}</span></div><div class="x"><b>{{ r.value }}</b><span>{{ r.value_sub }}</span></div></div>
+    {% endfor %}
   </div>
-  <div class="pager">{{ total - 1 }}/{{ total }}</div>
-  <div class="panel">
-    <div class="badge">{{ slides|length + 1 }}</div>
-    <div class="label">정리</div>
-    <h2 data-fit>한눈에 보는<br>이 논문의 핵심</h2>
-    <div class="bars">
-      <div class="bar"><div class="t"><span>방법론 신뢰도</span><b>{{ review.methodology_score }}</b></div><div class="track"><div class="fill" style="width: {{ review.methodology_score * 10 }}%"></div></div></div>
-      <div class="bar"><div class="t"><span>참신성·기여도</span><b>{{ review.novelty_score }}</b></div><div class="track"><div class="fill" style="width: {{ review.novelty_score * 10 }}%"></div></div></div>
-    </div>
-    <p data-fit style="font-size:30px">{{ review.one_liner }}</p>
+  <div class="scorebar">
+    <div><div class="k mono"><span>METHOD</span><b>{{ review.methodology_score }}</b></div>{{ meter(review.methodology_score) }}</div>
+    <div><div class="k mono"><span>NOVELTY</span><b>{{ review.novelty_score }}</b></div>{{ meter(review.novelty_score, 'accent') }}</div>
+    <div class="ov">{{ review.overall_score }}{{ spark() }}</div>
   </div>
-  <div class="foot"><span>평가: Claude 에이전트 · 원문 전체 리뷰</span><span class="brand">{{ brand }}</span></div>
+  <div class="quote" data-fit>{{ review.one_liner }}</div>
+  {{ foot(total - 1) }}
 </section>
 
 {# ============ 6. OUTRO ============ #}
-<section class="slide outro" id="s{{ total }}">
-  <div class="noise"></div>
-  <div class="pager">{{ total }}/{{ total }}</div>
-  <div class="words">
-    {% for w in outro_lines %}<div style="color: rgba(255,255,255,{{ [1 - loop.index0 * 0.22, 0.2] | max }})" data-fit-width>{{ w }}</div>{% endfor %}
+<section class="slide night outro">
+  {{ mast() }}
+  <div class="acro">
+    {% for initial, rest in acronym[:4] %}<div style="grid-column: 1; grid-row: {{ loop.index }}" data-fit-width><b>{{ initial }}</b>{{ rest }}</div>{% endfor %}
+    {% for initial, rest in acronym[4:] %}<div style="grid-column: 2; grid-row: {{ loop.index }}" data-fit-width><b>{{ initial }}</b>{{ rest }}</div>{% endfor %}
   </div>
-  <div class="cta">원문 PDF와 전체 리뷰는 <b>캡션 링크</b>에서 확인하세요.<br>매일 새 논문을 읽고 정리합니다 · <b>{{ handle }}</b></div>
+  <div class="line"></div>
+  <div class="claim">읽을 가치가 있는 논문만,<br>읽고 평가하고 정리합니다.</div>
+  <div class="cta">원문 PDF와 전체 리뷰는 <b>프로필 링크</b>에서 확인하세요.<br>저장하고 팔로우하면 매일 새 논문을 받아볼 수 있어요 · <b>{{ handle }}</b></div>
+  {{ foot(total) }}
 </section>
 
 <script>
-// Shrink text that would overflow its max-height (headlines can run long).
+// Shrink text that would overflow its max-height / width (headlines can run long).
 document.fonts.ready.then(() => {
   document.querySelectorAll("[data-fit]").forEach(el => {
     const max = parseFloat(getComputedStyle(el).maxHeight) || el.clientHeight;
@@ -198,9 +203,9 @@ document.fonts.ready.then(() => {
     while (el.scrollHeight > max + 2 && size > 18) { size -= 2; el.style.fontSize = size + "px"; }
   });
   document.querySelectorAll("[data-fit-width]").forEach(el => {
-    const max = el.parentElement.clientWidth;
+    const max = el.parentElement.clientWidth / (el.style.gridColumn ? 2 : 1) - (el.style.gridColumn ? 20 : 0);
     let size = parseFloat(getComputedStyle(el).fontSize);
-    while (el.scrollWidth > max && size > 40) { size -= 4; el.style.fontSize = size + "px"; }
+    while (el.scrollWidth > max && size > 30) { size -= 3; el.style.fontSize = size + "px"; }
   });
   document.body.dataset.ready = "1";
 });

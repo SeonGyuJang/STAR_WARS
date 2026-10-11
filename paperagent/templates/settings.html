@@ -1,16 +1,18 @@
 {% extends "base.html" %}
+{% from "_macros.html" import spark %}
 {% block title %}관심 설정 · {{ site_name }}{% endblock %}
 {% macro csrf() %}<input type="hidden" name="_csrf" value="{{ csrf_token() }}">{% endmacro %}
 {% block content %}
-<section class="hero"><div>
+<section class="hero"><div class="hero-text">
+  <div class="kicker mono">{{ spark() }} Settings</div>
   <h1>관심 설정</h1>
   <p class="muted">에이전트가 따라갈 키워드·저널과 실행 주기를 관리합니다.
   {% if admin_enabled and not is_admin %}변경하려면 <a href="{{ url_for('web.login', next=request.path) }}">관리자 로그인</a>이 필요합니다.{% endif %}</p>
 </div></section>
 
 <div class="settings-grid">
-  <section class="box" id="keywords">
-    <h2>관심 키워드</h2>
+  <section class="panel" id="keywords">
+    <div class="panel-h"><h3 class="mono">Keywords · 관심 키워드</h3></div>
     <p class="small muted">제목·초록에 이 키워드가 들어간 새 논문을 수집하고, 에이전트가 관련도를 다시 판단합니다.</p>
     <div class="chips">
       {% for k in keywords %}
@@ -25,8 +27,8 @@
     {% endif %}
   </section>
 
-  <section class="box" id="sources">
-    <h2>관심 저널·소스</h2>
+  <section class="panel" id="sources">
+    <div class="panel-h"><h3 class="mono">Sources · 저널·arXiv</h3></div>
     <table class="tbl">
       <thead><tr><th>종류</th><th>이름</th><th>ID</th><th></th></tr></thead>
       <tbody>
@@ -67,8 +69,8 @@
     {% endif %}
   </section>
 
-  <section class="box" id="pipeline">
-    <h2>에이전트 실행</h2>
+  <section class="panel" id="pipeline">
+    <div class="panel-h"><h3 class="mono">Agent · 실행 설정</h3></div>
     <form method="post" action="{{ url_for('web.save_pipeline') }}" class="form-grid">{{ csrf() }}
       <label>실행 간격 (시간)<input type="number" name="interval_hours" min="1" max="168" value="{{ settings.interval_hours }}" {{ 'disabled' if not is_admin }}></label>
       <label>수집 기간 (최근 N일)<input type="number" name="lookback_days" min="1" max="30" value="{{ settings.lookback_days }}" {{ 'disabled' if not is_admin }}></label>
@@ -89,8 +91,8 @@
     {% endif %}
   </section>
 
-  <section class="box" id="runs">
-    <h2>실행 기록</h2>
+  <section class="panel" id="runs">
+    <div class="panel-h"><h3 class="mono">Runs · 실행 기록</h3></div>
     {% for run in runs %}
       <details {{ 'open' if loop.first and run.status == 'running' }}>
         <summary><span class="tag status-{{ run.status }}">{{ run.status }}</span> {{ run.started_at[:16].replace('T', ' ') }} UTC · {{ run.trigger }}

@@ -53,6 +53,8 @@ def check_csrf():
 def inject_globals():
     return {
         "site_name": config.SITE_NAME,
+        "tagline": config.BRAND_TAGLINE,
+        "today": date.today().strftime("%Y.%m.%d"),
         "csrf_token": csrf_token,
         "is_admin": is_admin(),
         "admin_enabled": bool(config.ADMIN_PASSWORD),

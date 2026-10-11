@@ -1,21 +1,23 @@
 {% extends "base.html" %}
+{% from "_macros.html" import spark, csrf with context %}
 {% block content %}
 <section class="hero">
-  <div>
-    <h1>오늘 읽을 만한 논문</h1>
-    <p class="muted">에이전트가 관심 키워드에 맞는 새 논문을 찾아 원문을 읽고, 방법론 신뢰도와 참신성으로 평가했습니다.</p>
+  <div class="hero-text">
+    <div class="kicker mono">{{ spark() }} Today's Briefing</div>
+    <h1>읽을 가치가 있는 논문만,<br>읽고 평가했습니다.</h1>
+    <p class="muted">에이전트가 관심 키워드에 맞는 새 논문을 찾아 원문 전체를 읽고, <b>방법론 신뢰도</b>와 <b>참신성</b>으로 평점을 매겼습니다.</p>
   </div>
-  <div class="stats">
-    <div class="stat"><b>{{ counts.get('today', 0) }}</b><span>24시간 내 리뷰</span></div>
-    <div class="stat"><b>{{ counts.get('done', 0) }}</b><span>누적 리뷰</span></div>
-    <div class="stat"><b>{{ counts.get('screened', 0) }}</b><span>읽기 대기</span></div>
-    <div class="stat small">
-      {% if runs %}<span>마지막 실행 {{ runs[0].started_at[:16].replace('T', ' ') }} UTC · {{ runs[0].status }}</span>{% endif %}
-      {% if next_run %}<span>다음 실행 {{ next_run.strftime('%m-%d %H:%M') }} UTC</span>{% endif %}
-      {% if is_admin %}<form method="post" action="{{ url_for('web.run_now') }}"><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="btn sm" {{ 'disabled' if running }}>{{ '실행 중…' if running else '지금 실행' }}</button></form>{% endif %}
-    </div>
-  </div>
+  <dl class="figures">
+    <div><dt class="mono">Last 24h</dt><dd>{{ counts.get('today', 0) }}</dd></div>
+    <div><dt class="mono">Reviewed</dt><dd>{{ counts.get('done', 0) }}</dd></div>
+    <div><dt class="mono">In queue</dt><dd>{{ counts.get('screened', 0) }}</dd></div>
+  </dl>
 </section>
+<div class="runbar mono">
+  {% if runs %}<span>LAST RUN {{ runs[0].started_at[:16].replace('T', ' ') }} UTC · {{ runs[0].status | upper }}</span>{% endif %}
+  {% if next_run %}<span>NEXT {{ next_run.strftime('%m-%d %H:%M') }} UTC</span>{% endif %}
+  {% if is_admin %}<form method="post" action="{{ url_for('web.run_now') }}">{{ csrf() }}<button class="btn sm" {{ 'disabled' if running }}>{{ 'Running…' if running else 'Run now' }}</button></form>{% endif %}
+</div>
 
 <div class="layout">
   <div>
@@ -44,31 +46,31 @@
       </div>
     {% else %}
       <div class="empty">
+        {{ spark('spark big') }}
         <h3>아직 리뷰된 논문이 없습니다</h3>
         <p>에이전트는 서버 시작 30초 뒤 처음 실행되고, 이후 설정한 간격마다 반복합니다.
-           <a href="{{ url_for('web.settings') }}">관심 설정</a>에서 키워드와 저널을 확인하거나 arXiv 링크를 직접 추가해 보세요.</p>
+           <a href="{{ url_for('web.settings') }}">Settings</a>에서 키워드와 저널을 확인하거나 arXiv 링크를 직접 추가해 보세요.</p>
       </div>
     {% endif %}
   </div>
 
   <aside class="side">
-    <div class="box">
-      <div class="box-h"><h3>🔥 오늘 화제의 논문</h3><a href="{{ url_for('web.trending_view') }}">더보기</a></div>
+    <section class="panel">
+      <div class="panel-h"><h3 class="mono">Hot Today</h3><a class="mono" href="{{ url_for('web.trending_view') }}#hf">All →</a></div>
       {% for t in hf %}
-        <a class="mini" href="{{ t.url }}" target="_blank" rel="noopener"><span class="up">▲ {{ t.upvotes }}</span>{{ t.title }}</a>
-      {% else %}<p class="muted small">트렌드 데이터가 아직 없습니다.</p>{% endfor %}
-    </div>
-    <div class="box">
-      <div class="box-h"><h3>📈 인용 급증</h3><a href="{{ url_for('web.trending_view') }}#surge">더보기</a></div>
+        <a class="mini" href="{{ t.url }}" target="_blank" rel="noopener"><span class="n mono">▲{{ t.upvotes }}</span><span>{{ t.title }}</span></a>
+      {% else %}<p class="muted small">다음 실행 때 채워집니다.</p>{% endfor %}
+    </section>
+    <section class="panel">
+      <div class="panel-h"><h3 class="mono">Citation Surge</h3><a class="mono" href="{{ url_for('web.trending_view') }}#surge">All →</a></div>
       {% for t in surge %}
-        <a class="mini" href="{{ t.url }}" target="_blank" rel="noopener"><span class="up">+{{ t.this_year }}</span>{{ t.title }}</a>
-      {% else %}<p class="muted small">트렌드 데이터가 아직 없습니다.</p>{% endfor %}
-    </div>
-    <div class="box">
-      <h3>관심 키워드</h3>
+        <a class="mini" href="{{ t.url }}" target="_blank" rel="noopener"><span class="n mono">+{{ t.this_year }}</span><span>{{ t.title }}</span></a>
+      {% else %}<p class="muted small">다음 실행 때 채워집니다.</p>{% endfor %}
+    </section>
+    <section class="panel">
+      <div class="panel-h"><h3 class="mono">Watching</h3><a class="mono" href="{{ url_for('web.settings') }}">Edit →</a></div>
       <div class="tags">{% for k in keywords %}<a class="tag kw" href="{{ url_for('web.index', keyword=k.term) }}">{{ k.term }}</a>{% endfor %}</div>
-      <a class="small" href="{{ url_for('web.settings') }}">키워드·저널 관리 →</a>
-    </div>
+    </section>
   </aside>
 </div>
 {% endblock %}

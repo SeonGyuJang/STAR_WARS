@@ -1,29 +1,37 @@
+{% from "_macros.html" import spark %}
 <!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}{{ site_name }}{% endblock %}</title>
+<title>{% block title %}{{ site_name }} — {{ tagline }}{% endblock %}</title>
+<meta name="description" content="{{ tagline }}">
 {% block meta %}{% endblock %}
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23e5481f' d='M12 0C12.9 7.6 16.4 11.1 24 12C16.4 12.9 12.9 16.4 12 24C11.1 16.4 7.6 12.9 0 12C7.6 11.1 11.1 7.6 12 0Z'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-<header class="topbar">
-  <div class="wrap topbar-inner">
-    <a class="logo" href="{{ url_for('web.index') }}"><span class="logo-mark">◆</span> {{ site_name }}</a>
-    <nav>
-      <a href="{{ url_for('web.index') }}" class="{{ 'on' if request.endpoint == 'web.index' }}">오늘의 논문</a>
-      <a href="{{ url_for('web.trending_view') }}" class="{{ 'on' if request.endpoint == 'web.trending_view' }}">트렌드</a>
-      <a href="{{ url_for('web.queue') }}" class="{{ 'on' if request.endpoint == 'web.queue' }}">대기열</a>
-      <a href="{{ url_for('web.settings') }}" class="{{ 'on' if request.endpoint == 'web.settings' }}">관심 설정</a>
-    </nav>
-    <div class="topbar-right">
-      {% if running %}<span class="live"><i></i>에이전트 실행 중</span>{% endif %}
-      {% if admin_enabled %}
-        {% if is_admin %}
-        <form method="post" action="{{ url_for('web.logout') }}"><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="link">로그아웃</button></form>
-        {% else %}<a class="link" href="{{ url_for('web.login') }}">관리자</a>{% endif %}
-      {% endif %}
+<header class="masthead">
+  <div class="wrap">
+    <div class="strip mono">
+      <span>{{ today }}</span>
+      <span class="hide-sm">{{ tagline }}</span>
+      <span class="strip-right">
+        {% if running %}<span class="live"><i></i>AGENT RUNNING</span>{% endif %}
+        {% if admin_enabled %}
+          {% if is_admin %}<form method="post" action="{{ url_for('web.logout') }}"><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="link">LOGOUT</button></form>
+          {% else %}<a href="{{ url_for('web.login') }}">ADMIN</a>{% endif %}
+        {% endif %}
+      </span>
+    </div>
+    <div class="mast-row">
+      <a class="wordmark" href="{{ url_for('web.index') }}">STAR{{ spark() }}WARS</a>
+      <nav class="mono">
+        <a href="{{ url_for('web.index') }}" class="{{ 'on' if request.endpoint == 'web.index' }}">Briefing</a>
+        <a href="{{ url_for('web.trending_view') }}" class="{{ 'on' if request.endpoint == 'web.trending_view' }}">Trends</a>
+        <a href="{{ url_for('web.queue') }}" class="{{ 'on' if request.endpoint == 'web.queue' }}">Queue</a>
+        <a href="{{ url_for('web.settings') }}" class="{{ 'on' if request.endpoint == 'web.settings' }}">Settings</a>
+      </nav>
     </div>
   </div>
 </header>
@@ -33,8 +41,10 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
-<footer class="wrap foot">
-  논문 요약·평점은 Claude 에이전트가 원문을 읽고 자동 생성한 것으로, 오류가 있을 수 있습니다. 중요한 판단 전에는 원문을 확인하세요.
+<footer class="wrap site-foot">
+  <div class="wordmark small">STAR{{ spark() }}WARS</div>
+  <p class="mono">Smart Topic Analysis &amp; Rating : Worthwise Article Research System</p>
+  <p>논문 요약과 평점은 Claude 에이전트가 원문을 읽고 자동으로 만든 것이라 틀릴 수 있습니다. 중요한 판단을 하기 전에는 원문을 확인하세요.</p>
 </footer>
 <script>window.CSRF = "{{ csrf_token() }}";</script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
