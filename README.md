@@ -12,9 +12,9 @@
  ┌──────────── 매 N시간 (APScheduler) ────────────────────────────────────────────┐
  │ 1. 수집      arXiv API(BeautifulSoup 파싱) · OpenAlex(저널/학회)               │
  │ 2. 스크리닝  Claude가 초록으로 관련도 0~10 판단 → 기준 미만은 건너뜀            │
- │ 3. 정독      PDF 다운로드(파일명=논문 제목) → Google Drive 업로드·공유 링크      │
- │              → Claude가 PDF 전문(본문·표·그림)을 읽고 평점·요약 (JSON 스키마)    │
- │ 4. 카드뉴스  PDF에서 Figure 자동 추출 → HTML 템플릿 → Chromium으로 PNG 렌더     │
+ │ 3. 정독      PDF를 서버 임시 폴더에 받음 → Claude가 전문(본문·표·그림)을 읽고    │
+ │              평점·요약 (JSON 스키마) → Figure 추출 후 PDF 삭제                   │
+ │ 4. 카드뉴스  추출한 Figure + 리뷰 → HTML 템플릿 → Chromium으로 PNG 렌더         │
  │ 5. 트렌드    HF Daily Papers 화제성 · OpenAlex 인용 급증/다인용 · 인용 스냅샷    │
  └────────────────────────────────────────────────────────────────────────────────┘
                      ↓ SQLite (data/paperagent.db)
@@ -26,7 +26,7 @@
 | 영역 | 내용 |
 |---|---|
 | 논문 수집 | arXiv 카테고리(cs.AI/CL/LG/CV 기본)와 저널(JMLR, TPAMI, Nature MI, TMLR 기본)에서 키워드에 맞는 새 논문 수집 |
-| PDF 보관 | `data/pdfs/<논문 제목>.pdf`로 저장. Google Drive를 설정하면 업로드하고 "링크가 있는 모든 사용자" 보기 링크를 만듦. 설정하지 않으면 대시보드에서 로컬 PDF와 원문 링크를 제공 |
+| PDF 처리 | PDF는 서버 임시 폴더에 받아 Claude가 읽고 그림을 뽑은 뒤 바로 삭제. 사용자에게는 arXiv 같은 **원문 PDF 링크**를 제공 (서버에 PDF를 쌓지 않음) |
 | 에이전트 리뷰 | Claude(`claude-opus-5-5`)가 PDF를 문서 블록으로 직접 읽음(텍스트·표·그림 포함). 한 줄 요약, TL;DR, 문제, 방법, 핵심 결과, 기여, 한계, 의의, 추천 독자를 작성 |
 | 평점 | **방법론 신뢰도**(베이스라인·ablation·재현성·근거의 충분성)와 **참신성·기여도**를 각각 1~10점으로 매기고 근거를 함께 적음. 종합 점수는 두 점수의 평균 |
 | 대시보드 | 최신순·평점순·관련도순 정렬, 키워드·기간 필터, 검색, 공유 링크(OG 이미지 포함), JSON API(`/api/papers`) |
@@ -59,9 +59,11 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium        # 카드뉴스 렌더링용 (이미 Chromium이 있으면 CHROMIUM_EXECUTABLE로 지정)
 
-cp .env.example .env               # ANTHROPIC_API_KEY, SECRET_KEY, ADMIN_PASSWORD 등 입력
+cp .env.example .env               # ANTHROPIC_API_KEY, SECRET_KEY, ADMIN_PASSWORD 등 입력 (docs/SETUP.md 참고)
 python -m paperagent serve --port 8000
 ```
+
+> **API 키 발급, 비용, 방화벽 허용 목록, systemd·HTTPS 배포, 문제 해결은 [docs/SETUP.md](docs/SETUP.md)에 단계별로 정리했습니다.**
 
 `http://<서버IP>:8000`에 접속하면 됩니다. 서버를 띄우고 30초 뒤 첫 실행이 시작되고, 이후 설정한 간격마다 반복합니다.
 
@@ -73,7 +75,6 @@ python -m paperagent run              # 파이프라인 1회 즉시 실행 (cron
 python -m paperagent review 2410.01234  # 특정 arXiv 논문을 바로 리뷰
 python -m paperagent cards 12         # 12번 논문 카드뉴스 다시 렌더
 python -m paperagent trending         # 트렌드 패널만 갱신
-python -m paperagent drive-auth       # Google Drive OAuth 1회 로그인
 python -m pytest tests                # 테스트
 ```
 
@@ -86,15 +87,6 @@ gunicorn -w 1 --threads 8 -b 0.0.0.0:8000 wsgi:app
 - 스케줄러가 하나만 돌도록 **워커는 1개**로 두세요. 스레드 수는 늘려도 됩니다.
 - 대시보드는 누구나 볼 수 있습니다. `ADMIN_PASSWORD`를 설정하면 키워드·저널 변경과 실행은 로그인한 관리자만 할 수 있습니다.
 - 앞단에 Nginx/Caddy로 HTTPS를 붙이거나, 간단히 공유하려면 `cloudflared tunnel --url http://localhost:8000`을 쓰면 됩니다.
-- Google Drive를 연결하지 않으면 로컬 PDF가 `/files/pdf/<id>`로 서빙됩니다. 공개 서버에서 PDF를 직접 배포하고 싶지 않다면 Drive 링크나 원문 링크만 쓰도록 운영하세요.
-
-## Google Drive 연결 (선택)
-
-1. Drive에 폴더를 만들고, 폴더 ID(URL의 `folders/<ID>` 부분)를 `GDRIVE_FOLDER_ID`에 넣습니다.
-2. 인증 방식은 둘 중 하나를 고릅니다.
-   - **OAuth (개인 My Drive, 권장)**: Google Cloud Console에서 *OAuth 클라이언트 ID(데스크톱 앱)*을 만들고 JSON 경로를 `GOOGLE_OAUTH_CLIENT_FILE`에 넣은 뒤 `python -m paperagent drive-auth`를 한 번 실행합니다.
-   - **서비스 계정**: `GOOGLE_SERVICE_ACCOUNT_FILE`을 지정합니다. 서비스 계정에는 저장 용량이 없으므로 폴더가 **공유 드라이브** 안에 있고, 서비스 계정이 그 드라이브의 멤버여야 합니다.
-3. 업로드한 파일에는 "링크가 있는 모든 사용자: 보기" 권한이 붙고, 대시보드의 "PDF 열기 (Google Drive)" 버튼이 그 링크로 연결됩니다.
 
 ## 설계 메모
 
@@ -119,8 +111,7 @@ gunicorn -w 1 --threads 8 -b 0.0.0.0:8000 wsgi:app
 paperagent/
   collectors/   arxiv.py · openalex.py · trending.py
   agent.py      Claude 스크리닝 + 전문 리뷰 (JSON 스키마)
-  pdfs.py       PDF 다운로드(제목 파일명) · Figure 추출
-  gdrive.py     Drive 업로드·공유 링크
+  pdfs.py       PDF 임시 다운로드 · Figure 추출
   cardnews.py   카드뉴스 렌더러 (Playwright)
   pipeline.py   수집→스크리닝→정독→카드→트렌드 한 사이클
   scheduler.py  N시간 반복

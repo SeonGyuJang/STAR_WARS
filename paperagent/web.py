@@ -9,7 +9,7 @@ from pathlib import Path
 from flask import (Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, session,
                    url_for)
 
-from . import cardnews, config, db, gdrive, pipeline, scheduler
+from . import cardnews, config, db, pipeline, scheduler
 from .collectors import openalex
 
 bp = Blueprint("web", __name__)
@@ -162,25 +162,6 @@ def queue():
 
 # --- files --------------------------------------------------------------------
 
-def _within(path: Path, root: Path) -> bool:
-    try:
-        path.resolve().relative_to(root.resolve())
-        return True
-    except ValueError:
-        return False
-
-
-@bp.route("/files/pdf/<int:paper_id>")
-def file_pdf(paper_id):
-    p = db.get_paper(paper_id)
-    if not p or not p.get("local_pdf"):
-        abort(404)
-    path = Path(p["local_pdf"])
-    if not path.exists() or not _within(path, config.PDF_DIR):
-        abort(404)
-    return send_file(path, mimetype="application/pdf", download_name=path.name)
-
-
 @bp.route("/files/card/<int:paper_id>/<int:n>")
 def file_card(paper_id, n):
     path = config.CARD_DIR / str(paper_id) / f"card_{n:02d}.png"
@@ -224,7 +205,6 @@ def settings():
         runs=db.recent_runs(8),
         next_run=scheduler.next_run(),
         candidates=candidates,
-        drive_enabled=gdrive.enabled(),
         model=config.CLAUDE_MODEL,
         screen_model=config.SCREEN_MODEL,
     )
@@ -399,7 +379,7 @@ def api_papers():
         r = p.get("review") or {}
         out.append({
             "id": p["id"], "title": p["title"], "title_ko": r.get("title_ko"), "url": p["url"],
-            "drive_link": p.get("drive_link"), "published": p.get("published"),
+            "pdf_url": p.get("pdf_url"), "published": p.get("published"),
             "scores": {"methodology": p["score_method"], "novelty": p["score_novelty"], "overall": p["score_overall"]},
             "one_liner": r.get("one_liner"), "tldr": r.get("tldr"), "tags": r.get("tags", []),
             "detail": url_for("web.paper_detail", paper_id=p["id"], _external=True),

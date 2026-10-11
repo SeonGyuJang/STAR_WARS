@@ -125,7 +125,7 @@ def render(paper: dict, review: dict, figures, out_dir: Path):
 
 def build_caption(paper, review):
     caption = review["card"]["caption"].replace("\\n", "\n").strip()
-    link = paper.get("drive_link") or paper.get("url") or ""
+    link = paper.get("url") or ""
     return f"{caption}\n\n📄 원문: {paper['title']}\n🔗 {link}\n⭐ 평점 {review['overall_score']}/10 (방법론 {review['methodology_score']} · 참신성 {review['novelty_score']})"
 
 

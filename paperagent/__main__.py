@@ -5,7 +5,6 @@
     python -m paperagent review <arxiv id or url>              review one paper now
     python -m paperagent cards <paper id>                      re-render card news
     python -m paperagent trending                              refresh trending panels
-    python -m paperagent drive-auth                            one-time Google login
 """
 import argparse
 import logging
@@ -28,7 +27,6 @@ def main(argv=None):
     c = sub.add_parser("cards")
     c.add_argument("paper_id", type=int)
     sub.add_parser("trending")
-    sub.add_parser("drive-auth")
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -63,10 +61,6 @@ def main(argv=None):
         from .collectors import trending
 
         trending.refresh_all([k["term"] for k in db.list_keywords()], logger=print)
-    elif args.cmd == "drive-auth":
-        from . import gdrive
-
-        gdrive.run_oauth_flow()
 
 
 if __name__ == "__main__":

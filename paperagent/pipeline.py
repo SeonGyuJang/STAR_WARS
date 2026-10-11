@@ -1,12 +1,13 @@
 """The repeating job: collect -> screen -> read & review -> cards -> trending."""
 import logging
+import tempfile
 import threading
 import traceback
 from pathlib import Path
 
 import anthropic
 
-from . import agent, cardnews, config, db, gdrive, pdfs
+from . import agent, cardnews, config, db, pdfs
 from .collectors import arxiv, openalex, trending
 
 log = logging.getLogger(__name__)
@@ -87,32 +88,26 @@ def screen_new(keywords, settings, say):
 
 
 def process_paper(paper: dict, keywords, say=log.info) -> bool:
-    """Download, store, fully review and render cards for one paper."""
+    """Fully review one paper and render its cards.
+
+    The PDF is downloaded into a temporary directory and deleted as soon as
+    Claude has read it and the figures are extracted; nothing but the figure
+    PNGs and cards stays on disk."""
     pid = paper["id"]
     db.update_paper(pid, status="reading", error=None)
     say(f"reading #{pid}: {paper['title'][:90]}")
     try:
-        pdf_path, figures = None, []
-        try:
-            pdf_path = pdfs.download_pdf(paper)
-            db.update_paper(pid, local_pdf=str(pdf_path))
-            paper["local_pdf"] = str(pdf_path)
-            figures = pdfs.extract_figures(pdf_path, config.FIGURE_DIR / str(pid))
-            paper["_page1"] = str(config.FIGURE_DIR / str(pid) / "page1.png")
-            say(f"  pdf saved as '{pdf_path.name}' ({len(figures)} figures)")
-        except Exception as exc:
-            say(f"  no PDF ({exc}); reviewing from abstract")
-
-        if pdf_path and gdrive.enabled():
+        with tempfile.TemporaryDirectory(prefix="paperagent-") as tmp:
+            pdf_path, figures = None, []
             try:
-                link = gdrive.upload_and_share(pdf_path)
-                db.update_paper(pid, drive_link=link)
-                paper["drive_link"] = link
-                say("  uploaded to Google Drive")
+                pdf_path = pdfs.download_pdf(paper, Path(tmp))
+                figures = pdfs.extract_figures(pdf_path, config.FIGURE_DIR / str(pid))
+                paper["_page1"] = str(config.FIGURE_DIR / str(pid) / "page1.png")
+                say(f"  downloaded PDF ({pdf_path.stat().st_size // 1024} KB, {len(figures)} figures)")
             except Exception as exc:
-                say(f"  Drive upload failed: {exc}")
-
-        review, depth = agent.review(paper, keywords, pdf_path, figures)
+                say(f"  no PDF ({exc}); reviewing from abstract")
+            review, depth = agent.review(paper, keywords, pdf_path, figures)
+        # The temporary PDF is gone from here on.
         review["_figures"] = figures
         review["_page1"] = paper.get("_page1")
         say(f"  reviewed ({depth}): method {review['methodology_score']} / novelty {review['novelty_score']}")

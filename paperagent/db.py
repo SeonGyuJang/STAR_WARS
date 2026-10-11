@@ -44,8 +44,6 @@ CREATE TABLE IF NOT EXISTS papers (
     relevance_reason TEXT,
     status TEXT NOT NULL DEFAULT 'new',
     read_depth TEXT,
-    local_pdf TEXT,
-    drive_link TEXT,
     review TEXT,
     score_method REAL,
     score_novelty REAL,

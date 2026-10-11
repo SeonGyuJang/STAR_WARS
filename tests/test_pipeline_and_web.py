@@ -74,9 +74,12 @@ def _full_run(fresh_db, sample_pdf, tmp_path):
     """collect -> screen -> review -> cards, with network and Claude mocked."""
     review = json.loads((FIXTURES / "sample_review.json").read_text())
 
-    def fake_download(paper):
-        dst = tmp_path / "Self-Verification Loops.pdf"
+    downloaded = []
+
+    def fake_download(paper, dest_dir):
+        dst = dest_dir / "Self-Verification Loops.pdf"
         shutil.copy(sample_pdf, dst)
+        downloaded.append(dst)
         return dst
 
     screen_client = {"results": [{"index": 0, "relevance": 9, "reason": "핵심 주제"}]}
@@ -102,6 +105,9 @@ def _full_run(fresh_db, sample_pdf, tmp_path):
     assert p["status"] == "done" and p["read_depth"] == "full_pdf"
     assert p["score_overall"] == 7.8 and len(p["card_paths"]) == 6
     assert [f["number"] for f in p["review"]["_figures"]] == [1, 2]
+    # the PDF was only kept for the review, then deleted with its temp dir
+    assert downloaded and not downloaded[0].exists() and not downloaded[0].parent.exists()
+    assert p["pdf_url"] == "https://arxiv.org/pdf/2610.01234"
     return p
 
 
@@ -125,7 +131,8 @@ def test_web_pages_and_admin_actions(fresh_db, sample_pdf, tmp_path):
     assert "작은 모델도" in c.get("/").get_data(as_text=True)
     assert c.get(f"/files/card/{p['id']}/1").mimetype == "image/png"
     assert c.get(f"/files/cards/{p['id']}.zip").mimetype == "application/zip"
-    assert c.get(f"/files/pdf/{p['id']}").status_code == 404  # outside PDF_DIR in this test
+    assert c.get(f"/files/pdf/{p['id']}").status_code == 404  # PDFs are never served or kept
+    assert "https://arxiv.org/pdf/2610.01234" in c.get(f"/paper/{p['id']}").get_data(as_text=True)
     assert c.get(f"/files/figure/{p['id']}/..%2Fsecret.png").status_code == 404
 
     assert c.post("/settings/keywords", data={"term": "world model"}).status_code == 400  # no CSRF

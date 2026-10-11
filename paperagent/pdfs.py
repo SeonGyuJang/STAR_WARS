@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pymupdf as fitz
 
-from . import config
 from .collectors import http_get
 
 log = logging.getLogger(__name__)
@@ -20,16 +19,14 @@ def safe_filename(title: str, max_len: int = 150) -> str:
     return (name[:max_len].rstrip() or "untitled") + ".pdf"
 
 
-def download_pdf(paper: dict) -> Path:
-    """Download the paper PDF to data/pdfs/<Paper Title>.pdf."""
+def download_pdf(paper: dict, dest_dir: Path) -> Path:
+    """Download the paper PDF to dest_dir/<Paper Title>.pdf.
+
+    The pipeline passes a temporary directory, so the PDF only exists while
+    Claude reads it and figures are extracted; readers get the original link."""
     if not paper.get("pdf_url"):
         raise ValueError("no open-access PDF url")
-    target = config.PDF_DIR / safe_filename(paper["title"])
-    if target.exists() and target.stat().st_size > 0:
-        # Same title from another paper: keep both by suffixing the uid.
-        if paper.get("local_pdf") != str(target):
-            suffix = re.sub(r"[^A-Za-z0-9.]+", "_", paper["uid"])
-            target = target.with_name(f"{target.stem} [{suffix}].pdf")
+    target = Path(dest_dir) / safe_filename(paper["title"])
     resp = http_get(paper["pdf_url"], timeout=120, stream=True)
     data = b""
     for chunk in resp.iter_content(1 << 16):

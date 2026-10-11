@@ -26,7 +26,6 @@ def _env_float(name: str, default: float) -> float:
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.environ.get("DATA_DIR", BASE_DIR / "data"))
-PDF_DIR = DATA_DIR / "pdfs"
 FIGURE_DIR = DATA_DIR / "figures"
 CARD_DIR = DATA_DIR / "cards"
 DB_PATH = Path(os.environ.get("DB_PATH", DATA_DIR / "paperagent.db"))
@@ -56,13 +55,6 @@ HTTP_USER_AGENT = os.environ.get(
     "HTTP_USER_AGENT", "STARWARS-Research/1.0 (paper digest bot; +https://github.com/SeonGyuJang/STAR_WARS)"
 )
 
-# Google Drive (optional). Either a service-account JSON (upload into a Shared
-# Drive folder) or an OAuth token created with `python -m paperagent drive-auth`.
-GDRIVE_FOLDER_ID = os.environ.get("GDRIVE_FOLDER_ID", "")
-GOOGLE_SERVICE_ACCOUNT_FILE = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE", "")
-GOOGLE_OAUTH_CLIENT_FILE = os.environ.get("GOOGLE_OAUTH_CLIENT_FILE", "")
-GOOGLE_OAUTH_TOKEN_FILE = os.environ.get("GOOGLE_OAUTH_TOKEN_FILE", str(DATA_DIR / "gdrive_token.json"))
-
 # --- Dashboard ------------------------------------------------------------
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-me")
 # When set, adding/removing keywords & journals and manual runs require login.
@@ -81,5 +73,5 @@ BRAND_ACRONYM = [
 ]
 CHROMIUM_EXECUTABLE = os.environ.get("CHROMIUM_EXECUTABLE", "")
 
-for _d in (DATA_DIR, PDF_DIR, FIGURE_DIR, CARD_DIR):
+for _d in (DATA_DIR, FIGURE_DIR, CARD_DIR):
     _d.mkdir(parents=True, exist_ok=True)
