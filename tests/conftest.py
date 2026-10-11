@@ -10,6 +10,8 @@ _tmp = tempfile.mkdtemp(prefix="paperagent-test-")
 os.environ["DATA_DIR"] = _tmp
 os.environ["SCHEDULER_ENABLED"] = "0"
 os.environ["ADMIN_PASSWORD"] = ""
+# The Claude client is mocked in tests; a non-empty key just means "configured".
+os.environ["ANTHROPIC_API_KEY"] = "test-key"
 # Run the suite against Postgres (as on Heroku) with e.g.
 #   TEST_DATABASE_URL=postgresql://app@127.0.0.1:5432/starwars pytest tests
 # That also switches figures/cards to the database blob storage.

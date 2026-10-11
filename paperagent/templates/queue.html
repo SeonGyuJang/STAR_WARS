@@ -4,22 +4,44 @@
 {% block content %}
 <section class="page-head"><div>
   <h1>대기열</h1>
-  <p>모았지만 아직 리뷰하지 않은 논문입니다. 관련도가 기준을 넘으면 다음 실행 때 관련도 순으로 읽습니다.</p>
+  <p>모은 논문은 모두 관련도(0~10)를 판단합니다. 기준({{ threshold }}점) 이상은 다음 실행 때 관련도 순으로 읽고,
+     기준 미만은 <b>관련도 미달</b>로 남겨 둡니다.{% if is_admin %} 미달 논문도 골라서 AI에게 읽힐 수 있어요.{% endif %}</p>
 </div></section>
-{% set titles = {'reading': '읽는 중', 'screened': '읽을 차례', 'new': '관련도 판단 전', 'error': '오류', 'skipped': '관련도가 낮아 건너뜀'} %}
+
+{% set sections = [
+  ('reading', '읽는 중', 'AI가 지금 읽고 있는 논문입니다.', False),
+  ('screened', '읽을 차례', '다음 실행 때 직접 고른 논문을 먼저, 그다음 관련도 높은 순으로 읽습니다.', True),
+  ('skipped', '관련도 미달', '관련도가 ' ~ threshold ~ '점 미만이라 자동으로는 읽지 않는 논문입니다.', True),
+  ('new', '관련도 판단 전', 'Claude API를 쓸 수 있을 때 다음 실행에서 판단합니다.', True),
+  ('error', '오류', '리뷰 중 오류가 난 논문입니다. 다시 읽힐 수 있습니다.', True),
+] %}
+
 <div class="side">
-{% for status in ['reading', 'screened', 'new', 'error', 'skipped'] if lists[status] %}
-  <section class="card panel">
-    <div class="panel-h"><h2>{{ titles[status] }}</h2><span>{{ lists[status]|length }}편</span></div>
-    {% for p in lists[status] %}
-      <div class="trow">
-        <span class="rank">{{ p.relevance if p.relevance is not none else '-' }}</span>
-        <div><a class="t" href="{{ url_for('web.paper_detail', paper_id=p.id) }}">{{ p.title }}</a>
-          <div class="sub">{{ p.source_name }} · {{ p.published | short_date }}{% if p.matched_keywords %} · {{ p.matched_keywords | join(', ') }}{% endif %}{% if p.relevance_reason %} · {{ p.relevance_reason }}{% endif %}</div>
-          {% if is_admin and status in ('skipped', 'error', 'screened') %}<form method="post" action="{{ url_for('web.reprocess', paper_id=p.id) }}">{{ csrf() }}<button class="link small">지금 읽기</button></form>{% endif %}
+{% for status, title, desc, pickable in sections if lists[status] %}
+  <section class="card panel" id="{{ status }}">
+    <div class="panel-h"><h2>{{ title }}</h2><span>{{ lists[status]|length }}편</span></div>
+    <p class="desc">{{ desc }}</p>
+    {% set can_pick = is_admin and pickable %}
+    <form method="post" action="{{ url_for('web.queue_read') }}">{{ csrf() }}
+      {% for p in lists[status] %}
+        <div class="trow {{ 'pick' if can_pick }}">
+          {% if can_pick %}<input type="checkbox" name="paper_id" value="{{ p.id }}" aria-label="{{ p.title }} 선택">{% endif %}
+          <span class="rank">{{ p.relevance if p.relevance is not none else '-' }}</span>
+          <div><a class="t" href="{{ url_for('web.paper_detail', paper_id=p.id) }}">{{ p.title }}</a>{% if p.priority %}<span class="tag-manual">직접 선택</span>{% endif %}
+            <div class="sub">{{ p.source_name }} · {{ p.published | short_date }}{% if p.matched_keywords %} · {{ p.matched_keywords | join(', ') }}{% endif %}</div>
+            {% if p.relevance_reason %}<div class="sub">{{ p.relevance_reason }}</div>{% endif %}
+          </div>
         </div>
+      {% endfor %}
+      {% if can_pick %}
+      <div class="pick-bar">
+        <label><input type="checkbox" data-pick-all> 전체 선택</label>
+        <span class="sp"></span>
+        <button class="btn ghost sm" name="when" value="next">다음 실행 때 먼저 읽기</button>
+        <button class="btn sm" name="when" value="now">선택한 논문 지금 읽기</button>
       </div>
-    {% endfor %}
+      {% endif %}
+    </form>
   </section>
 {% else %}
   <div class="card empty"><h3>대기 중인 논문이 없습니다</h3></div>

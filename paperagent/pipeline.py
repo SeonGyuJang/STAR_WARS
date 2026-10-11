@@ -83,18 +83,23 @@ def collect(keywords, settings, say):
 
 
 def screen_new(keywords, settings, say, meter=None):
-    pending = db.papers_by_status("new", limit=200)
-    if not pending:
-        return 0
-    say(f"screening {len(pending)} new papers with {config.SCREEN_MODEL}")
-    scores = agent.screen(pending, keywords, meter=meter)
-    kept = 0
-    for p in pending:
-        rel, reason = scores.get(p["id"], (0.0, "평가 누락"))
-        ok = rel >= settings["min_relevance"]
-        kept += ok
-        db.update_paper(p["id"], relevance=rel, relevance_reason=reason, status="screened" if ok else "skipped")
-    say(f"screening done: {kept} above relevance {settings['min_relevance']}")
+    """Rate every not-yet-rated paper. Those under the threshold are kept as
+    'skipped' (관련도 미달) so an admin can still pick them by hand."""
+    kept = total = 0
+    while True:
+        pending = db.papers_by_status("new", limit=200)
+        if not pending:
+            break
+        say(f"screening {len(pending)} new papers with {config.SCREEN_MODEL}")
+        scores = agent.screen(pending, keywords, meter=meter)
+        for p in pending:
+            rel, reason = scores.get(p["id"], (0.0, "평가 누락"))
+            ok = rel >= settings["min_relevance"]
+            kept += ok
+            db.update_paper(p["id"], relevance=rel, relevance_reason=reason, status="screened" if ok else "skipped")
+        total += len(pending)
+    if total:
+        say(f"screening done: {kept}/{total} at or above relevance {settings['min_relevance']}")
     return kept
 
 
@@ -106,6 +111,7 @@ def process_paper(paper: dict, keywords, say=log.info) -> bool:
     Claude has read it and the figures are extracted; only the figure PNGs and
     the cards are kept (in storage)."""
     pid = paper["id"]
+    before = paper["status"] if paper["status"] != "reading" else "screened"
     db.update_paper(pid, status="reading", error=None)
     say(f"reading #{pid}: {paper['title'][:90]}")
     try:
@@ -150,8 +156,13 @@ def process_paper(paper: dict, keywords, say=log.info) -> bool:
             score_overall=review["overall_score"],
             card_paths=card_paths,
             cost_usd=cost,
+            priority=0,
         )
         return cost
+    except agent.ApiUnavailable:
+        # Not this paper's fault: put it back in the queue and stop the AI steps.
+        db.update_paper(pid, status="screened" if before == "skipped" else before)
+        raise
     except (agent.ReviewError, anthropic.APIError, ValueError) as exc:
         say(f"  review failed: {exc}")
         db.update_paper(pid, status="error", error=str(exc)[:1000])
@@ -188,7 +199,12 @@ def add_arxiv_paper(arxiv_id: str):
 
 
 def run(trigger: str = "schedule", paper_ids=None):
-    """One full cycle. Returns the run id, or None if a run is already in progress."""
+    """One full cycle. Returns the run id, or None if a run is already in progress.
+
+    Collecting papers and refreshing the trend panels need no Claude API, so
+    they always run. If the API is unusable (no key, bad key, no credit...),
+    only the AI steps stop; the run is marked 'partial' and the dashboard shows
+    a notice asking the admin to check the API."""
     if not _lock.acquire(blocking=False):
         return None
     if db.active_run() is not None:  # running in another dyno/process
@@ -199,38 +215,57 @@ def run(trigger: str = "schedule", paper_ids=None):
     stats = {"new": 0, "screened_in": 0, "reviewed": 0, "failed": 0, "cost_usd": 0.0}
     meter = agent.CostMeter()
     status = "ok"
+    keywords = []
     try:
         settings = db.pipeline_settings()
         keywords = [k["term"] for k in db.list_keywords()]
         if not keywords:
             say("no keywords registered - add some on the settings page")
-        if paper_ids:
-            targets = [db.get_paper(i) for i in paper_ids]
-        else:
+        if not paper_ids:
             resolve_journals(say)
             stats["new"] = collect(keywords, settings, say)
-            stats["screened_in"] = screen_new(keywords, settings, say, meter)
-            targets = db.papers_by_status("screened", limit=settings["max_full_reads"], order="relevance")
-        for p in targets:
-            if p is None:
-                continue
-            cost = process_paper(p, keywords, say)
-            if cost is not None:
-                stats["reviewed"] += 1
-                stats["cost_usd"] += cost
+        try:
+            agent.ensure_api()
+            if paper_ids:
+                targets = [db.get_paper(i) for i in paper_ids]
             else:
-                stats["failed"] += 1
-        if not paper_ids:
-            trending.refresh_all(keywords, logger=say)
+                stats["screened_in"] = screen_new(keywords, settings, say, meter)
+                # hand-picked papers first (all of them), then the best of the rest
+                targets = db.papers_by_status("screened", limit=1000, order="relevance", priority=True)
+                targets += db.papers_by_status("screened", limit=settings["max_full_reads"], order="relevance", priority=False)
+            for p in targets:
+                if p is None:
+                    continue
+                cost = process_paper(p, keywords, say)
+                if cost is not None:
+                    stats["reviewed"] += 1
+                    stats["cost_usd"] += cost
+                else:
+                    stats["failed"] += 1
+        except agent.ApiUnavailable as exc:
+            status = "partial"
+            stats["api_error"] = exc.message
+            say(f"AI 단계 중단: {exc.message} API 키와 결제 상태를 확인하세요. 수집과 트렌드는 계속 진행합니다.")
     except Exception as exc:
         status = "error"
         say(f"run failed: {exc}\n{traceback.format_exc()[-1500:]}")
     finally:
+        if not paper_ids:
+            try:
+                trending.refresh_all(keywords, logger=say)
+            except Exception as exc:  # never let trends break the run record
+                say(f"trending failed: {exc}")
         stats["cost_usd"] = round(stats["cost_usd"] + meter.total_usd, 4)
         say(f"run cost ${stats['cost_usd']:.3f}")
         db.finish_run(run_id, status, stats)
         _lock.release()
     return run_id
+
+
+def refresh_trending_only(say=log.info):
+    """Trend panels only - no Claude API involved."""
+    keywords = [k["term"] for k in db.list_keywords()]
+    trending.refresh_all(keywords, logger=say)
 
 
 def run_in_background(trigger="manual", paper_ids=None) -> bool:

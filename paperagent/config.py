@@ -1,6 +1,7 @@
 """Runtime configuration, read from environment variables (and an optional .env file)."""
 import os
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 try:
     from dotenv import load_dotenv
@@ -27,6 +28,9 @@ def _env_float(name: str, default: float) -> float:
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.environ.get("DATA_DIR", BASE_DIR / "data"))
 DB_PATH = Path(os.environ.get("DB_PATH", DATA_DIR / "paperagent.db"))
+
+# Times on the dashboard and in run logs are shown in this zone (stored as UTC).
+TIMEZONE = ZoneInfo(os.environ.get("DISPLAY_TIMEZONE", "Asia/Seoul"))
 
 # Heroku sets DYNO on every dyno; its filesystem is wiped on each restart.
 ON_HEROKU = "DYNO" in os.environ

@@ -3,13 +3,14 @@ import hmac
 import io
 import re
 import secrets
-from datetime import date, timedelta
+import threading
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 
 from flask import (Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, session,
                    url_for)
 
-from . import cardnews, config, db, pipeline, scheduler, storage
+from . import agent, cardnews, config, db, pipeline, scheduler, storage
 from .collectors import openalex
 
 bp = Blueprint("web", __name__)
@@ -20,8 +21,17 @@ ARXIV_CAT_RE = re.compile(r"^[a-z\-]+(\.[A-Za-z\-]+)?$")
 
 # --- auth & csrf --------------------------------------------------------------
 
+LOOPBACK = {"127.0.0.1", "::1"}
+
+
 def is_admin():
-    return not config.ADMIN_PASSWORD or session.get("admin") is True
+    """Logged-in admin. Without ADMIN_PASSWORD only requests from this machine
+    (127.0.0.1, local testing) count as admin; a public server such as Heroku,
+    where requests arrive through a router, then has no admin until a password
+    is set."""
+    if config.ADMIN_PASSWORD:
+        return session.get("admin") is True
+    return request.remote_addr in LOOPBACK
 
 
 def admin_required(fn):
@@ -58,12 +68,28 @@ def inject_globals():
         "is_admin": is_admin(),
         "admin_enabled": bool(config.ADMIN_PASSWORD),
         "running": pipeline.is_running(),
+        "api": agent.api_status(),
     }
 
 
 @bp.app_template_filter("short_date")
 def short_date(value):
     return (value or "")[:10]
+
+
+@bp.app_template_filter("kst")
+def to_local(value, fmt="%Y-%m-%d %H:%M"):
+    """UTC ISO string or datetime -> display timezone (Asia/Seoul by default)."""
+    if not value:
+        return ""
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return value
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(config.TIMEZONE).strftime(fmt)
 
 
 @bp.route("/login", methods=["GET", "POST"])
@@ -105,6 +131,7 @@ def index():
         has_more=has_more,
         page=page,
         keywords=db.list_keywords(),
+        keyword_counts=db.keyword_counts(),
         counts=db.paper_counts(),
         filters={"keyword": keyword, "sort": sort, "q": search or "", "days": days},
         filter_args={k: v for k, v in {"keyword": keyword, "sort": sort, "q": search, "days": days}.items() if v},
@@ -147,8 +174,36 @@ def trending_view():
 
 @bp.route("/queue")
 def queue():
-    lists = {s: db.papers_by_status(s, limit=100) for s in ("screened", "reading", "error", "skipped", "new")}
-    return render_template("queue.html", lists=lists)
+    lists = {s: db.papers_by_status(s, limit=300, order="relevance") for s in ("screened", "reading", "error", "skipped", "new")}
+    return render_template("queue.html", lists=lists, threshold=db.pipeline_settings()["min_relevance"])
+
+
+def _api_ready_or_flash() -> bool:
+    status = agent.api_status()
+    if status.get("ok"):
+        return True
+    flash(f"Claude API를 쓸 수 없어 AI가 논문을 읽지 못합니다: {status.get('message')} "
+          "API 키와 결제 상태를 확인한 뒤 설정 페이지에서 'API 다시 확인'을 눌러 주세요.", "error")
+    return False
+
+
+@bp.route("/queue/read", methods=["POST"])
+@admin_required
+def queue_read():
+    """Hand-pick papers (including ones under the relevance threshold) for the AI to read."""
+    ids = [int(i) for i in request.form.getlist("paper_id") if i.isdigit()]
+    if not ids:
+        flash("읽힐 논문을 하나 이상 선택해 주세요.", "warn")
+        return redirect(url_for("web.queue"))
+    n = db.queue_papers(ids)
+    if request.form.get("when") == "now" and _api_ready_or_flash():
+        if pipeline.run_in_background("manual", paper_ids=ids):
+            flash(f"선택한 {n}편을 지금 읽기 시작했습니다. 몇 분 뒤 새로고침해 주세요.", "ok")
+        else:
+            flash(f"다른 실행이 진행 중이라 {n}편을 대기열 맨 앞에 넣었습니다. 다음 실행 때 가장 먼저 읽습니다.", "warn")
+    else:
+        flash(f"{n}편을 대기열 맨 앞에 넣었습니다. 다음 실행 때 가장 먼저 읽습니다.", "ok")
+    return redirect(url_for("web.queue"))
 
 
 # --- files --------------------------------------------------------------------
@@ -189,6 +244,7 @@ def file_figure(paper_id, name):
 # --- settings & admin actions -------------------------------------------------
 
 @bp.route("/settings")
+@admin_required
 def settings():
     candidates = session.pop("journal_candidates", None)
     return render_template(
@@ -204,7 +260,31 @@ def settings():
         cost=db.cost_summary(30),
         on_heroku=config.ON_HEROKU,
         scheduler_enabled=config.SCHEDULER_ENABLED,
+        timezone_name=str(config.TIMEZONE),
     )
+
+
+@bp.route("/settings/api-check", methods=["POST"])
+@admin_required
+def api_check():
+    status = agent.check_api()
+    if status.get("ok"):
+        flash("Claude API가 정상입니다. 다음 실행부터 AI가 다시 논문을 읽습니다.", "ok")
+    else:
+        flash(f"Claude API를 쓸 수 없습니다: {status.get('message')}", "error")
+    return redirect(request.referrer or url_for("web.settings"))
+
+
+@bp.route("/trending/refresh", methods=["POST"])
+@admin_required
+def trending_refresh():
+    """Refresh the trend panels (no Claude API needed)."""
+    if pipeline.is_running():
+        flash("다른 실행이 진행 중입니다. 끝나면 트렌드도 함께 갱신됩니다.", "warn")
+    else:
+        threading.Thread(target=pipeline.refresh_trending_only, daemon=True).start()
+        flash("트렌드를 갱신하고 있습니다. 1~2분 뒤 새로고침해 주세요.", "ok")
+    return redirect(url_for("web.trending_view"))
 
 
 @bp.route("/settings/keywords", methods=["POST"])
@@ -306,8 +386,12 @@ def save_pipeline():
 @bp.route("/run", methods=["POST"])
 @admin_required
 def run_now():
+    api_ok = agent.api_status().get("ok")
     if pipeline.run_in_background("manual"):
-        flash("파이프라인을 시작했습니다. 진행 상황은 설정 페이지의 실행 기록에서 볼 수 있습니다.", "ok")
+        if api_ok:
+            flash("파이프라인을 시작했습니다. 진행 상황은 설정 페이지의 실행 기록에서 볼 수 있습니다.", "ok")
+        else:
+            flash("Claude API에 문제가 있어 논문 수집과 트렌드 갱신만 진행합니다. API 키와 결제 상태를 확인해 주세요.", "warn")
     else:
         flash("이미 실행 중입니다.", "warn")
     return redirect(request.referrer or url_for("web.index"))
@@ -325,6 +409,8 @@ def add_paper():
     except Exception as exc:
         flash(f"논문을 가져오지 못했습니다: {exc}", "error")
         return redirect(request.referrer or url_for("web.settings"))
+    if not _api_ready_or_flash():
+        return redirect(url_for("web.paper_detail", paper_id=pid))
     if pipeline.run_in_background("manual", paper_ids=[pid]):
         flash("논문을 읽기 시작했습니다. 몇 분 뒤 새로고침해 주세요.", "ok")
     else:
@@ -337,11 +423,13 @@ def add_paper():
 def reprocess(paper_id):
     if not db.get_paper(paper_id):
         abort(404)
+    if not _api_ready_or_flash():
+        return redirect(request.referrer or url_for("web.paper_detail", paper_id=paper_id))
     if pipeline.run_in_background("manual", paper_ids=[paper_id]):
-        flash("다시 읽기를 시작했습니다.", "ok")
+        flash("AI가 이 논문을 읽기 시작했습니다. 몇 분 뒤 새로고침해 주세요.", "ok")
     else:
-        db.update_paper(paper_id, status="screened")
-        flash("다른 실행이 진행 중입니다. 대기열에 넣었습니다.", "warn")
+        db.queue_papers([paper_id])
+        flash("다른 실행이 진행 중입니다. 대기열 맨 앞에 넣었습니다.", "warn")
     return redirect(url_for("web.paper_detail", paper_id=paper_id))
 
 
@@ -361,8 +449,10 @@ def rerender(paper_id):
 @bp.route("/api/status")
 def api_status():
     nr = scheduler.next_run()
+    api = agent.api_status()
     return jsonify(running=pipeline.is_running(), next_run=nr.isoformat() if nr else None,
-                   counts=db.paper_counts(), last_run=(db.recent_runs(1) or [None])[0])
+                   counts=db.paper_counts(), last_run=(db.recent_runs(1) or [None])[0],
+                   api={"ok": bool(api.get("ok")), "message": api.get("message")})
 
 
 @bp.route("/api/papers")

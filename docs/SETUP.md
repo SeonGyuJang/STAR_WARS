@@ -85,7 +85,7 @@ WRITER_MODEL=claude-haiku-5-5  # 한국어 문장이 약간 단조로워질 수 
 |---|---|---|---|
 | `ANTHROPIC_API_KEY` | ✅ | | Claude API 키 |
 | `SECRET_KEY` | ✅ | `change-me` | 로그인 세션·CSRF용 비밀값. `python -c "import secrets; print(secrets.token_urlsafe(48))"`로 생성 |
-| `ADMIN_PASSWORD` | 공개 시 ✅ | (없음) | 비우면 접속한 누구나 키워드 변경·실행 가능 |
+| `ADMIN_PASSWORD` | 공개 시 ✅ | (없음) | 설정 페이지·관리 기능 로그인 비밀번호. 비우면 이 컴퓨터(127.0.0.1)에서만 관리자 |
 | `OPENALEX_MAILTO` | 권장 | | 본인 이메일. 저널 조회가 더 안정적 |
 | `SEMANTIC_SCHOLAR_API_KEY` | | | 인용 추적용. [신청 폼](https://www.semanticscholar.org/product/api)에서 발급 |
 | `CARD_HANDLE` | 권장 | `@starwars.research` | 카드뉴스에 찍히는 인스타 계정 |
@@ -104,6 +104,7 @@ WRITER_MODEL=claude-haiku-5-5  # 한국어 문장이 약간 단조로워질 수 
 | `STORAGE_BACKEND` | | 자동 | `local`(파일) 또는 `db`. `DATABASE_URL`이 있으면 `db` |
 | `SCHEDULER_ENABLED` | | 로컬 `1`, Heroku `0` | 앱 안의 자동 실행 타이머 |
 | `DATA_DIR` | | `./data` | 로컬 DB와 이미지 저장 위치 |
+| `DISPLAY_TIMEZONE` | | `Asia/Seoul` | 화면과 실행 기록에 쓰는 시간대 (DB에는 UTC로 저장) |
 | `CHROMIUM_EXECUTABLE` | | 자동 탐색 | Chrome·Chromium 경로를 직접 지정할 때만 |
 | `CLAUDE_FALLBACKS` | | `1` | 거절 시 자동 대체 모델 (Anthropic API 전용) |
 
@@ -257,6 +258,8 @@ heroku pg:backups:download                                        # 내려받기
 
 | 증상 | 원인과 해결 |
 |---|---|
+| 화면 위에 "Claude API를 쓸 수 없어 AI 리뷰가 멈춰 있습니다" | 안내 문구에 원인(키 없음, 잘못된 키, 크레딧 부족 등)이 나옵니다. 키를 고친 뒤 **API 다시 확인**을 누르세요. 그동안에도 수집·트렌드·기존 리뷰는 정상입니다. |
+| 실행 기록 상태가 "AI 중단" | 위와 같은 API 문제로 AI 단계만 건너뛴 실행입니다. 다음 실행(Heroku는 매시간 확인)에서 자동으로 다시 시도합니다. |
 | 실행 기록에 `401` / `authentication_error` | API 키가 틀렸거나 비어 있습니다. 로컬은 `.env`, Heroku는 `heroku config`로 확인하세요. |
 | `400`에 credit / billing 관련 메시지 | 크레딧이나 결제 수단이 없습니다. 콘솔 결제 메뉴를 확인하세요. |
 | `429` / `rate_limit_error` | 요청이 몰렸습니다. 자동으로 재시도합니다. 자주 나오면 "한 번에 정독할 논문" 수를 줄이세요. |
@@ -268,4 +271,5 @@ heroku pg:backups:download                                        # 내려받기
 | (Heroku) 12시간이 지났는데 실행이 안 됨 | Scheduler 작업이 `python -m paperagent run --if-due`, Every hour로 등록됐는지 확인하세요. `heroku logs --tail`에서 `app[scheduler.…]`이 붙은 줄이 실행 로그입니다. |
 | (Heroku) `H10 - App crashed` | `heroku logs --tail`에서 원인을 보세요. 대부분 환경 변수 누락이나 빌드팩 순서 문제입니다. |
 | 대시보드 상단에 "논문 읽는 중"이 계속 떠 있음 | 실행 중에 프로세스가 강제로 꺼진 경우입니다. 3시간이 지나면 자동으로 정리됩니다. |
-| 트렌드 패널이 비어 있음 | 첫 실행이 끝나야 채워집니다. "리뷰한 논문의 인용 변화"는 이틀 이상 기록이 쌓여야 보입니다. |
+| 트렌드 패널이 비어 있음 | 관리자로 트렌드 페이지의 **지금 새로고침**을 누르세요 (API 키 불필요). "리뷰한 논문의 인용 변화"는 이틀 이상 기록이 쌓여야 보입니다. |
+| 설정 메뉴가 안 보임 | 관리자만 보입니다. `ADMIN_PASSWORD`를 설정하고 **관리자 로그인**을 하세요. |

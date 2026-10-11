@@ -60,6 +60,8 @@ papers = Table(
     Column("score_novelty", Float),
     Column("score_overall", Float),
     Column("cost_usd", Float),
+    # > 0 when an admin picked the paper by hand (read first, even if below the relevance threshold)
+    Column("priority", Integer, default=0),
     Column("card_paths", Text, nullable=False, default="[]"),
     Column("citation_count", Integer),
     Column("error", Text),
@@ -338,14 +340,37 @@ def get_paper_by_uid(uid: str):
 _ORDERS = {
     "recent": (papers.c.created_at.desc(),),
     "score": (papers.c.score_overall.desc(), papers.c.created_at.desc()),
-    "relevance": (papers.c.relevance.desc(), papers.c.created_at.desc()),
+    "relevance": (func.coalesce(papers.c.priority, 0).desc(), papers.c.relevance.desc(), papers.c.created_at.desc()),
 }
 
 
-def papers_by_status(status: str, limit: int = 1000, order: str = "recent"):
-    q = select(papers).where(papers.c.status == status).order_by(*_ORDERS[order]).limit(limit)
+def papers_by_status(status: str, limit: int = 1000, order: str = "recent", priority=None):
+    q = select(papers).where(papers.c.status == status)
+    if priority is True:
+        q = q.where(func.coalesce(papers.c.priority, 0) > 0)
+    elif priority is False:
+        q = q.where(func.coalesce(papers.c.priority, 0) == 0)
     with engine().connect() as conn:
-        return _rows(conn.execute(q))
+        return _rows(conn.execute(q.order_by(*_ORDERS[order]).limit(limit)))
+
+
+def queue_papers(paper_ids, priority: int = 1):
+    """Put papers (any status except done) at the front of the reading queue."""
+    with engine().begin() as conn:
+        result = conn.execute(update(papers).where(papers.c.id.in_(list(paper_ids)), papers.c.status != "done")
+                              .values(status="screened", priority=priority, updated_at=now_iso()))
+        return result.rowcount
+
+
+def keyword_counts():
+    """Reviewed papers per keyword, for the sidebar."""
+    with engine().connect() as conn:
+        rows = conn.execute(select(papers.c.matched_keywords).where(papers.c.status == "done")).all()
+    counts = {}
+    for (matched,) in rows:
+        for kw in json.loads(matched or "[]"):
+            counts[kw] = counts.get(kw, 0) + 1
+    return counts
 
 
 def query_papers(status="done", keyword=None, search=None, sort="recent", days=None, limit=60, offset=0):
@@ -418,7 +443,7 @@ def last_finished_run():
 def append_run_log(run_id: int, line: str):
     with engine().begin() as conn:
         conn.execute(update(runs).where(runs.c.id == run_id)
-                     .values(log=runs.c.log.concat(f"[{now_iso()[11:19]}] {line}\n")))
+                     .values(log=runs.c.log.concat(f"[{datetime.now(config.TIMEZONE):%H:%M:%S}] {line}\n")))
 
 
 def finish_run(run_id: int, status: str, stats: dict):
