@@ -1,128 +1,416 @@
+<div align="center">
+
 # STAR WARS
 
 **S**mart **T**opic **A**nalysis & **R**ating : **W**orthwise **A**rticle **R**esearch **S**ystem
 
-읽을 가치가 있는 논문만 골라 읽고, 평가하고, 정리하는 Claude 에이전트 + 대시보드 + 인스타 카드뉴스.
+읽을 가치가 있는 논문만 골라 읽고, 평가하고, 인스타 카드뉴스로 만드는 Claude 에이전트
 
-관심 키워드와 저널을 등록해 두면 에이전트가 **N시간마다** 새 논문을 찾습니다. 찾은 논문은 **PDF 전문을 읽고**
-**방법론 신뢰도·참신성**으로 평점을 매긴 뒤 한국어로 요약합니다. 결과는 누구나 볼 수 있는 Flask 대시보드에 올라가고,
-공유용 **인스타 카드뉴스(1080×1350, 6장)**도 자동으로 만들어집니다.
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![Flask](https://img.shields.io/badge/Flask-3-000000?logo=flask&logoColor=white)
+![Claude](https://img.shields.io/badge/Claude-Haiku%20%C2%B7%20Opus%20%C2%B7%20Sonnet-D97757)
+![Heroku](https://img.shields.io/badge/Deploy-Heroku-430098?logo=heroku&logoColor=white)
+![Postgres](https://img.shields.io/badge/DB-SQLite%20%7C%20Postgres-4169E1?logo=postgresql&logoColor=white)
 
+[로컬에서 실행](#1-로컬에서-홈페이지-띄워-보기) ·
+[명령어](#2-명령어) ·
+[테스트](#3-테스트) ·
+[Heroku 업데이트](#5-heroku에-변경-사항-올리기) ·
+[처음 설정 (API 키·Heroku 첫 배포)](docs/SETUP.md)
+
+<img src="docs/preview-cards.png" width="860" alt="카드뉴스 6장 예시">
+
+<sub>위 카드뉴스와 아래 화면은 데모용 가상 논문으로 만든 예시입니다.</sub>
+
+</div>
+
+---
+
+## 무엇을 하나요
+
+관심 키워드와 저널을 등록해 두면 **12시간마다** 다음을 반복합니다.
+
+| | 단계 | 내용 |
+|:-:|---|---|
+| 1 | **수집** | arXiv와 관심 저널(OpenAlex)에서 키워드에 맞는 새 논문을 모읍니다 |
+| 2 | **관련도 판단** | 제목·초록을 보고 0~10점을 매겨, 7점 이상만 남깁니다 |
+| 3 | **정독 → 평가 → 작성** | PDF 전문을 읽고 **방법론 신뢰도**와 **참신성**으로 채점한 뒤, 한국어 리뷰를 씁니다 |
+| 4 | **카드뉴스** | 논문 그림과 핵심 수치로 인스타용 1080×1350 카드 6장과 캡션을 만듭니다 |
+| 5 | **트렌드** | 오늘 화제인 논문, 인용이 빠르게 느는 논문을 모읍니다 |
+
+결과는 누구나 볼 수 있는 대시보드에 올라갑니다. 키워드·저널 관리와 실행은 관리자만 할 수 있습니다.
+
+```mermaid
+flowchart LR
+    A[arXiv · 저널] -->|새 논문| B(관련도 판단<br/>Haiku)
+    B -->|7점 이상| C(정독<br/>Haiku가 PDF 전문 읽기)
+    C -->|근거 노트| D(평가<br/>Opus가 채점)
+    D --> E(작성<br/>Sonnet이 한국어 리뷰)
+    E --> F[카드뉴스 6장]
+    E --> G[(DB)]
+    F --> G
+    G --> H[대시보드]
 ```
- ┌──────────── 매 N시간 (APScheduler) ────────────────────────────────────────────┐
- │ 1. 수집      arXiv API(BeautifulSoup 파싱) · OpenAlex(저널/학회)               │
- │ 2. 스크리닝  Haiku가 초록으로 관련도 0~10 판단 → 기준(7) 미만은 건너뜀          │
- │ 3. 정독      PDF를 임시 폴더에 받음 → Haiku가 전문을 읽고 근거 노트 작성        │
- │    평가      Opus가 노트로 방법론·참신성 채점 → Sonnet이 한국어 리뷰·카드 문구   │
- │              Figure 추출 후 PDF 삭제                                            │
- │ 4. 카드뉴스  추출한 Figure + 리뷰 → HTML 템플릿 → Chromium으로 PNG 렌더         │
- │ 5. 트렌드    HF Daily Papers 화제성 · OpenAlex 인용 급증/다인용 · 인용 스냅샷    │
- └────────────────────────────────────────────────────────────────────────────────┘
-                     ↓ SQLite (로컬) / Heroku Postgres
-         Flask 대시보드: 오늘의 논문 · 논문 상세 · 트렌드 · 대기열 · 관심 설정
-```
 
-## 주요 기능
+> [!TIP]
+> **비용을 아끼는 구조입니다.** 입력이 가장 큰 PDF 정독은 가장 저렴한 Haiku가 맡습니다. 비싼 Opus는 PDF 대신 짧은 노트만 읽고 점수를 정합니다.
+> 기본 설정으로 논문 한 편에 약 $0.15~0.22, 하루 약 $1~1.4가 듭니다. 실제로 쓴 비용은 대시보드 **설정 → 모델과 비용**에서 볼 수 있습니다.
 
-| 영역 | 내용 |
-|---|---|
-| 논문 수집 | arXiv 카테고리(cs.AI/CL/LG/CV 기본)와 저널(JMLR, TPAMI, Nature MI, TMLR 기본)에서 키워드에 맞는 새 논문 수집 |
-| PDF 처리 | PDF는 서버 임시 폴더에 받아 Claude가 읽고 그림을 뽑은 뒤 바로 삭제. 사용자에게는 arXiv 같은 **원문 PDF 링크**를 제공 (서버에 PDF를 쌓지 않음) |
-| 에이전트 리뷰 | 단계마다 모델을 나눔: Haiku가 PDF 전문(텍스트·표·그림)을 읽고 근거 노트 작성 → Opus가 노트로 채점 → Sonnet이 한국어 리뷰와 카드 문구 작성. 논문당 비용이 대시보드에 표시됨 |
-| 평점 | **방법론 신뢰도**(베이스라인·ablation·재현성·근거의 충분성)와 **참신성·기여도**를 각각 1~10점으로 매기고 근거를 함께 적음. 종합 점수는 두 점수의 평균 |
-| 대시보드 | 최신순·평점순·관련도순 정렬, 키워드·기간 필터, 검색, 공유 링크(OG 이미지 포함), JSON API(`/api/papers`) |
-| 트렌드 | 🔥 오늘 화제(Hugging Face Daily Papers 추천 수) · 📈 인용 급증(올해 연환산 인용 − 작년 인용) · 🧪 최근 1년 다인용 · ⭐ 리뷰한 논문의 7일 인용 증가(Semantic Scholar 스냅샷) · 키워드별 14일 신규 논문 차트 |
-| 관리 | 대시보드에서 키워드 추가·삭제, 저널 검색 후 추가(OpenAlex), arXiv 카테고리 추가, 소스 켜기·끄기, 실행 간격·리뷰 수·관련도 기준 변경, 즉시 실행, arXiv 링크로 특정 논문 바로 리뷰 |
-| 카드뉴스 | 표지(헤드라인·평점) → 문제 → 방법 → 결과(논문 Figure와 핵심 수치) → 요약 표 → 아웃트로 순서의 6장. 슬라이드별 PNG와 ZIP을 내려받을 수 있고, 해시태그가 포함된 인스타 캡션도 만듦 |
+> [!NOTE]
+> PDF는 서버의 임시 폴더에서 읽고 바로 지웁니다. 사용자는 대시보드의 **원문 PDF 받기** 버튼으로 arXiv 같은 원문 사이트에서 받습니다.
 
-카드뉴스 예시 (테스트용 가상 논문으로 렌더링):
+<table>
+<tr>
+<td width="50%"><img src="docs/preview-home.png" alt="오늘의 논문 화면"><p align="center"><sub>오늘의 논문</sub></p></td>
+<td width="50%"><img src="docs/preview-paper.png" alt="논문 리뷰 화면"><p align="center"><sub>논문 리뷰와 평점</sub></p></td>
+</tr>
+</table>
 
-<img src="docs/cardnews-sample.png" width="720">
+---
 
-논문 상세 페이지:
+## 1. 로컬에서 홈페이지 띄워 보기
 
-<img src="docs/dashboard-sample.png" width="640">
+내 컴퓨터(`127.0.0.1`)에서 대시보드를 실행하는 방법입니다. **API 키가 없어도** 데모 데이터로 모든 화면을 확인할 수 있습니다.
 
-### 디자인 원칙
+### 준비물
 
-[awesome-claude-design](https://github.com/VoltAgent/awesome-claude-design)에 정리된 Vercel·Linear·Notion 계열 DESIGN.md의 원칙을 따랐습니다. 장식보다 내용이 먼저 보이게 하는 데 집중했습니다.
+- Python 3.10 이상 (`python3 --version`으로 확인)
+- Git
 
-- **서체는 하나**: Pretendard(400·500·600·700)만 씁니다. 고정폭 글꼴은 arXiv ID 같은 식별자에만 씁니다.
-- **문장형 제목**: 대문자 라벨과 넓은 자간 대신 문장형 한국어 제목을 쓰고, 제목 자간은 살짝 좁혔습니다.
-- **색은 최소한**: 흰 바탕, 잉크 `#171717`, 본문 회색 `#4D4D4D`, 포인트 컬러 코발트 `#2B59C3` 한 가지입니다. 다크 모드를 지원합니다.
-- **장식 대신 여백과 헤어라인**: 그라데이션·아이콘·이모지 장식을 쓰지 않습니다. 카드는 1px 테두리와 아주 옅은 그림자만 씁니다.
-- **카드뉴스 한 장에 메시지 하나**: 단계 → 헤드라인 → 두 줄 설명 → 논문 그림·핵심 수치 순서로 위계를 고정했습니다. 로고와 쪽수는 늘 같은 자리에 둡니다.
-
-## Heroku 배포
-
-`Procfile`, `app.json`, `.python-version`이 들어 있습니다. Postgres와 Scheduler 애드온, Chrome 빌드팩을 붙이고 `git push heroku main` 하면 됩니다. 단계별 명령은 [docs/SETUP.md 6장](docs/SETUP.md#6-heroku에-배포하기-권장)에 있습니다.
-
-## 빠른 시작 (로컬)
+### 1단계: 코드 받기
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
+git clone https://github.com/SeonGyuJang/STAR_WARS.git
+cd STAR_WARS
+```
+
+### 2단계: 가상환경 만들고 켜기
+
+<table>
+<tr><th>macOS · Linux</th><th>Windows (PowerShell)</th></tr>
+<tr><td>
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+</td><td>
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+</td></tr>
+</table>
+
+켜지면 터미널 앞에 `(.venv)`가 붙습니다. 새 터미널을 열 때마다 이 명령으로 다시 켜야 합니다.
+
+### 3단계: 패키지와 브라우저 설치
+
+```bash
 pip install -r requirements.txt
-playwright install chromium        # 카드뉴스 렌더링용 (이미 Chromium이 있으면 CHROMIUM_EXECUTABLE로 지정)
-
-cp .env.example .env               # ANTHROPIC_API_KEY, SECRET_KEY, ADMIN_PASSWORD 등 입력 (docs/SETUP.md 참고)
-python -m paperagent serve --port 8000
+python -m playwright install chromium     # 카드뉴스를 PNG로 찍는 브라우저 (한 번만)
 ```
 
-> **API 키 발급, 비용, 방화벽 허용 목록, systemd·HTTPS 배포, 문제 해결은 [docs/SETUP.md](docs/SETUP.md)에 단계별로 정리했습니다.**
+> [!NOTE]
+> Linux에서 Chromium 실행에 필요한 시스템 라이브러리가 없다는 오류가 나면 `python -m playwright install --with-deps chromium`을 실행하세요 (`sudo` 권한 필요).
 
-`http://<서버IP>:8000`에 접속하면 됩니다. 서버를 띄우고 30초 뒤 첫 실행이 시작되고, 이후 설정한 간격마다 반복합니다.
-
-### 명령어
+### 4단계: 설정 파일 만들기
 
 ```bash
-python -m paperagent serve            # 대시보드 + 스케줄러
-python -m paperagent run              # 파이프라인 1회 즉시 실행
-python -m paperagent run --if-due     # 설정한 간격이 지났을 때만 실행 (Heroku Scheduler·cron용)
-python -m paperagent review 2410.01234  # 특정 arXiv 논문을 바로 리뷰
-python -m paperagent cards 12         # 12번 논문 카드뉴스 다시 렌더
-python -m paperagent trending         # 트렌드 패널만 갱신
-python -m pytest tests                # 테스트
+cp .env.example .env        # Windows: copy .env.example .env
 ```
 
-### 외부에 공개하기 (누구나 접속)
+데모만 볼 때는 `.env`를 고치지 않아도 됩니다. 실제 논문을 리뷰하려면 `.env`에 API 키를 넣으세요.
 
 ```bash
-gunicorn -w 1 --threads 8 -b 0.0.0.0:8000 wsgi:app
+ANTHROPIC_API_KEY=sk-ant-...     # 발급 방법: docs/SETUP.md 2장
+ADMIN_PASSWORD=test1234          # 넣으면 관리 기능에 로그인이 필요해집니다
 ```
 
-- 스케줄러가 하나만 돌도록 **워커는 1개**로 두세요. 스레드 수는 늘려도 됩니다.
-- 대시보드는 누구나 볼 수 있습니다. `ADMIN_PASSWORD`를 설정하면 키워드·저널 변경과 실행은 로그인한 관리자만 할 수 있습니다.
-- 앞단에 Nginx/Caddy로 HTTPS를 붙이거나, 간단히 공유하려면 `cloudflared tunnel --url http://localhost:8000`을 쓰면 됩니다.
+### 5단계: 데모 데이터 넣기
 
-## 설계 메모
-
-- **Google Scholar 미사용**: Scholar는 공개 API가 없고 자동 접근을 약관으로 금지하며 CAPTCHA로 막습니다. 대신 Scholar가 색인하는 메타데이터 대부분을 담은 **OpenAlex**(저널·학회·인용 수, 무료, 키 불필요)와 **Semantic Scholar**를 씁니다. 저널 이름으로 검색해서 바로 추가할 수 있습니다.
-- **Selenium 대신 arXiv API + BeautifulSoup**: arXiv는 봇이 HTML을 긁지 말고 `export.arxiv.org` API를 쓰도록 요청합니다. 요청 사이에 3초 간격을 지키고, Atom 피드는 BeautifulSoup으로 파싱합니다. 브라우저 자동화가 필요 없으므로 더 빠르고 덜 깨집니다.
-- **전문 읽기**: PDF(최대 약 30MB·600쪽)를 base64 문서 블록으로 그대로 보내므로, Claude가 본문뿐 아니라 표와 그림도 봅니다. 이보다 크면 추출한 텍스트를 보내고, 오픈 액세스 PDF가 없는 저널 논문은 초록만 읽은 뒤 `초록만` 배지를 붙입니다.
-- **구조화 출력**: 리뷰와 카드 문구는 JSON 스키마(`output_config.format`)로 받으므로 파싱이 실패하지 않습니다. 점수는 1~10 범위로 고정하고, 추출하지 못한 Figure 번호는 버립니다.
-- **거절 대비**: Claude API의 서버 측 `fallbacks: "default"`를 켜 두었습니다. Bedrock/Vertex/Foundry를 쓴다면 `CLAUDE_FALLBACKS=0`으로 끄세요.
-- **비용**: 입력이 가장 큰 PDF 정독은 Haiku가, 점수를 정하는 평가만 Opus가 맡습니다. Opus는 PDF 대신 수천 토큰짜리 노트만 읽습니다. 기본값(12시간마다, 정독 3편, 관련도 7 이상)으로 하루 약 $1~1.4입니다. 단계별 모델과 비용은 [docs/SETUP.md](docs/SETUP.md#2-3-비용-감-잡기-단계마다-다른-모델) 참고.
-- **Figure 추출**: PyMuPDF로 각 "Figure N" 캡션 바로 위에 있는 래스터·벡터 그래픽 영역을 잘라 냅니다. Claude가 슬라이드마다 어떤 Figure를 쓸지 고릅니다(방법 슬라이드에는 개요도, 결과 슬라이드에는 결과 그래프나 표).
-
-## 카드뉴스 커스터마이징
-
-- 디자인: `paperagent/templates/cards/cards.html` (HTML/CSS 한 파일, 1080×1350)
-- 브랜드: `.env`의 `CARD_BRAND`, `CARD_HANDLE`(인스타 계정), `BRAND_TAGLINE` · 약어 풀이는 `config.BRAND_ACRONYM`
-- 폰트: Pretendard와 JetBrains Mono(식별자 전용)가 `paperagent/static/fonts`에 들어 있음 (모두 SIL OFL 1.1)
-- 문구를 손보고 다시 만들고 싶으면 논문 상세 페이지의 "카드뉴스 다시 만들기"를 누르거나 `python -m paperagent cards <id>`를 실행
-
-## 디렉터리
-
-```
-paperagent/
-  collectors/   arxiv.py · openalex.py · trending.py
-  agent.py      Claude 스크리닝 + 전문 리뷰 (JSON 스키마)
-  pdfs.py       PDF 임시 다운로드 · Figure 추출
-  cardnews.py   카드뉴스 렌더러 (Playwright)
-  pipeline.py   수집→스크리닝→정독→카드→트렌드 한 사이클
-  scheduler.py  N시간 반복
-  web.py        Flask 라우트 · templates/ · static/
-tests/          pytest (네트워크·Claude 호출은 mock 처리)
+```bash
+python -m paperagent demo
 ```
 
-> 논문 요약과 평점은 에이전트가 자동으로 만든 것이라 틀릴 수 있습니다. 중요한 판단을 하기 전에는 원문을 확인하세요.
+`demo paper #1 added - open /paper/1 on the dashboard`가 나오면 성공입니다.
+가상 논문 1편이 리뷰와 카드뉴스 6장까지 갖춰 들어가고, 대기열에도 논문 3편이 들어갑니다. API 호출은 하지 않습니다.
+
+### 6단계: 서버 실행
+
+```bash
+python -m paperagent serve --host 127.0.0.1 --port 8000 --no-scheduler
+```
+
+| 옵션 | 뜻 |
+|---|---|
+| `--host 127.0.0.1` | 내 컴퓨터에서만 접속 가능 (같은 와이파이의 다른 기기에서도 보려면 `0.0.0.0`) |
+| `--port 8000` | 주소의 포트 번호. 이미 쓰는 포트라면 `8080` 등으로 바꾸세요 |
+| `--no-scheduler` | 자동 실행 타이머를 끕니다. API 키 없이 데모만 볼 때 쓰세요. 빼면 30초 뒤 실제 수집과 리뷰가 시작됩니다 |
+
+`Running on http://127.0.0.1:8000`이 보이면 준비가 끝난 것입니다. 서버를 끌 때는 터미널에서 <kbd>Ctrl</kbd> + <kbd>C</kbd>를 누릅니다.
+
+### 7단계: 브라우저에서 확인
+
+| 주소 | 확인할 것 |
+|---|---|
+| http://127.0.0.1:8000 | **오늘의 논문**: 데모 논문 한 편이 점수, 요약, 썸네일과 함께 보이는지 |
+| http://127.0.0.1:8000/paper/1 | **논문 리뷰**: 평점 막대, 단계별 요약, 주요 그림, 카드뉴스 넘겨보기, 캡션 복사 |
+| http://127.0.0.1:8000/files/cards/1.zip | **카드뉴스 ZIP**: PNG 6장과 `caption.txt`가 들어 있는지 |
+| http://127.0.0.1:8000/queue | **대기열**: "읽을 차례" 2편, "건너뜀" 1편 |
+| http://127.0.0.1:8000/settings | **설정**: 키워드 추가·삭제, 저널 목록, 단계별 모델과 비용, 실행 기록 |
+| http://127.0.0.1:8000/trending | **트렌드**: 첫 실제 실행 전에는 비어 있는 것이 정상 |
+| http://127.0.0.1:8000/api/status | 서버 상태(JSON) |
+
+`.env`에 `ADMIN_PASSWORD`를 넣었다면 오른쪽 위 **관리자**로 로그인해야 키워드 추가 같은 기능이 보입니다.
+
+### 8단계: 실제 논문으로 해 보기 (API 키 필요)
+
+```bash
+python -m paperagent review 1706.03762      # "Attention Is All You Need"를 바로 리뷰 (1~3분)
+```
+
+끝나면 대시보드를 새로고침하세요. 실행 기록과 비용은 **설정** 페이지에서 볼 수 있습니다.
+
+### 정리하기
+
+```bash
+python -m paperagent demo --clear     # 데모 데이터만 지우기
+rm -rf data                           # 로컬 DB와 이미지를 모두 지우고 처음부터 (Windows: rmdir /s data)
+```
+
+---
+
+## 2. 명령어
+
+모든 명령은 저장소 폴더에서 가상환경을 켠 상태로 실행합니다. Heroku에서는 앞에 `heroku run`을 붙입니다 (예: `heroku run python -m paperagent demo`).
+
+| 명령 | 하는 일 | 언제 쓰나 |
+|---|---|---|
+| `python -m paperagent serve` | 대시보드 실행 (기본 `0.0.0.0:8000`, 자동 실행 타이머 포함) | 로컬에서 계속 돌릴 때 |
+| `python -m paperagent serve --host 127.0.0.1 --port 8000 --no-scheduler` | 타이머 없이 대시보드만 실행 | 화면만 확인할 때 |
+| `python -m paperagent run` | 수집 → 관련도 판단 → 정독·평가 → 카드뉴스 → 트렌드를 지금 1회 실행 | 바로 돌려 보고 싶을 때 |
+| `python -m paperagent run --if-due` | 설정한 간격이 지났을 때만 1회 실행 | Heroku Scheduler, cron |
+| `python -m paperagent review <arXiv ID 또는 링크>` | 특정 논문 한 편을 바로 리뷰 | 원하는 논문을 직접 넣을 때 |
+| `python -m paperagent cards <논문 번호>` | 저장된 리뷰로 카드뉴스만 다시 렌더링 (Claude 호출 없음) | 카드 디자인을 고친 뒤 |
+| `python -m paperagent trending` | 트렌드 패널만 갱신 (Claude 호출 없음, 외부 사이트 조회) | 트렌드 화면 확인 |
+| `python -m paperagent demo` | 가상 논문과 카드뉴스 넣기 (인터넷·API 키 필요 없음) | 화면 확인, 시연 |
+| `python -m paperagent demo --clear` | 데모 데이터 지우기 | 시연이 끝난 뒤 |
+| `python -m paperagent initdb` | DB 테이블 만들기·새 컬럼 추가 | Heroku 배포 때 자동 실행 |
+| `python -m pytest tests` | 테스트 실행 | 수정한 뒤 |
+
+<details>
+<summary><b>예시 모음</b></summary>
+
+```bash
+# 논문 번호 12의 카드뉴스를 다시 만들기 (번호는 주소 /paper/12 의 숫자)
+python -m paperagent cards 12
+
+# 링크 그대로 넣어도 됩니다
+python -m paperagent review https://arxiv.org/abs/2410.01234
+
+# 포트를 바꿔 실행
+python -m paperagent serve --host 127.0.0.1 --port 8080
+
+# 데이터 위치를 바꿔서 실행 (기본: ./data)
+DATA_DIR=/tmp/starwars-test python -m paperagent serve --no-scheduler
+```
+
+</details>
+
+대시보드에서도 같은 일을 할 수 있습니다.
+- **설정 → 실행**: 지금 한 번 실행, arXiv 링크로 바로 리뷰
+- **논문 페이지**: 다시 읽기, 카드 다시 만들기
+- **대기열**: 건너뛴 논문 지금 읽기
+
+---
+
+## 3. 테스트
+
+```bash
+pip install pytest
+python -m pytest tests             # 약 10초, 22개
+```
+
+외부 사이트와 Claude API는 가짜 응답으로 대체하므로 인터넷과 API 키 없이 돌아갑니다. 확인하는 내용은 아래와 같습니다.
+- 수집·스크리닝·리뷰·카드뉴스 전체 흐름
+- 단계별 모델과 비용 계산
+- PDF가 끝나면 지워지는지
+- 관리자 권한과 CSRF 방어
+- 중복 실행 방지
+- 새 컬럼 자동 추가
+
+<details>
+<summary><b>Heroku와 같은 Postgres로 테스트하기</b></summary>
+
+로컬에 Postgres가 있다면 Heroku와 같은 조건(Postgres + DB 이미지 저장)으로 전체 테스트를 돌릴 수 있습니다.
+
+```bash
+createdb starwars_test
+TEST_DATABASE_URL=postgresql://localhost/starwars_test python -m pytest tests
+```
+
+로컬 서버도 Postgres로 띄울 수 있습니다.
+
+```bash
+DATABASE_URL=postgresql://localhost/starwars_test python -m paperagent demo
+DATABASE_URL=postgresql://localhost/starwars_test python -m paperagent serve --host 127.0.0.1 --no-scheduler
+```
+
+</details>
+
+---
+
+## 4. Heroku 첫 배포
+
+처음 한 번만 하는 과정입니다. 앱 만들기, 빌드팩, Postgres·Scheduler 애드온, 환경 변수, 스케줄러 등록까지 **[docs/SETUP.md 4장](docs/SETUP.md#4-heroku-첫-배포)**에 순서대로 정리했습니다.
+
+---
+
+## 5. Heroku에 변경 사항 올리기
+
+코드를 고친 뒤 운영 중인 Heroku 앱에 반영하는 순서입니다. 처음 배포가 끝나 있다고 가정합니다.
+
+### ① 로컬에서 고치고 확인하기
+
+```bash
+source .venv/bin/activate            # 가상환경 켜기 (Windows: .venv\Scripts\Activate.ps1)
+python -m pytest tests               # 테스트가 모두 통과하는지
+python -m paperagent serve --host 127.0.0.1 --no-scheduler   # 화면 확인 후 Ctrl+C
+```
+
+> [!TIP]
+> 카드뉴스 디자인(`paperagent/templates/cards/cards.html`)을 고쳤다면 `python -m paperagent demo`로 바로 결과를 볼 수 있습니다.
+> 결과 이미지는 `data/cards/<번호>/` 폴더에 생깁니다.
+
+### ② 변경 내용 커밋하기
+
+```bash
+git status                           # 바뀐 파일 확인
+git add -A                           # .env 와 data/ 는 .gitignore 때문에 올라가지 않습니다
+git commit -m "카드뉴스 표지 문구 수정"
+```
+
+### ③ GitHub에 올리기 (코드 보관용)
+
+```bash
+git push origin main                 # 지금 브랜치가 main 이 아니면 그 브랜치 이름으로
+```
+
+### ④ Heroku에 올리기 (실제 배포)
+
+```bash
+heroku git:remote -a my-starwars     # 이 컴퓨터에서 처음 한 번만. heroku 원격 저장소 연결
+git push heroku main                 # main 브랜치를 배포
+```
+
+> [!IMPORTANT]
+> Heroku는 자기 쪽 `main` 브랜치에 들어온 코드만 배포합니다. 다른 브랜치에서 작업했다면 `로컬브랜치:main` 형태로 보내세요.
+> ```bash
+> git push heroku claude/blissful-heisenberg-ybixq0:main
+> ```
+
+### ⑤ 배포 로그 확인
+
+`git push heroku` 출력에서 다음 순서가 보이면 정상입니다.
+
+| 순서 | 출력 | 뜻 |
+|:-:|---|---|
+| 1 | `Building on the Heroku-24 stack` · `Installing requirements with pip` | 빌드 (`requirements.txt`가 바뀌었으면 새 패키지도 설치) |
+| 2 | `Running release command...` · `database ready` | `python -m paperagent initdb` 실행. 새 테이블과 새 컬럼이 자동으로 추가됨 |
+| 3 | `Released v12` · `deployed to Heroku` | 새 버전 배포 완료. 웹 dyno가 자동으로 재시작됨 |
+
+### ⑥ 동작 확인
+
+```bash
+heroku ps                            # web.1: up 이면 정상
+heroku logs --tail                   # 실시간 로그 (Ctrl+C로 종료)
+heroku open                          # 브라우저로 열어서 화면 확인
+```
+
+수정한 기능을 바로 확인하고 싶다면 아래 명령을 씁니다.
+
+```bash
+heroku run python -m paperagent cards 12                                # 카드 디자인만 고친 경우
+heroku run:detached --size=standard-2x python -m paperagent run         # 전체 실행을 지금 한 번
+```
+
+### ⑦ 설정값만 바꿀 때 (코드 수정 없음)
+
+```bash
+heroku config:set JUDGE_EFFORT=medium        # 값 추가·변경 → 앱이 자동 재시작
+heroku config:unset JUDGE_EFFORT             # 값 삭제 (기본값으로)
+heroku config                                # 현재 값 확인
+```
+
+실행 간격, 정독 수, 최소 관련도, 키워드, 저널은 재배포 없이 **대시보드 설정 페이지**에서 바꾸면 됩니다.
+
+### ⑧ 문제가 생기면 되돌리기
+
+```bash
+heroku releases                      # 배포 기록 (v11, v12 ...)
+heroku rollback v11                  # 바로 전 버전으로 되돌리기
+```
+
+롤백은 코드만 되돌립니다. DB 데이터는 그대로입니다. 고친 뒤에는 ②~④를 다시 하면 됩니다.
+
+<details>
+<summary><b>GitHub에 push하면 자동으로 배포되게 하기 (선택)</b></summary>
+
+1. Heroku 대시보드 → 앱 → **Deploy** 탭
+2. **Deployment method**에서 **GitHub**을 선택하고 저장소를 연결합니다
+3. **Automatic deploys**에서 배포할 브랜치(예: `main`)를 고르고 **Enable Automatic Deploys**를 누릅니다
+
+이후에는 ③ `git push origin main`만 하면 Heroku가 자동으로 ④~⑤를 진행합니다.
+
+</details>
+
+---
+
+## 6. 프로젝트 구조
+
+```
+STAR_WARS/
+├── paperagent/
+│   ├── collectors/          arXiv · OpenAlex · 트렌드 수집
+│   ├── agent.py             Claude 단계별 호출 (관련도 · 정독 · 평가 · 작성)과 비용 계산
+│   ├── pipeline.py          한 번의 실행: 수집 → 판단 → 리뷰 → 카드뉴스 → 트렌드
+│   ├── pdfs.py              PDF 임시 다운로드, 그림 추출
+│   ├── cardnews.py          카드뉴스 렌더링 (Chromium)
+│   ├── db.py                DB (로컬 SQLite / Heroku Postgres)
+│   ├── storage.py           이미지 저장 (로컬 파일 / DB)
+│   ├── scheduler.py         로컬용 자동 실행 타이머
+│   ├── demo.py              데모 데이터
+│   ├── web.py               대시보드 라우트
+│   ├── templates/           대시보드와 카드뉴스 HTML
+│   └── static/              CSS · JS · 글꼴
+├── tests/                   pytest
+├── docs/SETUP.md            처음 설정 (API 키 · 비용 · Heroku 첫 배포 · 문제 해결)
+├── Procfile · app.json · .python-version · .slugignore    Heroku 설정
+├── requirements.txt
+└── .env.example             환경 변수 예시
+```
+
+<details>
+<summary><b>디자인 원칙</b></summary>
+
+[awesome-claude-design](https://github.com/VoltAgent/awesome-claude-design)에 정리된 Vercel·Linear·Notion 계열의 원칙을 따랐습니다.
+
+- **서체 하나:** Pretendard만 씁니다. 고정폭 글꼴은 arXiv ID에만 씁니다.
+- **문장형 제목:** 대문자 라벨이나 장식 아이콘 대신 평범한 한국어 제목을 씁니다.
+- **색은 최소한:** 흰 바탕, 잉크 `#171717`, 포인트 컬러 코발트 `#2B59C3` 한 가지입니다. 다크 모드를 지원합니다.
+- **카드 한 장에 메시지 하나:** 단계 → 헤드라인 → 두 줄 설명 → 그림이나 핵심 수치 순서를 지킵니다.
+
+카드뉴스 디자인은 `paperagent/templates/cards/cards.html` 한 파일에 있습니다.
+
+</details>
+
+---
+
+<div align="center">
+<sub>요약과 평점은 에이전트가 원문을 읽고 자동으로 작성합니다. 틀릴 수 있으니 중요한 판단 전에는 원문을 확인하세요.<br>
+글꼴: Pretendard, JetBrains Mono (SIL Open Font License 1.1)</sub>
+</div>

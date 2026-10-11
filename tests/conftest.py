@@ -23,11 +23,9 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 @pytest.fixture(scope="session")
 def sample_pdf():
-    from make_sample_pdf import make
+    from paperagent import demo
 
-    path = Path(_tmp) / "sample.pdf"
-    make(str(path))
-    return path
+    return demo.make_pdf(Path(_tmp) / "sample.pdf")
 
 
 @pytest.fixture()

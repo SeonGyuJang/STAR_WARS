@@ -40,10 +40,6 @@ def start():
     return _scheduler
 
 
-def reschedule(hours: float):
-    """The interval is read from settings on every tick; nothing to reschedule."""
-
-
 def next_run():
     """When the next run is due: last successful run + interval."""
     last = db.last_finished_run()

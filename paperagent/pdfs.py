@@ -72,6 +72,36 @@ def _graphic_rects(page):
     return rects
 
 
+def _figure_graphics(graphics, cap_rect, top_limit, gap=24):
+    """Graphics belonging to the figure above a caption: start from those
+    horizontally overlapping the caption, then grow to connected ones (so wide
+    figures with a short caption stay whole, while the other column's figure,
+    separated by a gap, is left out)."""
+    band = [g for g in graphics if g.y1 <= cap_rect.y0 + 4 and g.y0 >= top_limit - 2]
+    picked = [g for g in band if g.x1 > cap_rect.x0 - 20 and g.x0 < cap_rect.x1 + 20] or band
+    if not picked:
+        return []
+    region = _union(picked)
+    rest = [g for g in band if g not in picked]
+    grew = True
+    while grew and rest:
+        grew = False
+        near = region + (-gap, -gap, gap, gap)
+        for g in list(rest):
+            if g.intersects(near):
+                region |= g
+                picked.append(g)
+                rest.remove(g)
+                grew = True
+    return picked
+
+
+def _is_paragraph(block, page_rect) -> bool:
+    """Body text: wide, several lines and sentence-length (not a row of tick labels)."""
+    text = block[4]
+    return fitz.Rect(block[:4]).width > 0.35 * page_rect.width and text.count("\n") >= 3 and len(text) > 150
+
+
 def _union(rects):
     u = fitz.Rect(rects[0])
     for r in rects[1:]:
@@ -105,17 +135,22 @@ def extract_figures(pdf_path: Path, out_dir: Path, max_figures: int = 12, zoom: 
                     r = fitz.Rect(b[:4])
                     if r.y1 > cap_rect.y0 - 2 or b is cap:
                         continue
-                    is_paragraph = r.width > 0.35 * page_rect.width and b[4].count("\n") >= 3
+                    is_paragraph = _is_paragraph(b, page_rect)
                     overlaps_graphic = any(r.intersects(g) for g in graphics)
                     if (is_paragraph and not overlaps_graphic) or CAPTION_RE.match(b[4]):
                         top_limit = max(top_limit, r.y1)
-                above = [
-                    g for g in graphics
-                    if g.y1 <= cap_rect.y0 + 4 and g.y0 >= top_limit - 2
-                    and g.x1 > cap_rect.x0 - page_rect.width * 0.3 and g.x0 < cap_rect.x1 + page_rect.width * 0.3
-                ]
+                above = _figure_graphics(graphics, cap_rect, top_limit)
                 if above:
                     region = _union(above)
+                    # Pull in short labels that sit just outside the drawing
+                    # (axis ticks, axis titles, legends), but not body text.
+                    for b in blocks:
+                        r = fitz.Rect(b[:4])
+                        if b is cap or CAPTION_RE.match(b[4]) or _is_paragraph(b, page_rect) or r.y1 > cap_rect.y0 + 2:
+                            continue
+                        near = region + (-40, -14, 40, 30)
+                        if r.intersects(near) and r.y0 >= top_limit - 2:
+                            region |= r
                 else:
                     region = fitz.Rect(page_rect.x0 + 30, top_limit, page_rect.x1 - 30, cap_rect.y0)
                 region = (region + (-6, -6, 6, 4)) & page_rect

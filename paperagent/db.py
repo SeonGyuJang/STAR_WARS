@@ -8,7 +8,7 @@ import json
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import (Column, Float, Integer, LargeBinary, MetaData, String, Table, Text, UniqueConstraint,
-                        create_engine, delete, event, func, select, update)
+                        create_engine, delete, event, func, inspect, select, text, update)
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.pool import NullPool
 
@@ -182,8 +182,26 @@ def _rows(result):
     return [_row(r) for r in result]
 
 
+def _add_missing_columns():
+    """Lightweight migration: add columns that exist in the code but not yet in
+    the database (e.g. after deploying a new version to Heroku). Columns are
+    added as nullable; nothing is ever dropped or changed."""
+    eng = engine()
+    existing_tables = set(inspect(eng).get_table_names())
+    with eng.begin() as conn:
+        for table in metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue
+            have = {c["name"] for c in inspect(conn).get_columns(table.name)}
+            for col in table.columns:
+                if col.name not in have:
+                    ddl = f'ALTER TABLE {table.name} ADD COLUMN "{col.name}" {col.type.compile(dialect=eng.dialect)}'
+                    conn.execute(text(ddl))
+
+
 def init_db(seed: bool = True):
     metadata.create_all(engine())
+    _add_missing_columns()
     if not seed or get_setting("seeded"):
         return
     ts = now_iso()

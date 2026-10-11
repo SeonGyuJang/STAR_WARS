@@ -4,8 +4,7 @@ import shutil
 from types import SimpleNamespace
 from unittest import mock
 
-from conftest import FIXTURES
-from paperagent import agent, pipeline
+from paperagent import agent, demo, pipeline
 
 
 def _paper(**kw):
@@ -27,10 +26,11 @@ NOTES = {"research_question": "q", "method": "m", "claimed_contributions": ["c"]
 
 def _stage_payloads():
     """What the reader, judge and writer each return, split from the sample review."""
-    sample = json.loads((FIXTURES / "sample_review.json").read_text())
+    sample = json.loads(json.dumps(demo.SAMPLE_REVIEW))
     judge = {k: sample[k] for k in JUDGE_KEYS}
     judge.update(strengths=["s"], weaknesses=["w"], verdict="v")
-    write = {k: v for k, v in sample.items() if k not in JUDGE_KEYS and not k.startswith("_") and k != "overall_score"}
+    write = {k: v for k, v in sample.items()
+             if k not in JUDGE_KEYS + ("strengths", "weaknesses", "verdict", "overall_score") and not k.startswith("_")}
     return {id(agent.NOTES_SCHEMA): NOTES, id(agent.JUDGE_SCHEMA): judge, id(agent.WRITE_SCHEMA): write}
 
 
@@ -181,7 +181,7 @@ def test_web_pages_and_admin_actions(fresh_db, sample_pdf, tmp_path):
     c = app.test_client()
     for url in ["/", "/trending", "/queue", "/settings", f"/paper/{p['id']}", "/api/status", "/api/papers"]:
         assert c.get(url).status_code == 200, url
-    assert "작은 모델도" in c.get("/").get_data(as_text=True)
+    assert demo.SAMPLE_REVIEW["title_ko"] in c.get("/").get_data(as_text=True)
     assert c.get(f"/files/card/{p['id']}/1").mimetype == "image/png"
     assert c.get(f"/files/cards/{p['id']}.zip").mimetype == "application/zip"
     assert c.get(f"/files/pdf/{p['id']}").status_code == 404  # PDFs are never served or kept
@@ -263,3 +263,28 @@ def test_storage_roundtrip(fresh_db):
     assert storage.get("cards/99/card_01.png") == (b"\x89PNG data", "image/png")
     storage.delete_prefix("cards/99/")
     assert storage.get("cards/99/card_01.png") is None
+
+
+def test_demo_seed_and_clear(fresh_db):
+    from paperagent import create_app, storage
+
+    pid = demo.seed()
+    p = fresh_db.get_paper(pid)
+    assert p["status"] == "done" and len(p["card_paths"]) == 6
+    assert [f["number"] for f in p["review"]["_figures"]] == [1, 2]
+    assert len(fresh_db.papers_by_status("screened")) == 2
+    c = create_app(start_scheduler=False).test_client()
+    assert demo.SAMPLE_REVIEW["one_liner"] in c.get(f"/paper/{pid}").get_data(as_text=True)
+    assert demo.clear() == 4
+    assert fresh_db.get_paper(pid) is None and storage.get(f"cards/{pid}/card_01.png") is None
+
+
+def test_init_db_adds_new_columns(fresh_db):
+    """Deploying a version with a new column must not need a manual migration."""
+    from sqlalchemy import inspect, text
+
+    with fresh_db.engine().begin() as conn:
+        conn.execute(text("ALTER TABLE papers DROP COLUMN cost_usd"))
+    assert "cost_usd" not in {c["name"] for c in inspect(fresh_db.engine()).get_columns("papers")}
+    fresh_db.init_db()
+    assert "cost_usd" in {c["name"] for c in inspect(fresh_db.engine()).get_columns("papers")}

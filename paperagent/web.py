@@ -54,20 +54,11 @@ def inject_globals():
     return {
         "site_name": config.SITE_NAME,
         "tagline": config.BRAND_TAGLINE,
-        "today": date.today().strftime("%Y.%m.%d"),
         "csrf_token": csrf_token,
         "is_admin": is_admin(),
         "admin_enabled": bool(config.ADMIN_PASSWORD),
         "running": pipeline.is_running(),
     }
-
-
-@bp.app_template_filter("stars")
-def stars(score):
-    if score is None:
-        return ""
-    full = int(round(float(score) / 2))
-    return "★" * full + "☆" * (5 - full)
 
 
 @bp.app_template_filter("short_date")
@@ -306,11 +297,8 @@ def save_pipeline():
     except (KeyError, ValueError):
         flash("숫자를 확인해 주세요.", "error")
         return redirect(url_for("web.settings") + "#pipeline")
-    old = db.pipeline_settings()["interval_hours"]
     for k, v in values.items():
         db.set_setting(k, v)
-    if values["interval_hours"] != old:
-        scheduler.reschedule(values["interval_hours"])
     flash("파이프라인 설정을 저장했습니다.", "ok")
     return redirect(url_for("web.settings") + "#pipeline")
 

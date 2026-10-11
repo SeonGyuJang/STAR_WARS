@@ -10,7 +10,6 @@ import re
 import shutil
 import tempfile
 import zipfile
-from datetime import datetime
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -29,15 +28,12 @@ _env.filters["nl2br"] = lambda s: Markup("<br>".join(escape(line) for line in st
 def _source_ref(paper):
     if paper["uid"].startswith("arxiv:"):
         return f"arXiv:{paper['uid'][6:]}"
+    m = re.search(r"arxiv\.org/(?:abs|pdf)/([\w.\-]+?)(?:v\d+)?$", paper.get("url") or "")
+    if m:
+        return f"arXiv:{m.group(1)}"
     if paper.get("doi"):
         return f"doi:{paper['doi']}"
     return paper.get("source_name") or "source"
-
-
-def _authors_short(authors):
-    if not authors:
-        return ""
-    return authors[0] + (" 외" if len(authors) > 1 else "")
 
 
 def build_html(paper: dict, review: dict, figures, page1=None) -> str:
@@ -58,20 +54,11 @@ def build_html(paper: dict, review: dict, figures, page1=None) -> str:
     if not cover_uri and figs:
         cover_uri = next(iter(figs.values()))["uri"]
 
-    published = (paper.get("published") or "")[:10]
-    try:
-        d = datetime.fromisoformat(published)
-        date_label = f"{d.year}년 {d.month}월"
-    except ValueError:
-        date_label = published
-    title = paper["title"]
     return _env.get_template("cards.html").render(
         fonts=FONT_DIR.resolve().as_uri(),
         brand=config.CARD_BRAND,
         handle=config.CARD_HANDLE,
         acronym=config.BRAND_ACRONYM,
-        issue_no=f"{paper.get('id') or 0:04d}",
-        issue_date=datetime.now().strftime("%Y.%m.%d"),
         paper=paper,
         review=review,
         card=card,
@@ -79,10 +66,6 @@ def build_html(paper: dict, review: dict, figures, page1=None) -> str:
         total=len(slides) + 3,
         cover_image=cover_uri,
         source_ref=_source_ref(paper),
-        source_label=paper.get("source_name") or ("arXiv" if paper["source_kind"] == "arxiv" else ""),
-        authors_short=_authors_short(paper.get("authors")),
-        paper_short=(title[:38] + "…") if len(title) > 40 else title,
-        date_label=date_label,
     )
 
 

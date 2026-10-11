@@ -26,8 +26,6 @@ def _env_float(name: str, default: float) -> float:
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.environ.get("DATA_DIR", BASE_DIR / "data"))
-FIGURE_DIR = DATA_DIR / "figures"
-CARD_DIR = DATA_DIR / "cards"
 DB_PATH = Path(os.environ.get("DB_PATH", DATA_DIR / "paperagent.db"))
 
 # Heroku sets DYNO on every dyno; its filesystem is wiped on each restart.
@@ -115,5 +113,4 @@ BRAND_ACRONYM = [
 ]
 CHROMIUM_EXECUTABLE = os.environ.get("CHROMIUM_EXECUTABLE", "")
 
-for _d in (DATA_DIR, FIGURE_DIR, CARD_DIR):
-    _d.mkdir(parents=True, exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
