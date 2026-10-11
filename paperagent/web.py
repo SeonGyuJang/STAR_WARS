@@ -1,15 +1,15 @@
 """Dashboard routes."""
 import hmac
+import io
 import re
 import secrets
 from datetime import date, timedelta
 from functools import wraps
-from pathlib import Path
 
 from flask import (Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, session,
                    url_for)
 
-from . import cardnews, config, db, gdrive, pipeline, scheduler
+from . import cardnews, config, db, pipeline, scheduler, storage
 from .collectors import openalex
 
 bp = Blueprint("web", __name__)
@@ -54,20 +54,11 @@ def inject_globals():
     return {
         "site_name": config.SITE_NAME,
         "tagline": config.BRAND_TAGLINE,
-        "today": date.today().strftime("%Y.%m.%d"),
         "csrf_token": csrf_token,
         "is_admin": is_admin(),
         "admin_enabled": bool(config.ADMIN_PASSWORD),
         "running": pipeline.is_running(),
     }
-
-
-@bp.app_template_filter("stars")
-def stars(score):
-    if score is None:
-        return ""
-    full = int(round(float(score) / 2))
-    return "★" * full + "☆" * (5 - full)
 
 
 @bp.app_template_filter("short_date")
@@ -132,7 +123,7 @@ def paper_detail(paper_id):
     caption = None
     if p["status"] == "done" and p.get("review"):
         caption = cardnews.build_caption(p, p["review"])
-    figures = [f for f in (p.get("review") or {}).get("_figures", []) if Path(f["path"]).exists()]
+    figures = [f for f in (p.get("review") or {}).get("_figures", []) if f.get("key")]
     return render_template("paper.html", p=p, r=p.get("review") or {}, caption=caption, figures=figures,
                            share_url=request.url)
 
@@ -162,32 +153,20 @@ def queue():
 
 # --- files --------------------------------------------------------------------
 
-def _within(path: Path, root: Path) -> bool:
-    try:
-        path.resolve().relative_to(root.resolve())
-        return True
-    except ValueError:
-        return False
-
-
-@bp.route("/files/pdf/<int:paper_id>")
-def file_pdf(paper_id):
-    p = db.get_paper(paper_id)
-    if not p or not p.get("local_pdf"):
+def _send_stored(key: str, download_name=None, as_attachment=False):
+    item = storage.get(key)
+    if item is None:
         abort(404)
-    path = Path(p["local_pdf"])
-    if not path.exists() or not _within(path, config.PDF_DIR):
-        abort(404)
-    return send_file(path, mimetype="application/pdf", download_name=path.name)
+    data, content_type = item
+    resp = send_file(io.BytesIO(data), mimetype=content_type, download_name=download_name or key.rsplit("/", 1)[-1],
+                     as_attachment=as_attachment, max_age=86400)
+    return resp
 
 
 @bp.route("/files/card/<int:paper_id>/<int:n>")
 def file_card(paper_id, n):
-    path = config.CARD_DIR / str(paper_id) / f"card_{n:02d}.png"
-    if not path.exists():
-        abort(404)
-    return send_file(path, mimetype="image/png", download_name=f"paper{paper_id}_card_{n:02d}.png",
-                     as_attachment=request.args.get("dl") == "1")
+    return _send_stored(f"cards/{paper_id}/card_{n:02d}.png", f"paper{paper_id}_card_{n:02d}.png",
+                        as_attachment=request.args.get("dl") == "1")
 
 
 @bp.route("/files/cards/<int:paper_id>.zip")
@@ -195,9 +174,8 @@ def file_cards_zip(paper_id):
     p = db.get_paper(paper_id)
     if not p or not p.get("card_paths"):
         abort(404)
-    out = config.CARD_DIR / str(paper_id) / "cards.zip"
-    cardnews.zip_cards(p["card_paths"], config.CARD_DIR / str(paper_id) / "caption.txt", out)
-    return send_file(out, mimetype="application/zip", as_attachment=True,
+    data = cardnews.zip_cards(paper_id, p["card_paths"])
+    return send_file(io.BytesIO(data), mimetype="application/zip", as_attachment=True,
                      download_name=f"cardnews-{cardnews.slug(p['title'])}.zip")
 
 
@@ -205,10 +183,7 @@ def file_cards_zip(paper_id):
 def file_figure(paper_id, name):
     if not re.fullmatch(r"(fig\d+|page1)\.png", name):
         abort(404)
-    path = config.FIGURE_DIR / str(paper_id) / name
-    if not path.exists():
-        abort(404)
-    return send_file(path, mimetype="image/png")
+    return _send_stored(f"figures/{paper_id}/{name}")
 
 
 # --- settings & admin actions -------------------------------------------------
@@ -224,9 +199,11 @@ def settings():
         runs=db.recent_runs(8),
         next_run=scheduler.next_run(),
         candidates=candidates,
-        drive_enabled=gdrive.enabled(),
-        model=config.CLAUDE_MODEL,
-        screen_model=config.SCREEN_MODEL,
+        models={"screen": config.SCREEN_MODEL, "read": config.READER_MODEL,
+                "judge": config.JUDGE_MODEL, "write": config.WRITER_MODEL},
+        cost=db.cost_summary(30),
+        on_heroku=config.ON_HEROKU,
+        scheduler_enabled=config.SCHEDULER_ENABLED,
     )
 
 
@@ -320,11 +297,8 @@ def save_pipeline():
     except (KeyError, ValueError):
         flash("숫자를 확인해 주세요.", "error")
         return redirect(url_for("web.settings") + "#pipeline")
-    old = db.pipeline_settings()["interval_hours"]
     for k, v in values.items():
         db.set_setting(k, v)
-    if values["interval_hours"] != old:
-        scheduler.reschedule(values["interval_hours"])
     flash("파이프라인 설정을 저장했습니다.", "ok")
     return redirect(url_for("web.settings") + "#pipeline")
 
@@ -399,7 +373,7 @@ def api_papers():
         r = p.get("review") or {}
         out.append({
             "id": p["id"], "title": p["title"], "title_ko": r.get("title_ko"), "url": p["url"],
-            "drive_link": p.get("drive_link"), "published": p.get("published"),
+            "pdf_url": p.get("pdf_url"), "published": p.get("published"),
             "scores": {"methodology": p["score_method"], "novelty": p["score_novelty"], "overall": p["score_overall"]},
             "one_liner": r.get("one_liner"), "tldr": r.get("tldr"), "tags": r.get("tags", []),
             "detail": url_for("web.paper_detail", paper_id=p["id"], _external=True),

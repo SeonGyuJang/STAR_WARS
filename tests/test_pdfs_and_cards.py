@@ -1,10 +1,8 @@
-import json
-from pathlib import Path
+import copy
 
 from PIL import Image
 
-from conftest import FIXTURES
-from paperagent import cardnews, pdfs
+from paperagent import cardnews, demo, pdfs
 
 
 def test_safe_filename():
@@ -19,13 +17,15 @@ def test_extract_figures(sample_pdf, tmp_path):
     assert figs[0]["caption"].startswith("Figure 1:")
     assert figs[1]["page"] == 2
     w, h = Image.open(figs[0]["path"]).size
-    assert w > 600 and h > 300  # the chart region at 2.5x, not the whole page
+    assert w > 1000 and 200 < h < 400  # the whole 4-box diagram at 2.5x, not the page
+    w, h = Image.open(figs[1]["path"]).size
+    assert 900 < w < 1300 and 500 < h < 700  # the chart plus its axis labels and legend
     assert (tmp_path / "page1.png").exists()
 
 
 def test_render_cards(sample_pdf, tmp_path):
     figs = pdfs.extract_figures(sample_pdf, tmp_path / "figs")
-    review = json.loads((FIXTURES / "sample_review.json").read_text())
+    review = copy.deepcopy(demo.SAMPLE_REVIEW)
     paper = {"uid": "arxiv:2610.01234", "title": "Self-Verification Loops", "authors": ["A. Kim"],
              "source_kind": "arxiv", "source_name": "arXiv · cs.CL", "published": "2026-10-09", "url": "https://arxiv.org/abs/2610.01234"}
     paths = cardnews.render(paper, review, figs, tmp_path / "cards")

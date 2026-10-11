@@ -26,27 +26,66 @@ def _env_float(name: str, default: float) -> float:
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.environ.get("DATA_DIR", BASE_DIR / "data"))
-PDF_DIR = DATA_DIR / "pdfs"
-FIGURE_DIR = DATA_DIR / "figures"
-CARD_DIR = DATA_DIR / "cards"
 DB_PATH = Path(os.environ.get("DB_PATH", DATA_DIR / "paperagent.db"))
 
-# --- Claude ---------------------------------------------------------------
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-5-5")
-# Model for the cheap abstract-screening pass. Defaults to the main model;
-# set e.g. SCREEN_MODEL=claude-haiku-5-5 to cut screening cost.
-SCREEN_MODEL = os.environ.get("SCREEN_MODEL", CLAUDE_MODEL)
-CLAUDE_EFFORT = os.environ.get("CLAUDE_EFFORT", "high")
-# Server-side refusal fallback (Claude API only). Set to 0 on Bedrock/Vertex/Foundry.
+# Heroku sets DYNO on every dyno; its filesystem is wiped on each restart.
+ON_HEROKU = "DYNO" in os.environ
+
+
+def database_url() -> str:
+    """DATABASE_URL (Heroku Postgres) or a local SQLite file."""
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        return f"sqlite:///{DB_PATH}"
+    # Heroku still hands out postgres:// URLs; SQLAlchemy wants an explicit driver.
+    if url.startswith("postgres://"):
+        url = "postgresql+psycopg://" + url[len("postgres://"):]
+    elif url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    return url
+
+
+# Where card images and figures live: "local" (DATA_DIR) or "db" (blobs table).
+# Defaults to "db" whenever a Postgres DATABASE_URL is set, because the dyno
+# filesystem does not survive restarts.
+STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND") or ("db" if os.environ.get("DATABASE_URL") else "local")
+
+# --- Claude: one model per job, priced to what the job needs ----------------
+# reader  - reads the whole PDF (the big input) and writes factual English notes
+# judge   - scores methodology and novelty from those notes (the decision that matters)
+# writer  - turns notes + verdict into the Korean review and card copy
+# screen  - rates titles/abstracts for relevance
+JUDGE_MODEL = os.environ.get("JUDGE_MODEL") or os.environ.get("CLAUDE_MODEL") or "claude-opus-5-5"
+READER_MODEL = os.environ.get("READER_MODEL", "claude-haiku-5-5")
+WRITER_MODEL = os.environ.get("WRITER_MODEL", "claude-sonnet-5-5")
+SCREEN_MODEL = os.environ.get("SCREEN_MODEL", "claude-haiku-5-5")
+JUDGE_EFFORT = os.environ.get("JUDGE_EFFORT", "high")
+READER_EFFORT = os.environ.get("READER_EFFORT", "low")
+WRITER_EFFORT = os.environ.get("WRITER_EFFORT", "low")
+# Server-side refusal fallback (Claude API only; Opus/Sonnet/Fable). Set 0 on Bedrock/Vertex/Foundry.
 CLAUDE_FALLBACKS = os.environ.get("CLAUDE_FALLBACKS", "1") == "1"
 
+# USD per million tokens (input, output), for the cost shown on the dashboard.
+# Haiku 5.5 has a higher rate card for prompts over 100K tokens.
+MODEL_PRICES = {
+    "claude-fable-5-1": (10.0, 50.0),
+    "claude-opus-5-5": (4.0, 20.0),
+    "claude-opus-5": (5.0, 25.0),
+    "claude-sonnet-5-5": (2.0, 10.0),
+    "claude-sonnet-5": (2.0, 10.0),
+    "claude-haiku-5-5": (0.10, 0.50),
+}
+HAIKU_LONG_PROMPT_PRICES = (0.50, 2.50)
+
 # --- Pipeline defaults (overridable from the dashboard settings page) -----
-DEFAULT_INTERVAL_HOURS = _env_int("FETCH_INTERVAL_HOURS", 6)
+DEFAULT_INTERVAL_HOURS = _env_int("FETCH_INTERVAL_HOURS", 12)
 DEFAULT_LOOKBACK_DAYS = _env_int("LOOKBACK_DAYS", 3)
 DEFAULT_MAX_PER_SOURCE = _env_int("MAX_PER_SOURCE", 40)
-DEFAULT_MAX_FULL_READS = _env_int("MAX_FULL_READS", 5)
-DEFAULT_MIN_RELEVANCE = _env_float("MIN_RELEVANCE", 6.0)
-SCHEDULER_ENABLED = os.environ.get("SCHEDULER_ENABLED", "1") == "1"
+DEFAULT_MAX_FULL_READS = _env_int("MAX_FULL_READS", 3)
+DEFAULT_MIN_RELEVANCE = _env_float("MIN_RELEVANCE", 7.0)
+# In-process scheduler. Off by default on Heroku, where the Heroku Scheduler
+# add-on runs `python -m paperagent run --if-due` instead.
+SCHEDULER_ENABLED = os.environ.get("SCHEDULER_ENABLED", "0" if ON_HEROKU else "1") == "1"
 
 # --- External services ----------------------------------------------------
 # OpenAlex asks for a contact address to use its "polite pool".
@@ -55,13 +94,6 @@ SEMANTIC_SCHOLAR_API_KEY = os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "")
 HTTP_USER_AGENT = os.environ.get(
     "HTTP_USER_AGENT", "STARWARS-Research/1.0 (paper digest bot; +https://github.com/SeonGyuJang/STAR_WARS)"
 )
-
-# Google Drive (optional). Either a service-account JSON (upload into a Shared
-# Drive folder) or an OAuth token created with `python -m paperagent drive-auth`.
-GDRIVE_FOLDER_ID = os.environ.get("GDRIVE_FOLDER_ID", "")
-GOOGLE_SERVICE_ACCOUNT_FILE = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE", "")
-GOOGLE_OAUTH_CLIENT_FILE = os.environ.get("GOOGLE_OAUTH_CLIENT_FILE", "")
-GOOGLE_OAUTH_TOKEN_FILE = os.environ.get("GOOGLE_OAUTH_TOKEN_FILE", str(DATA_DIR / "gdrive_token.json"))
 
 # --- Dashboard ------------------------------------------------------------
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-me")
@@ -81,5 +113,4 @@ BRAND_ACRONYM = [
 ]
 CHROMIUM_EXECUTABLE = os.environ.get("CHROMIUM_EXECUTABLE", "")
 
-for _d in (DATA_DIR, PDF_DIR, FIGURE_DIR, CARD_DIR):
-    _d.mkdir(parents=True, exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True)

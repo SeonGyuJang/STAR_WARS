@@ -1,4 +1,9 @@
-"""Background scheduler that repeats the pipeline every N hours."""
+"""In-process scheduler for single-server installs.
+
+Every 30 minutes it checks whether the dashboard's run interval has passed
+since the last successful run, so restarts don't trigger extra (paid) runs.
+On Heroku the same check runs from the Heroku Scheduler add-on instead
+(`python -m paperagent run --if-due`), and this scheduler stays off."""
 import logging
 from datetime import datetime, timedelta
 
@@ -7,41 +12,38 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from . import db, pipeline
 
 log = logging.getLogger(__name__)
-JOB_ID = "paper-pipeline"
+JOB_ID = "paper-pipeline-tick"
 _scheduler = None
+
+
+def _tick():
+    if pipeline.is_due() and not pipeline.is_running():
+        pipeline.run("schedule")
 
 
 def start():
     global _scheduler
     if _scheduler is not None:
         return _scheduler
-    hours = db.pipeline_settings()["interval_hours"]
     _scheduler = BackgroundScheduler(timezone="UTC")
     _scheduler.add_job(
-        pipeline.run,
+        _tick,
         "interval",
-        hours=hours,
+        minutes=30,
         id=JOB_ID,
-        kwargs={"trigger": "schedule"},
-        # first run shortly after startup, then every `hours`
         next_run_time=datetime.now().astimezone() + timedelta(seconds=30),
         max_instances=1,
         coalesce=True,
-        misfire_grace_time=3600,
     )
     _scheduler.start()
-    log.info("scheduler started: every %s h", hours)
+    log.info("scheduler started: checks every 30 min, runs every %s h", db.pipeline_settings()["interval_hours"])
     return _scheduler
 
 
-def reschedule(hours: float):
-    if _scheduler is None:
-        return
-    _scheduler.reschedule_job(JOB_ID, trigger="interval", hours=hours)
-
-
 def next_run():
-    if _scheduler is None:
+    """When the next run is due: last successful run + interval."""
+    last = db.last_finished_run()
+    if not last:
         return None
-    job = _scheduler.get_job(JOB_ID)
-    return job.next_run_time if job else None
+    started = datetime.fromisoformat(last["started_at"])
+    return started + timedelta(hours=db.pipeline_settings()["interval_hours"])

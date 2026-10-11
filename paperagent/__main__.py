@@ -1,11 +1,14 @@
 """Command line:
 
     python -m paperagent serve [--host 0.0.0.0] [--port 8000]   dashboard + scheduler
-    python -m paperagent run                                   one pipeline cycle now
+    python -m paperagent run [--if-due]                        one pipeline cycle now
+                                                               (--if-due: only if the interval has passed;
+                                                                for an hourly Heroku Scheduler job)
+    python -m paperagent initdb                                create tables (Heroku release phase)
     python -m paperagent review <arxiv id or url>              review one paper now
     python -m paperagent cards <paper id>                      re-render card news
     python -m paperagent trending                              refresh trending panels
-    python -m paperagent drive-auth                            one-time Google login
+    python -m paperagent demo [--clear]                        add (or remove) fictional sample data
 """
 import argparse
 import logging
@@ -22,19 +25,24 @@ def main(argv=None):
     s.add_argument("--host", default="0.0.0.0")
     s.add_argument("--port", type=int, default=8000)
     s.add_argument("--no-scheduler", action="store_true")
-    sub.add_parser("run")
+    r_run = sub.add_parser("run")
+    r_run.add_argument("--if-due", action="store_true", help="skip unless the configured interval has passed")
+    sub.add_parser("initdb")
     r = sub.add_parser("review")
     r.add_argument("arxiv")
     c = sub.add_parser("cards")
     c.add_argument("paper_id", type=int)
     sub.add_parser("trending")
-    sub.add_parser("drive-auth")
+    d = sub.add_parser("demo")
+    d.add_argument("--clear", action="store_true", help="remove the demo data instead")
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     db.init_db()
 
-    if args.cmd == "serve":
+    if args.cmd == "initdb":
+        print("database ready")
+    elif args.cmd == "serve":
         from . import create_app
 
         app = create_app(start_scheduler=not args.no_scheduler)
@@ -42,7 +50,14 @@ def main(argv=None):
     elif args.cmd == "run":
         from . import pipeline
 
-        run_id = pipeline.run("cli")
+        if args.if_due and not pipeline.is_due():
+            print("not due yet; skipping")
+            return
+        db.mark_stale_runs()
+        run_id = pipeline.run("schedule" if args.if_due else "cli")
+        if run_id is None:
+            print("another run is in progress; skipping")
+            return
         print(next(r for r in db.recent_runs(5) if r["id"] == run_id)["log"])
     elif args.cmd == "review":
         from . import pipeline
@@ -63,10 +78,14 @@ def main(argv=None):
         from .collectors import trending
 
         trending.refresh_all([k["term"] for k in db.list_keywords()], logger=print)
-    elif args.cmd == "drive-auth":
-        from . import gdrive
+    elif args.cmd == "demo":
+        from . import demo
 
-        gdrive.run_oauth_flow()
+        if args.clear:
+            print(f"removed {demo.clear()} demo papers")
+        else:
+            pid = demo.seed()
+            print(f"demo paper #{pid} added - open /paper/{pid} on the dashboard")
 
 
 if __name__ == "__main__":

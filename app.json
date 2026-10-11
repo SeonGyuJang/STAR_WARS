@@ -1,0 +1,34 @@
+{
+  "name": "STAR WARS",
+  "description": "Smart Topic Analysis & Rating : Worthwise Article Research System. A Claude agent that reads new papers, rates them and makes Instagram card news.",
+  "repository": "https://github.com/SeonGyuJang/STAR_WARS",
+  "keywords": ["python", "flask", "claude", "papers", "arxiv"],
+  "buildpacks": [
+    { "url": "https://github.com/heroku/heroku-buildpack-chrome-for-testing" },
+    { "url": "heroku/python" }
+  ],
+  "formation": {
+    "web": { "quantity": 1, "size": "basic" }
+  },
+  "addons": [
+    { "plan": "heroku-postgresql:essential-0" },
+    { "plan": "scheduler:standard" }
+  ],
+  "env": {
+    "ANTHROPIC_API_KEY": { "description": "Claude API key from https://platform.claude.com (Settings > API Keys)", "required": true },
+    "SECRET_KEY": { "description": "Session/CSRF secret", "generator": "secret" },
+    "ADMIN_PASSWORD": { "description": "Password for changing keywords/journals and starting runs", "required": true },
+    "OPENALEX_MAILTO": { "description": "Your email, for OpenAlex's polite pool", "required": false },
+    "CARD_HANDLE": { "description": "Instagram handle printed on the cards", "value": "@starwars.research", "required": false },
+    "READER_MODEL": { "description": "Reads the full PDF", "value": "claude-haiku-5-5" },
+    "JUDGE_MODEL": { "description": "Scores methodology and novelty", "value": "claude-opus-5-5" },
+    "WRITER_MODEL": { "description": "Writes the Korean review and card copy", "value": "claude-sonnet-5-5" },
+    "SCREEN_MODEL": { "description": "Rates abstracts for relevance", "value": "claude-haiku-5-5" },
+    "FETCH_INTERVAL_HOURS": { "value": "12" },
+    "MAX_FULL_READS": { "value": "3" },
+    "MIN_RELEVANCE": { "value": "7" }
+  },
+  "scripts": {
+    "postdeploy": "python -m paperagent initdb"
+  }
+}

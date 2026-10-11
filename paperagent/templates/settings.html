@@ -43,8 +43,27 @@
       <form method="post" action="{{ url_for('web.run_now') }}" style="margin: 0">{{ csrf() }}<button class="btn" style="width: 100%" {{ 'disabled' if running }}>{{ '실행 중' if running else '지금 한 번 실행' }}</button></form>
     </div>
     {% endif %}
-    <p class="note">리뷰 모델 <code>{{ model }}</code> · 관련도 판단 모델 <code>{{ screen_model }}</code><br>
-      Google Drive {{ '연결됨' if drive_enabled else '연결 안 됨 (로컬 PDF와 원문 링크를 대신 제공)' }}</p>
+    <p class="note">PDF는 서버 임시 폴더에 받아 읽은 뒤 바로 지웁니다. 사용자에게는 원문 PDF 링크를 보여 줍니다.
+      {% if not scheduler_enabled %}<br>이 서버는 자체 타이머를 쓰지 않습니다. 실행은 {{ 'Heroku Scheduler' if on_heroku else '외부 스케줄러' }}가 <code>python -m paperagent run --if-due</code>로 시작합니다.{% endif %}</p>
+  </section>
+
+  <section class="card panel" id="cost">
+    <div class="panel-h"><h2>모델과 비용</h2><span>최근 {{ cost.days }}일</span></div>
+    <div class="cost-row">
+      <div><b>${{ '%.2f' % cost.total_usd }}</b><span>전체 비용</span></div>
+      <div><b>{{ cost.papers }}편</b><span>리뷰한 논문</span></div>
+      <div><b>{{ '$%.3f' % cost.per_paper_usd if cost.per_paper_usd is not none else '-' }}</b><span>논문당 평균</span></div>
+    </div>
+    <table class="tbl">
+      <thead><tr><th>단계</th><th>하는 일</th><th>모델</th></tr></thead>
+      <tbody>
+        <tr><td>관련도 판단</td><td class="small muted">제목·초록으로 0~10점</td><td><code>{{ models.screen }}</code></td></tr>
+        <tr><td>정독</td><td class="small muted">PDF 전문을 읽고 근거 노트 작성</td><td><code>{{ models.read }}</code></td></tr>
+        <tr><td>평가</td><td class="small muted">노트로 방법론·참신성 채점</td><td><code>{{ models.judge }}</code></td></tr>
+        <tr><td>작성</td><td class="small muted">한국어 리뷰와 카드뉴스 문구</td><td><code>{{ models.write }}</code></td></tr>
+      </tbody>
+    </table>
+    <p class="note">입력이 가장 큰 정독은 저렴한 모델이, 점수를 정하는 평가는 가장 좋은 모델이 맡습니다. 모델은 환경 변수 <code>READER_MODEL</code>, <code>JUDGE_MODEL</code>, <code>WRITER_MODEL</code>, <code>SCREEN_MODEL</code>로 바꿀 수 있습니다.</p>
   </section>
 
   <section class="card panel" id="sources">
@@ -90,7 +109,7 @@
     {% for run in runs %}
       <details {{ 'open' if loop.first and run.status == 'running' }}>
         <summary><span class="status {{ run.status }}">{{ {'ok': '완료', 'error': '오류', 'running': '실행 중', 'aborted': '중단'}.get(run.status, run.status) }}</span>
-          {{ run.started_at[5:16].replace('T', ' ') }} · 새 논문 {{ run.stats.get('new', 0) }} · 리뷰 {{ run.stats.get('reviewed', 0) }}{% if run.stats.get('failed') %} · 실패 {{ run.stats.failed }}{% endif %}</summary>
+          {{ run.started_at[5:16].replace('T', ' ') }} · 새 논문 {{ run.stats.get('new', 0) }} · 리뷰 {{ run.stats.get('reviewed', 0) }}{% if run.stats.get('cost_usd') %} · ${{ '%.3f' % run.stats.cost_usd }}{% endif %}{% if run.stats.get('failed') %} · 실패 {{ run.stats.failed }}{% endif %}</summary>
         <pre class="log">{{ run.log }}</pre>
       </details>
     {% else %}<p class="desc">아직 실행 기록이 없습니다.</p>{% endfor %}

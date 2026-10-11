@@ -15,7 +15,7 @@
     <div class="foot">
       <a href="{{ url_for('web.paper_detail', paper_id=p.id) }}">리뷰 읽기</a>
       <a href="{{ p.url }}" target="_blank" rel="noopener">원문</a>
-      {% if p.drive_link %}<a href="{{ p.drive_link }}" target="_blank" rel="noopener">PDF</a>{% elif p.local_pdf %}<a href="{{ url_for('web.file_pdf', paper_id=p.id) }}" target="_blank">PDF</a>{% endif %}
+      {% if p.pdf_url %}<a href="{{ p.pdf_url }}" target="_blank" rel="noopener">PDF</a>{% endif %}
       {% if p.card_paths %}<a href="{{ url_for('web.file_cards_zip', paper_id=p.id) }}">카드뉴스</a>{% endif %}
       {% if p.read_depth == 'abstract' %}<span class="warn">초록만 읽음</span>{% endif %}
       <span class="chips">{% for kw in p.matched_keywords %}<a class="chip" href="{{ url_for('web.index', keyword=kw) }}">{{ kw }}</a>{% endfor %}</span>

@@ -19,9 +19,8 @@
   {% if r.title_ko %}<p class="en">{{ p.title }}</p>{% endif %}
   <p class="authors">{{ p.authors[:8] | join(', ') }}{% if p.authors|length > 8 %} 외 {{ p.authors|length - 8 }}명{% endif %}</p>
   <div class="actions">
-    <a class="btn" href="{{ p.drive_link or p.url }}" target="_blank" rel="noopener">{{ '원문 PDF 열기' if p.drive_link else '원문 보기' }}</a>
-    {% if p.drive_link %}<a class="btn ghost" href="{{ p.url }}" target="_blank" rel="noopener">논문 페이지</a>{% endif %}
-    {% if p.local_pdf %}<a class="btn ghost" href="{{ url_for('web.file_pdf', paper_id=p.id) }}" target="_blank">PDF 다운로드</a>{% endif %}
+    {% if p.pdf_url %}<a class="btn" href="{{ p.pdf_url }}" target="_blank" rel="noopener">원문 PDF 받기</a>{% endif %}
+    <a class="btn {{ 'ghost' if p.pdf_url }}" href="{{ p.url }}" target="_blank" rel="noopener">논문 페이지</a>
     <button class="btn ghost" data-share="{{ share_url }}" data-title="{{ r.title_ko or p.title }}">링크 공유</button>
     {% if is_admin %}<form method="post" action="{{ url_for('web.reprocess', paper_id=p.id) }}">{{ csrf() }}<button class="btn ghost">다시 읽기</button></form>{% endif %}
   </div>
@@ -68,7 +67,7 @@
       <div class="score-num"><b>{{ r.overall_score }}</b><span>/ 10</span></div>
       <div class="crit">{{ bar('방법론', r.methodology_score) }}<p>{{ r.methodology_reason }}</p></div>
       <div class="crit">{{ bar('참신성', r.novelty_score, 'alt') }}<p>{{ r.novelty_reason }}</p></div>
-      <div class="relevance">관심 주제 관련도 {{ p.relevance }} · {{ p.relevance_reason }}</div>
+      <div class="relevance">관심 주제 관련도 {{ p.relevance }} · {{ p.relevance_reason }}{% if p.cost_usd is not none %}<br>리뷰 비용 ${{ '%.3f' % p.cost_usd }}{% endif %}</div>
     </section>
 
     <section class="card" id="cards">
