@@ -1,4 +1,4 @@
-# STAR✦WARS
+# STAR WARS
 
 **S**mart **T**opic **A**nalysis & **R**ating : **W**orthwise **A**rticle **R**esearch **S**ystem
 
@@ -34,26 +34,23 @@
 | 관리 | 대시보드에서 키워드 추가·삭제, 저널 검색 후 추가(OpenAlex), arXiv 카테고리 추가, 소스 켜기·끄기, 실행 간격·리뷰 수·관련도 기준 변경, 즉시 실행, arXiv 링크로 특정 논문 바로 리뷰 |
 | 카드뉴스 | 표지(헤드라인·평점) → 문제 → 방법 → 결과(논문 Figure와 핵심 수치) → 요약 표 → 아웃트로 순서의 6장. 슬라이드별 PNG와 ZIP을 내려받을 수 있고, 해시태그가 포함된 인스타 캡션도 만듦 |
 
-카드뉴스 예시 (테스트용 가상 논문 데이터로 렌더링):
+카드뉴스 예시 (테스트용 가상 논문으로 렌더링):
 
 <img src="docs/cardnews-sample.png" width="720">
 
-대시보드:
+논문 상세 페이지:
 
 <img src="docs/dashboard-sample.png" width="640">
 
-### 디자인 시스템
+### 디자인 원칙
 
-학술지·리서치 리포트 같은 에디토리얼 톤입니다. 특정 영화나 IP의 시각 요소는 쓰지 않습니다.
+[awesome-claude-design](https://github.com/VoltAgent/awesome-claude-design)에 정리된 Vercel·Linear·Notion 계열 DESIGN.md의 원칙을 따랐습니다. 장식보다 내용이 먼저 보이게 하는 데 집중했습니다.
 
-| 요소 | 값 |
-|---|---|
-| 배경 / 잉크 | 아이보리 `#F4F1EA` / 잉크 `#121317` (다크 모드는 반전) |
-| 포인트 컬러 | 버밀리언 `#E5481F` 한 가지 |
-| 워드마크 | `STAR✦WARS` — Playfair Display Bold, 넓은 자간. ✦는 "Rating"을 뜻하는 별점 마크 |
-| 본문 / 데이터 | Pretendard (한글) / JetBrains Mono (라벨·수치·메타데이터) |
-| 평점 표기 | 큰 세리프 숫자 + ✦, 방법론(잉크)·참신성(버밀리언) 10칸 세그먼트 미터 |
-| 카드 구성 | 01 표지 → 02 PROBLEM → 03 METHOD → 04 RESULT → 05 VERDICT → 06 STAR WARS 약어 아웃트로 |
+- **서체는 하나**: Pretendard(400·500·600·700)만 씁니다. 고정폭 글꼴은 arXiv ID 같은 식별자에만 씁니다.
+- **문장형 제목**: 대문자 라벨과 넓은 자간 대신 문장형 한국어 제목을 쓰고, 제목 자간은 살짝 좁혔습니다.
+- **색은 최소한**: 흰 바탕, 잉크 `#171717`, 본문 회색 `#4D4D4D`, 포인트 컬러 코발트 `#2B59C3` 한 가지입니다. 다크 모드를 지원합니다.
+- **장식 대신 여백과 헤어라인**: 그라데이션·아이콘·이모지 장식을 쓰지 않습니다. 카드는 1px 테두리와 아주 옅은 그림자만 씁니다.
+- **카드뉴스 한 장에 메시지 하나**: 단계 → 헤드라인 → 두 줄 설명 → 논문 그림·핵심 수치 순서로 위계를 고정했습니다. 로고와 쪽수는 늘 같은 자리에 둡니다.
 
 ## 빠른 시작
 
@@ -113,7 +110,7 @@ gunicorn -w 1 --threads 8 -b 0.0.0.0:8000 wsgi:app
 
 - 디자인: `paperagent/templates/cards/cards.html` (HTML/CSS 한 파일, 1080×1350)
 - 브랜드: `.env`의 `CARD_BRAND`, `CARD_HANDLE`(인스타 계정), `BRAND_TAGLINE` · 약어 풀이는 `config.BRAND_ACRONYM`
-- 폰트: Pretendard(본문), Playfair Display(워드마크·숫자), JetBrains Mono(데이터 라벨)가 `paperagent/static/fonts`에 들어 있음 (모두 SIL OFL 1.1)
+- 폰트: Pretendard와 JetBrains Mono(식별자 전용)가 `paperagent/static/fonts`에 들어 있음 (모두 SIL OFL 1.1)
 - 문구를 손보고 다시 만들고 싶으면 논문 상세 페이지의 "카드뉴스 다시 만들기"를 누르거나 `python -m paperagent cards <id>`를 실행
 
 ## 디렉터리

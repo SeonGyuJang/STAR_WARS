@@ -45,12 +45,14 @@ def build_html(paper: dict, review: dict, figures) -> str:
         slides.append({**s, "figure": figs.get(s.get("figure_number") or 0)})
     used = {s["figure"]["number"] for s in slides if s["figure"]}
 
-    # Cover visual: first figure not used on later slides, else the first
-    # figure, else the rendered first page.
-    cover = next((f for n, f in figs.items() if n not in used), None) or next(iter(figs.values()), None)
+    # Cover visual: a figure not shown on later slides, else the paper's
+    # first page, else any figure.
+    cover = next((f for n, f in figs.items() if n not in used), None)
     cover_uri = cover["uri"] if cover else None
-    if not cover_uri and paper.get("_page1"):
+    if not cover_uri and paper.get("_page1") and Path(paper["_page1"]).exists():
         cover_uri = Path(paper["_page1"]).resolve().as_uri()
+    if not cover_uri and figs:
+        cover_uri = next(iter(figs.values()))["uri"]
 
     published = (paper.get("published") or "")[:10]
     try:
