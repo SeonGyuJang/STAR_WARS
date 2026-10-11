@@ -60,7 +60,7 @@ def _fake_client(payload=None, stop_reason="end_turn", by_schema=None, usage=(10
     return client
 
 
-def test_review_uses_cheap_reader_and_strong_judge(sample_pdf):
+def test_review_uses_cheap_reader_and_strong_judge(fresh_db, sample_pdf):
     payloads = _stage_payloads()
     payloads[id(agent.JUDGE_SCHEMA)]["methodology_score"] = 11  # out of range -> clamped
     payloads[id(agent.WRITE_SCHEMA)]["card"]["slides"][0]["figure_number"] = 7  # not extracted -> 0
@@ -86,7 +86,7 @@ def test_review_uses_cheap_reader_and_strong_judge(sample_pdf):
     assert [c["stage"] for c in out["_cost"]["calls"]] == ["read", "judge", "write"]
 
 
-def test_abstract_only_skips_reader():
+def test_abstract_only_skips_reader(fresh_db):
     client = _fake_client(by_schema=_stage_payloads())
     with mock.patch.object(agent, "client", return_value=client):
         out, depth = agent.review(_paper(pdf_url=None), ["AI agent"])
@@ -99,7 +99,7 @@ def test_haiku_long_prompt_price():
     assert agent.price("claude-haiku-5-5", 200_000, 0) == 0.1
 
 
-def test_refusal_raises():
+def test_refusal_raises(fresh_db):
     client = _fake_client({}, stop_reason="refusal")
     with mock.patch.object(agent, "client", return_value=client):
         try:
@@ -169,8 +169,8 @@ def test_full_run(fresh_db, sample_pdf, tmp_path):
 
 
 def _csrf(client):
-    html = client.get("/settings").get_data(as_text=True)
-    return re.search(r'name="_csrf" value="([^"]+)"', html).group(1)
+    html = client.get("/login").get_data(as_text=True)
+    return re.search(r'name="csrf-token" content="([^"]+)"', html).group(1)
 
 
 def test_web_pages_and_admin_actions(fresh_db, sample_pdf, tmp_path):

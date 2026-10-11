@@ -10,7 +10,7 @@
     <span>24시간 <b>{{ counts.get('today', 0) }}편</b></span>
     <span>누적 <b>{{ counts.get('done', 0) }}편</b></span>
     <span>대기 <b>{{ counts.get('screened', 0) }}편</b></span>
-    {% if next_run %}<span>다음 실행 {{ next_run.strftime('%H:%M') }} UTC</span>{% endif %}
+    {% if next_run %}<span>다음 실행 {{ next_run | kst('%m.%d %H:%M') }}</span>{% endif %}
     {% if is_admin %}<form method="post" action="{{ url_for('web.run_now') }}">{{ csrf() }}<button class="btn ghost sm" {{ 'disabled' if running }}>{{ '실행 중' if running else '지금 실행' }}</button></form>{% endif %}
   </div>
 </section>
@@ -39,7 +39,8 @@
     {% else %}
       <div class="empty">
         <h3>아직 리뷰한 논문이 없습니다</h3>
-        <p>서버를 켜고 30초 뒤 첫 실행이 시작됩니다. <a href="{{ url_for('web.settings') }}">설정</a>에서 키워드를 확인하거나 arXiv 링크를 직접 넣어 보세요.</p>
+        {% if is_admin %}<p>서버를 켜고 30초 뒤 첫 실행이 시작됩니다. <a href="{{ url_for('web.settings') }}">설정</a>에서 키워드를 확인하거나 arXiv 링크를 직접 넣어 보세요.</p>
+        {% else %}<p>새 논문은 정해진 시간마다 자동으로 읽고 이곳에 올라옵니다.</p>{% endif %}
       </div>
     {% endfor %}
     </div>
@@ -65,8 +66,14 @@
       {% else %}<p class="small muted">다음 실행 때 채워집니다.</p>{% endfor %}
     </section>
     <section class="card">
-      <div class="side-h"><h3>관심 키워드</h3><a href="{{ url_for('web.settings') }}">편집</a></div>
-      <div class="chips">{% for k in keywords %}<a class="chip {{ 'on' if filters.keyword == k.term }}" href="{{ url_for('web.index', keyword=k.term) }}">{{ k.term }}</a>{% endfor %}</div>
+      <div class="side-h"><h3>관심 키워드</h3>{% if is_admin %}<a href="{{ url_for('web.settings') }}#keywords">편집</a>{% endif %}</div>
+      <ul class="kw-vlist collapsed" data-kw-list>
+        {% for k in keywords %}
+        <li><a href="{{ url_for('web.index', keyword=None if filters.keyword == k.term else k.term) }}" class="{{ 'on' if filters.keyword == k.term }}" title="{{ k.term }}">
+          <span class="t">{{ k.term }}</span><span class="n">{{ keyword_counts.get(k.term, 0) }}편</span></a></li>
+        {% else %}<li class="small muted">등록된 키워드가 없습니다.</li>{% endfor %}
+      </ul>
+      <button type="button" class="kw-more" data-kw-toggle hidden>전체 보기 ({{ keywords|length }}개)</button>
     </section>
   </aside>
 </div>

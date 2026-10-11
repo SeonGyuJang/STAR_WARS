@@ -15,10 +15,11 @@ show what each paper and each run actually cost.
 import base64
 import json
 import logging
+import os
 
 import anthropic
 
-from . import config, pdfs
+from . import config, db, pdfs
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +38,99 @@ def client() -> anthropic.Anthropic:
 
 class ReviewError(RuntimeError):
     pass
+
+
+# ---------------------------------------------------------------------------
+# API health: problems that need the admin (bad key, no credit, ...) stop the
+# AI steps and show a notice; everything that doesn't need Claude keeps working.
+# ---------------------------------------------------------------------------
+
+class ApiUnavailable(RuntimeError):
+    def __init__(self, kind: str, message: str):
+        super().__init__(message)
+        self.kind = kind
+        self.message = message
+
+
+def api_key_configured() -> bool:
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    return bool(key) and "..." not in key and key != "sk-ant-"
+
+
+def classify_api_error(exc):
+    """(kind, Korean message) for errors an admin has to fix, else None (transient)."""
+    if isinstance(exc, anthropic.AuthenticationError):
+        return "auth", "API 키가 올바르지 않습니다 (401)."
+    if isinstance(exc, anthropic.PermissionDeniedError):
+        return "permission", "이 API 키로는 해당 모델을 쓸 권한이 없습니다 (403)."
+    if isinstance(exc, anthropic.NotFoundError):
+        return "model", "설정한 모델 이름을 찾을 수 없습니다 (404). 모델 환경 변수를 확인하세요."
+    if isinstance(exc, anthropic.BadRequestError):
+        text = str(exc).lower()
+        if "credit" in text or "billing" in text or "balance" in text:
+            return "billing", "크레딧이 부족하거나 결제 수단이 없습니다."
+        return None
+    if isinstance(exc, anthropic.APIConnectionError):
+        return "connection", "Claude API 서버에 연결할 수 없습니다 (네트워크)."
+    if isinstance(exc, anthropic.RateLimitError | anthropic.InternalServerError):
+        return None
+    if isinstance(exc, anthropic.AnthropicError) and "api_key" in str(exc).lower():
+        return "missing_key", "API 키가 설정되지 않았습니다."
+    return None
+
+
+_last_ok = None
+
+
+def _save_status(value) -> bool:
+    try:
+        db.set_setting("api_status", value)
+        return True
+    except Exception as exc:  # bookkeeping must never break a Claude call
+        log.warning("could not save API status: %s", exc)
+        return False
+
+
+def record_api_ok():
+    global _last_ok
+    if _last_ok is not True and _save_status({"ok": True, "checked_at": db.now_iso()}):
+        _last_ok = True
+
+
+def record_api_problem(kind: str, message: str):
+    global _last_ok
+    _save_status({"ok": False, "kind": kind, "message": message, "checked_at": db.now_iso()})
+    _last_ok = False
+
+
+def api_status() -> dict:
+    """Current API state for the dashboard notice."""
+    if not api_key_configured():
+        return {"ok": False, "kind": "missing_key", "message": "API 키(ANTHROPIC_API_KEY)가 설정되지 않았습니다."}
+    return db.get_setting("api_status") or {"ok": True}
+
+
+def ensure_api():
+    """Raise ApiUnavailable early when there is no key at all."""
+    if not api_key_configured():
+        msg = "API 키(ANTHROPIC_API_KEY)가 설정되지 않았습니다."
+        record_api_problem("missing_key", msg)
+        raise ApiUnavailable("missing_key", msg)
+
+
+def check_api() -> dict:
+    """Free check (no tokens): look up every configured model."""
+    try:
+        ensure_api()
+        for model in {config.SCREEN_MODEL, config.READER_MODEL, config.JUDGE_MODEL, config.WRITER_MODEL}:
+            client().models.retrieve(model)
+        record_api_ok()
+    except ApiUnavailable:
+        pass
+    except anthropic.AnthropicError as exc:
+        kind, message = classify_api_error(exc) or ("other", f"API 확인 실패: {exc}")
+        record_api_problem(kind, message)
+    return api_status()
 
 
 class CostMeter:
@@ -83,15 +177,24 @@ def _call(stage: str, model: str, system: str, content, schema: dict, effort: st
         messages=[{"role": "user", "content": content}],
         output_config={"effort": effort, "format": {"type": "json_schema", "schema": schema}},
     )
-    if config.CLAUDE_FALLBACKS and _supports_fallback(model):
-        # On a safety-classifier refusal the API re-runs the request on
-        # Anthropic's recommended fallback model instead of failing.
-        kwargs.update(betas=["server-side-fallback-2026-07-01"], fallbacks="default")
-        stream_ctx = client().beta.messages.stream(**kwargs)
-    else:
-        stream_ctx = client().messages.stream(**kwargs)
-    with stream_ctx as stream:
-        msg = stream.get_final_message()
+    ensure_api()
+    try:
+        if config.CLAUDE_FALLBACKS and _supports_fallback(model):
+            # On a safety-classifier refusal the API re-runs the request on
+            # Anthropic's recommended fallback model instead of failing.
+            kwargs.update(betas=["server-side-fallback-2026-07-01"], fallbacks="default")
+            stream_ctx = client().beta.messages.stream(**kwargs)
+        else:
+            stream_ctx = client().messages.stream(**kwargs)
+        with stream_ctx as stream:
+            msg = stream.get_final_message()
+    except anthropic.AnthropicError as exc:
+        problem = classify_api_error(exc)
+        if problem:
+            record_api_problem(*problem)
+            raise ApiUnavailable(*problem) from exc
+        raise
+    record_api_ok()
     if meter is not None:
         meter.add(stage, getattr(msg, "model", None) or model, msg.usage)
     if msg.stop_reason == "refusal":

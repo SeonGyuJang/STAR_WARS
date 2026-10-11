@@ -4,14 +4,16 @@
 {% block content %}
 <section class="page-head"><div>
   <h1>트렌드</h1>
-  <p>지금 많이 이야기되는 논문과, 인용이 빠르게 늘고 있는 논문을 모았습니다.</p>
-</div></section>
+  <p>지금 많이 이야기되는 논문과, 인용이 빠르게 늘고 있는 논문을 모았습니다. 공개 데이터(Hugging Face, OpenAlex, Semantic Scholar)만 쓰므로 Claude API 상태와 관계없이 실행마다 갱신됩니다.</p>
+</div>
+{% if is_admin %}<form method="post" action="{{ url_for('web.trending_refresh') }}">{{ csrf() }}<button class="btn ghost sm">지금 새로고침</button></form>{% endif %}
+</section>
 
 {% set hf, hf_at = panels.hf_daily %}
 {% set active, active_at = panels.active %}
 {% set surge, surge_at = panels.surge %}
 {% set tracked, tracked_at = panels.tracked %}
-{% macro updated(ts) %}{% if ts %}<span>{{ ts[5:16].replace('T', ' ') }} 갱신</span>{% endif %}{% endmacro %}
+{% macro updated(ts) %}{% if ts %}<span>{{ ts | kst('%m.%d %H:%M') }} 갱신</span>{% endif %}{% endmacro %}
 
 <section class="card panel">
   <div class="panel-h"><h2>키워드별 새 논문</h2><span>최근 14일</span></div>

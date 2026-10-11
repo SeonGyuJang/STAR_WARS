@@ -49,3 +49,25 @@ if (document.querySelector(".live")) {
     } catch { /* ignore */ }
   }, 15000);
 }
+
+// Interest keywords: one line each with "..."; the toggle shows every keyword in full
+document.querySelectorAll("[data-kw-list]").forEach((list) => {
+  const btn = list.parentElement.querySelector("[data-kw-toggle]");
+  if (!btn) return;
+  const label = btn.textContent;
+  const items = list.querySelectorAll("li");
+  const truncated = [...list.querySelectorAll(".t")].some((t) => t.scrollWidth > t.clientWidth + 1);
+  if (items.length > 6 || truncated) btn.hidden = false;
+  btn.addEventListener("click", () => {
+    const open = list.classList.toggle("expanded");
+    list.classList.toggle("collapsed", !open);
+    btn.textContent = open ? "접기" : label;
+  });
+});
+
+// Queue: select all in a section
+document.querySelectorAll("[data-pick-all]").forEach((box) => {
+  box.addEventListener("change", () => {
+    box.closest("form").querySelectorAll("input[name=paper_id]").forEach((c) => (c.checked = box.checked));
+  });
+});
