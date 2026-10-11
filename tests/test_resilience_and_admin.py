@@ -105,6 +105,22 @@ def test_bad_api_key_still_collects_and_refreshes_trends(fresh_db):
     assert pipeline.is_due()
 
 
+def test_low_credit_balance_is_a_billing_problem(fresh_db):
+    # the exact 400 the API returns when the account runs out of credit
+    req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    msg = ("Your credit balance is too low to access the Anthropic API. "
+           "Please go to Plans & Billing to upgrade or purchase credits.")
+    body = {"type": "error", "error": {"type": "invalid_request_error", "message": msg}}
+    err = anthropic.BadRequestError(msg, response=httpx.Response(400, request=req), body=body)
+    broken = mock.Mock()
+    broken.messages.stream.side_effect = err
+    _, refresh = _run_with(client_side_effect=lambda: broken)
+    run = fresh_db.recent_runs(1)[0]
+    assert run["status"] == "partial" and "크레딧" in run["stats"]["api_error"]
+    refresh.assert_called_once()
+    assert agent.api_status()["kind"] == "billing"
+
+
 def test_missing_api_key_skips_ai_without_calling_claude(fresh_db):
     run_id, refresh = _run_with(client_side_effect=AssertionError("no client without a key"), key="")
     run = fresh_db.recent_runs(1)[0]
