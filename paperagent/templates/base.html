@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ site_name }}{% endblock %}</title>
+{% block meta %}{% endblock %}
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="logo" href="{{ url_for('web.index') }}"><span class="logo-mark">◆</span> {{ site_name }}</a>
+    <nav>
+      <a href="{{ url_for('web.index') }}" class="{{ 'on' if request.endpoint == 'web.index' }}">오늘의 논문</a>
+      <a href="{{ url_for('web.trending_view') }}" class="{{ 'on' if request.endpoint == 'web.trending_view' }}">트렌드</a>
+      <a href="{{ url_for('web.queue') }}" class="{{ 'on' if request.endpoint == 'web.queue' }}">대기열</a>
+      <a href="{{ url_for('web.settings') }}" class="{{ 'on' if request.endpoint == 'web.settings' }}">관심 설정</a>
+    </nav>
+    <div class="topbar-right">
+      {% if running %}<span class="live"><i></i>에이전트 실행 중</span>{% endif %}
+      {% if admin_enabled %}
+        {% if is_admin %}
+        <form method="post" action="{{ url_for('web.logout') }}"><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="link">로그아웃</button></form>
+        {% else %}<a class="link" href="{{ url_for('web.login') }}">관리자</a>{% endif %}
+      {% endif %}
+    </div>
+  </div>
+</header>
+<main class="wrap">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+<footer class="wrap foot">
+  논문 요약·평점은 Claude 에이전트가 원문을 읽고 자동 생성한 것으로, 오류가 있을 수 있습니다. 중요한 판단 전에는 원문을 확인하세요.
+</footer>
+<script>window.CSRF = "{{ csrf_token() }}";</script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

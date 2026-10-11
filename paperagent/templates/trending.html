@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}트렌드 · {{ site_name }}{% endblock %}
+{% block content %}
+<section class="hero"><div>
+  <h1>지금 뜨는 연구</h1>
+  <p class="muted">커뮤니티 화제성(Hugging Face Daily Papers), 최근 1년 다인용 논문, 인용 가속도(OpenAlex), 내가 리뷰한 논문의 주간 인용 증가를 함께 봅니다.</p>
+</div></section>
+
+{% set hf, hf_at = panels.hf_daily %}
+{% set active, active_at = panels.active %}
+{% set surge, surge_at = panels.surge %}
+{% set tracked, tracked_at = panels.tracked %}
+
+<section class="box">
+  <div class="box-h"><h2>키워드별 신규 논문 (최근 14일)</h2></div>
+  {% if activity %}
+    <div class="activity">
+    {% for a in activity %}
+      <div class="act-row"><a class="act-kw" href="{{ url_for('web.index', keyword=a.kw) }}">{{ a.kw }}</a>
+        <div class="spark">{% for d, n in a.series %}<i style="height: {{ (n / peak * 100) | round | int }}%" title="{{ d }}: {{ n }}편"></i>{% endfor %}</div>
+        <span class="act-n">{{ a.total }}편</span></div>
+    {% endfor %}
+    </div>
+  {% else %}<p class="muted">수집된 논문이 쌓이면 표시됩니다.</p>{% endif %}
+</section>
+
+<div class="trend-grid">
+  <section class="box" id="hf">
+    <div class="box-h"><h2>🔥 오늘 화제의 논문</h2><span class="small muted">{{ (hf_at or '')[:16].replace('T', ' ') }}</span></div>
+    {% for t in hf or [] %}
+      <div class="trow"><span class="rank">{{ loop.index }}</span>
+        <div><a href="{{ t.url }}" target="_blank" rel="noopener">{{ t.title }}</a>
+          <div class="small muted">▲ {{ t.upvotes }} · 💬 {{ t.comments }} · {{ t.authors | join(', ') }} · <a href="{{ t.hf_url }}" target="_blank" rel="noopener">HF</a></div>
+          {% if is_admin %}<form method="post" action="{{ url_for('web.add_paper') }}" class="inline"><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="arxiv" value="{{ t.arxiv_id }}"><button class="link small">에이전트에게 읽히기 →</button></form>{% endif %}
+        </div></div>
+    {% else %}<p class="muted">데이터 없음 (다음 실행 때 갱신)</p>{% endfor %}
+  </section>
+
+  <section class="box" id="surge">
+    <div class="box-h"><h2>📈 인용이 급증하는 논문</h2><span class="small muted">{{ (surge_at or '')[:16].replace('T', ' ') }}</span></div>
+    {% for t in surge or [] %}
+      <div class="trow"><span class="rank">{{ loop.index }}</span>
+        <div><a href="{{ t.url }}" target="_blank" rel="noopener">{{ t.title }}</a>
+          <div class="small muted">올해 {{ t.this_year }}회 인용 (작년 {{ t.last_year }}회{% if t.growth_pct %}, 연환산 +{{ t.growth_pct }}%{% endif %}) · 누적 {{ t.citation_count }} · {{ t.keyword }}</div></div></div>
+    {% else %}<p class="muted">데이터 없음</p>{% endfor %}
+  </section>
+
+  <section class="box" id="active">
+    <div class="box-h"><h2>🧪 활발히 연구되는 논문 (최근 1년 다인용)</h2><span class="small muted">{{ (active_at or '')[:16].replace('T', ' ') }}</span></div>
+    {% for t in active or [] %}
+      <div class="trow"><span class="rank">{{ loop.index }}</span>
+        <div><a href="{{ t.url }}" target="_blank" rel="noopener">{{ t.title }}</a>
+          <div class="small muted">인용 {{ t.citation_count }} · {{ t.published }} · {{ t.source_name or '' }} · {{ t.keyword }}</div></div></div>
+    {% else %}<p class="muted">데이터 없음</p>{% endfor %}
+  </section>
+
+  <section class="box" id="tracked">
+    <div class="box-h"><h2>⭐ 내가 리뷰한 논문 중 인용 증가 (7일)</h2><span class="small muted">{{ (tracked_at or '')[:16].replace('T', ' ') }}</span></div>
+    {% for t in tracked or [] %}
+      <div class="trow"><span class="rank">{{ loop.index }}</span>
+        <div><a href="{{ url_for('web.paper_detail', paper_id=t.id) }}">{{ t.title }}</a>
+          <div class="small muted">+{{ t.growth_7d }} (누적 {{ t.citation_count }})</div></div></div>
+    {% else %}<p class="muted">하루 이상 인용 스냅샷이 쌓이면 표시됩니다.</p>{% endfor %}
+  </section>
+</div>
+{% endblock %}

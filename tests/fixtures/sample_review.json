@@ -1,0 +1,31 @@
+{
+  "_note": "Hand-written sample used only to test card rendering. Not a real review.",
+  "title_ko": "작은 모델도 스스로 검증하며 추론을 개선한다",
+  "one_liner": "답을 낸 뒤 스스로 검증하는 루프만으로 7B 모델의 수학 추론이 크게 오른다",
+  "tldr": "샘플 요약입니다.",
+  "problem": "샘플", "method": "샘플",
+  "key_results": ["샘플 결과 1", "샘플 결과 2"],
+  "contributions": ["샘플"], "limitations": ["샘플"],
+  "why_it_matters": "샘플", "who_should_read": "샘플",
+  "tags": ["LLM", "Reasoning", "Self-verification"],
+  "methodology_score": 7.5, "methodology_reason": "샘플", "novelty_score": 8.0, "novelty_reason": "샘플",
+  "overall_score": 7.8, "read_confidence": "high",
+  "card": {
+    "category": "LLM 추론",
+    "cover_headline": "작은 모델이\n스스로 답을 검증합니다",
+    "cover_sub": "추가 학습 없이 검증 루프만 붙여 수학 정답률을 끌어올렸습니다.",
+    "slides": [
+      {"label": "문제", "headline": "큰 모델만\n추론을 잘할까요?", "body": "작은 모델은 한 번 틀리면 끝까지 틀립니다.\n스스로 오류를 고칠 장치가 없기 때문입니다.", "figure_number": 0, "highlight": "7B", "highlight_label": "실험에 쓴 모델 크기"},
+      {"label": "방법", "headline": "답을 내고\n다시 검증합니다", "body": "생성 → 검증 → 수정 루프를 반복합니다.\n검증기는 같은 모델을 그대로 씁니다.", "figure_number": 2, "highlight": "", "highlight_label": ""},
+      {"label": "결과", "headline": "정답률이\n크게 올랐습니다", "body": "네 가지 벤치마크 모두에서 개선됐습니다.\n특히 어려운 문제에서 차이가 컸습니다.", "figure_number": 1, "highlight": "+12.4%p", "highlight_label": "MATH 정답률 향상"}
+    ],
+    "summary_rows": [
+      {"label": "문제", "sub": "배경", "value": "작은 모델의 추론 오류", "value_sub": "한 번 틀리면 복구 불가"},
+      {"label": "방법", "sub": "핵심 아이디어", "value": "생성·검증·수정 루프", "value_sub": "추가 학습 없음"},
+      {"label": "데이터", "sub": "평가", "value": "수학 벤치마크 4종", "value_sub": "GSM8K · MATH 등"},
+      {"label": "결과", "sub": "성능", "value": "MATH +12.4%p", "value_sub": "어려운 문제일수록 이득"},
+      {"label": "한계", "sub": "알아 둘 점", "value": "추론 비용 약 3배", "value_sub": "코드·일반 과제 미검증"}
+    ],
+    "caption": "샘플 캡션입니다.\n#AI #논문리뷰"
+  }
+}

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}관리자 로그인 · {{ site_name }}{% endblock %}
+{% block content %}
+<section class="box login">
+  <h1>관리자 로그인</h1>
+  <p class="muted small">누구나 대시보드를 볼 수 있고, 키워드·저널 변경과 실행은 관리자만 할 수 있습니다.</p>
+  <form method="post" class="row-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <input type="password" name="password" placeholder="비밀번호" autofocus required>
+    <button class="btn">로그인</button>
+  </form>
+</section>
+{% endblock %}
