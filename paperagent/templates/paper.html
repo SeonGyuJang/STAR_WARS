@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% from "_macros.html" import bar, csrf with context %}
+{% block title %}{{ r.title_ko or p.title }} · {{ site_name }}{% endblock %}
+{% block meta %}
+<meta property="og:title" content="{{ r.title_ko or p.title }}">
+<meta property="og:description" content="{{ r.one_liner or (p.abstract or '')[:150] }}">
+<meta property="og:site_name" content="{{ site_name }}">
+{% if p.card_paths %}<meta property="og:image" content="{{ url_for('web.file_card', paper_id=p.id, n=1, _external=True) }}">{% endif %}
+{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('web.index') }}">← 목록으로</a>
+<header class="dhead">
+  <div class="pmeta">
+    {% if (r.card or {}).category %}<span class="cat">{{ r.card.category }}</span><i>·</i>{% endif %}
+    <span>{{ p.source_name or p.source_kind }}</span><i>·</i><span>{{ p.published | short_date }}</span>
+    {% if p.read_depth %}<i>·</i><span>{{ {'full_pdf': 'PDF 전문을 읽음', 'full_text': '전문 텍스트를 읽음', 'abstract': '초록만 읽음'}[p.read_depth] }}</span>{% endif %}
+  </div>
+  <h1>{{ r.title_ko or p.title }}</h1>
+  {% if r.title_ko %}<p class="en">{{ p.title }}</p>{% endif %}
+  <p class="authors">{{ p.authors[:8] | join(', ') }}{% if p.authors|length > 8 %} 외 {{ p.authors|length - 8 }}명{% endif %}</p>
+  <div class="actions">
+    <a class="btn" href="{{ p.drive_link or p.url }}" target="_blank" rel="noopener">{{ '원문 PDF 열기' if p.drive_link else '원문 보기' }}</a>
+    {% if p.drive_link %}<a class="btn ghost" href="{{ p.url }}" target="_blank" rel="noopener">논문 페이지</a>{% endif %}
+    {% if p.local_pdf %}<a class="btn ghost" href="{{ url_for('web.file_pdf', paper_id=p.id) }}" target="_blank">PDF 다운로드</a>{% endif %}
+    <button class="btn ghost" data-share="{{ share_url }}" data-title="{{ r.title_ko or p.title }}">링크 공유</button>
+    {% if is_admin %}<form method="post" action="{{ url_for('web.reprocess', paper_id=p.id) }}">{{ csrf() }}<button class="btn ghost">다시 읽기</button></form>{% endif %}
+  </div>
+</header>
+
+{% if p.status != 'done' %}
+  <div class="dgrid"><div class="article">
+    <div class="summary-box">
+      {% if p.status == 'error' %}<div class="label">리뷰 중 오류가 났습니다</div><pre class="log">{{ p.error }}</pre>
+      {% elif p.status == 'skipped' %}<div class="label">관련도가 낮아 건너뛴 논문입니다</div><p>관련도 {{ p.relevance }} · {{ p.relevance_reason }}</p>
+      {% else %}<div class="label">아직 읽지 않은 논문입니다</div>{% if p.relevance_reason %}<p>{{ p.relevance_reason }}</p>{% endif %}{% endif %}
+    </div>
+    <section class="sec"><h2>초록</h2><p>{{ p.abstract }}</p></section>
+  </div></div>
+{% else %}
+<div class="dgrid">
+  <div class="article">
+    <div class="summary-box">
+      <div class="label">한 줄 요약</div>
+      <p class="lead">{{ r.one_liner }}</p>
+      <p>{{ r.tldr }}</p>
+    </div>
+    <section class="sec"><h2>어떤 문제를 푸나요</h2><p>{{ r.problem }}</p></section>
+    <section class="sec"><h2>어떻게 풀었나요</h2><p>{{ r.method }}</p></section>
+    <section class="sec"><h2>핵심 결과</h2><ul>{% for x in r.key_results %}<li>{{ x }}</li>{% endfor %}</ul></section>
+    <section class="sec"><h2>기여</h2><ul>{% for x in r.contributions %}<li>{{ x }}</li>{% endfor %}</ul></section>
+    <section class="sec"><h2>한계</h2><ul>{% for x in r.limitations %}<li>{{ x }}</li>{% endfor %}</ul></section>
+    <section class="sec"><h2>왜 중요한가요</h2><p>{{ r.why_it_matters }}</p></section>
+    <section class="sec"><h2>추천 독자</h2><p>{{ r.who_should_read }}</p></section>
+    {% if figures %}
+    <section class="sec">
+      <h2>주요 그림</h2>
+      <div class="figs">{% for f in figures[:6] %}
+        <figure><a href="{{ url_for('web.file_figure', paper_id=p.id, name='fig%d.png' % f.number) }}" target="_blank"><img loading="lazy" src="{{ url_for('web.file_figure', paper_id=p.id, name='fig%d.png' % f.number) }}" alt="Figure {{ f.number }}"></a>
+          <figcaption>Figure {{ f.number }}. {{ f.caption | replace('Figure ' ~ f.number ~ ':', '') | replace('Figure ' ~ f.number ~ '.', '') | trim | truncate(140) }}</figcaption></figure>
+      {% endfor %}</div>
+    </section>
+    {% endif %}
+  </div>
+
+  <aside>
+    <section class="card">
+      <div class="score-top"><h3>평점</h3>{% if r.read_confidence %}<span class="small muted">확신도 {{ {'high': '높음', 'medium': '보통', 'low': '낮음'}[r.read_confidence] }}</span>{% endif %}</div>
+      <div class="score-num"><b>{{ r.overall_score }}</b><span>/ 10</span></div>
+      <div class="crit">{{ bar('방법론', r.methodology_score) }}<p>{{ r.methodology_reason }}</p></div>
+      <div class="crit">{{ bar('참신성', r.novelty_score, 'alt') }}<p>{{ r.novelty_reason }}</p></div>
+      <div class="relevance">관심 주제 관련도 {{ p.relevance }} · {{ p.relevance_reason }}</div>
+    </section>
+
+    <section class="card" id="cards">
+      <div class="score-top"><h3>인스타 카드뉴스</h3>{% if p.card_paths %}<a class="small" href="{{ url_for('web.file_cards_zip', paper_id=p.id) }}">전체 받기</a>{% endif %}</div>
+      {% if p.card_paths %}
+        <div class="carousel" data-carousel>
+          <div class="slides">{% for path in p.card_paths %}<img src="{{ url_for('web.file_card', paper_id=p.id, n=loop.index) }}" alt="카드 {{ loop.index }}">{% endfor %}</div>
+          <button class="nav-btn prev" data-prev aria-label="이전">‹</button><button class="nav-btn next" data-next aria-label="다음">›</button>
+          <div class="dots"></div>
+        </div>
+        <div class="dl">한 장씩 받기 {% for path in p.card_paths %}<a href="{{ url_for('web.file_card', paper_id=p.id, n=loop.index, dl=1) }}">{{ loop.index }}</a>{% endfor %}</div>
+      {% else %}<p class="small muted" style="margin-top: 8px">카드뉴스가 아직 없습니다.</p>{% endif %}
+      {% if caption %}
+        <div class="cap-label">캡션</div>
+        <textarea class="caption" readonly rows="8" id="caption">{{ caption }}</textarea>
+      {% endif %}
+      <div class="row-actions">
+        {% if caption %}<button class="btn sm" data-copy="#caption">캡션 복사</button>{% endif %}
+        {% if is_admin %}<form method="post" action="{{ url_for('web.rerender', paper_id=p.id) }}">{{ csrf() }}<button class="btn ghost sm">카드 다시 만들기</button></form>{% endif %}
+      </div>
+    </section>
+  </aside>
+</div>
+{% endif %}
+{% endblock %}

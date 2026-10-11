@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf with context %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>오늘의 논문</h1>
+    <p>관심 주제에 맞는 새 논문을 에이전트가 원문까지 읽고, 방법론과 참신성으로 평가했습니다.</p>
+  </div>
+  <div class="page-meta">
+    <span>24시간 <b>{{ counts.get('today', 0) }}편</b></span>
+    <span>누적 <b>{{ counts.get('done', 0) }}편</b></span>
+    <span>대기 <b>{{ counts.get('screened', 0) }}편</b></span>
+    {% if next_run %}<span>다음 실행 {{ next_run.strftime('%H:%M') }} UTC</span>{% endif %}
+    {% if is_admin %}<form method="post" action="{{ url_for('web.run_now') }}">{{ csrf() }}<button class="btn ghost sm" {{ 'disabled' if running }}>{{ '실행 중' if running else '지금 실행' }}</button></form>{% endif %}
+  </div>
+</section>
+
+<div class="layout">
+  <div>
+    <form class="toolbar" method="get">
+      <input type="search" name="q" value="{{ filters.q }}" placeholder="제목이나 요약으로 검색">
+      <select name="keyword" onchange="this.form.submit()" aria-label="키워드">
+        <option value="">모든 키워드</option>
+        {% for k in keywords %}<option value="{{ k.term }}" {{ 'selected' if filters.keyword == k.term }}>{{ k.term }}</option>{% endfor %}
+      </select>
+      <select name="days" onchange="this.form.submit()" aria-label="기간">
+        <option value="">전체 기간</option>
+        {% for d, label in [(1, '24시간'), (7, '7일'), (30, '30일')] %}<option value="{{ d }}" {{ 'selected' if filters.days == d }}>{{ label }}</option>{% endfor %}
+      </select>
+      <select name="sort" onchange="this.form.submit()" aria-label="정렬">
+        <option value="recent" {{ 'selected' if filters.sort == 'recent' }}>최신순</option>
+        <option value="score" {{ 'selected' if filters.sort == 'score' }}>평점순</option>
+        <option value="relevance" {{ 'selected' if filters.sort == 'relevance' }}>관련도순</option>
+      </select>
+    </form>
+
+    <div class="card plist">
+    {% for p in papers %}{% include "_paper_card.html" %}
+    {% else %}
+      <div class="empty">
+        <h3>아직 리뷰한 논문이 없습니다</h3>
+        <p>서버를 켜고 30초 뒤 첫 실행이 시작됩니다. <a href="{{ url_for('web.settings') }}">설정</a>에서 키워드를 확인하거나 arXiv 링크를 직접 넣어 보세요.</p>
+      </div>
+    {% endfor %}
+    </div>
+    {% if page > 1 or has_more %}
+    <div class="pager">
+      {% if page > 1 %}<a class="btn ghost sm" href="{{ url_for('web.index', page=page-1, **filter_args) }}">이전</a>{% endif %}
+      {% if has_more %}<a class="btn ghost sm" href="{{ url_for('web.index', page=page+1, **filter_args) }}">다음</a>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <aside class="side">
+    <section class="card">
+      <div class="side-h"><h3>오늘 화제인 논문</h3><a href="{{ url_for('web.trending_view') }}#hf">더 보기</a></div>
+      {% for t in hf %}
+        <a class="mini" href="{{ t.url }}" target="_blank" rel="noopener"><span class="n">▲ {{ t.upvotes }}</span><span>{{ t.title }}</span></a>
+      {% else %}<p class="small muted">다음 실행 때 채워집니다.</p>{% endfor %}
+    </section>
+    <section class="card">
+      <div class="side-h"><h3>인용이 늘고 있는 논문</h3><a href="{{ url_for('web.trending_view') }}#surge">더 보기</a></div>
+      {% for t in surge %}
+        <a class="mini" href="{{ t.url }}" target="_blank" rel="noopener"><span class="n">+{{ t.this_year }}</span><span>{{ t.title }}</span></a>
+      {% else %}<p class="small muted">다음 실행 때 채워집니다.</p>{% endfor %}
+    </section>
+    <section class="card">
+      <div class="side-h"><h3>관심 키워드</h3><a href="{{ url_for('web.settings') }}">편집</a></div>
+      <div class="chips">{% for k in keywords %}<a class="chip {{ 'on' if filters.keyword == k.term }}" href="{{ url_for('web.index', keyword=k.term) }}">{{ k.term }}</a>{% endfor %}</div>
+    </section>
+  </aside>
+</div>
+{% endblock %}

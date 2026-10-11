@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <title type="html">ArXiv Query: test fixture</title>
+  <entry>
+    <id>http://arxiv.org/abs/2610.01234v2</id>
+    <updated>2099-01-02T00:00:00Z</updated>
+    <published>2099-01-01T00:00:00Z</published>
+    <title>Self-Verification Loops Make Small
+      Language Models Better Reasoners</title>
+    <summary>  We show that large language models with a self-verification loop
+      improve on math benchmarks. Our AI agents verify answers.</summary>
+    <author><name>A. Kim</name></author>
+    <author><name>B. Lee</name></author>
+    <arxiv:doi>10.1234/test.5678</arxiv:doi>
+    <link href="http://arxiv.org/abs/2610.01234v2" rel="alternate" type="text/html"/>
+    <link title="pdf" href="http://arxiv.org/pdf/2610.01234v2" rel="related" type="application/pdf"/>
+    <arxiv:primary_category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2001.00001v1</id>
+    <updated>2020-01-01T00:00:00Z</updated>
+    <published>2020-01-01T00:00:00Z</published>
+    <title>An Old Paper About Large Language Models</title>
+    <summary>Old work on a large language model.</summary>
+    <author><name>C. Park</name></author>
+    <link title="pdf" href="http://arxiv.org/pdf/2001.00001v1" rel="related" type="application/pdf"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.09999v1</id>
+    <updated>2099-01-01T00:00:00Z</updated>
+    <published>2099-01-01T00:00:00Z</published>
+    <title>Protein Folding With Graphs</title>
+    <summary>Nothing about the keywords.</summary>
+    <author><name>D. Choi</name></author>
+    <category term="q-bio.BM" scheme="http://arxiv.org/schemas/atom"/>
+  </entry>
+</feed>

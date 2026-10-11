@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+data/
+*.db
+client_secret*.json
+service_account*.json
+.venv/

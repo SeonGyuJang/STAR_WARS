@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<style>
+@font-face { font-family: "Pretendard"; font-weight: 400; src: url("{{ fonts }}/Pretendard-Regular.woff2") format("woff2"); }
+@font-face { font-family: "Pretendard"; font-weight: 500; src: url("{{ fonts }}/Pretendard-Medium.woff2") format("woff2"); }
+@font-face { font-family: "Pretendard"; font-weight: 600; src: url("{{ fonts }}/Pretendard-SemiBold.woff2") format("woff2"); }
+@font-face { font-family: "Pretendard"; font-weight: 700; src: url("{{ fonts }}/Pretendard-Bold.woff2") format("woff2"); }
+@font-face { font-family: "Mono"; font-weight: 400; src: url("{{ fonts }}/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+
+:root {
+  --bg: #ffffff;
+  --well: #f4f4f2;
+  --ink: #141414;
+  --body: #4a4a4a;
+  --mute: #8e8e8e;
+  --line: #e8e8e6;
+  --accent: #2b59c3;
+  --dark: #121212;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: #000; }
+body { font-family: "Pretendard", system-ui, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; word-break: keep-all;
+       font-feature-settings: "tnum" 1; }
+.slide { width: 1080px; height: 1350px; position: relative; overflow: hidden; background: var(--bg);
+         display: flex; flex-direction: column; padding: 64px 80px 56px; }
+
+/* top + bottom bars: quiet, always in the same place */
+.top { flex: none; display: flex; justify-content: space-between; align-items: center; height: 40px; }
+.logo { font-size: 26px; font-weight: 700; letter-spacing: 0.02em; }
+.page { font-size: 24px; font-weight: 500; color: var(--mute); }
+.bottom { flex: none; margin-top: auto; padding-top: 28px; display: flex; justify-content: space-between; font-size: 22px; color: var(--mute); }
+.id { font-family: "Mono", monospace; font-size: 21px; }
+
+.tag { display: inline-block; align-self: flex-start; font-size: 26px; font-weight: 600; color: var(--body);
+       background: var(--well); padding: 10px 20px; border-radius: 999px; }
+.step { font-size: 30px; font-weight: 600; color: var(--accent); }
+
+h1 { font-size: 86px; line-height: 1.2; font-weight: 700; letter-spacing: -0.035em; max-height: 210px; }
+h2 { font-size: 72px; line-height: 1.22; font-weight: 700; letter-spacing: -0.035em; max-height: 180px; }
+.lead { font-size: 34px; line-height: 1.6; color: var(--body); font-weight: 400; letter-spacing: -0.01em; }
+
+.figure { flex: 1; min-height: 0; background: var(--well); border-radius: 28px; padding: 36px;
+          display: flex; align-items: center; justify-content: center; position: relative; }
+.figure img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; border-radius: 8px; background: #fff; }
+.figure .cap { position: absolute; left: 36px; bottom: -44px; font-size: 21px; color: var(--mute); white-space: nowrap; overflow: hidden;
+               text-overflow: ellipsis; max-width: calc(100% - 72px); }
+
+/* ---------- cover ---------- */
+.cover .tag { margin-top: 88px; }
+.cover h1 { margin-top: 32px; }
+.cover .lead { margin-top: 26px; max-height: 110px; }
+.cover .figure { margin-top: 52px; }
+.score { flex: none; margin-top: 44px; display: flex; align-items: flex-end; gap: 56px; padding-top: 32px; border-top: 2px solid var(--ink); }
+.score .total { display: flex; align-items: baseline; gap: 8px; }
+.score .total b { font-size: 104px; font-weight: 700; line-height: .9; letter-spacing: -0.04em; }
+.score .total span { font-size: 30px; color: var(--mute); font-weight: 500; }
+.score .label { font-size: 22px; color: var(--mute); font-weight: 500; margin-bottom: 10px; }
+.score .parts { flex: 1; display: flex; flex-direction: column; gap: 18px; padding-bottom: 8px; }
+.bar { display: grid; grid-template-columns: 110px 1fr 56px; align-items: center; gap: 18px; font-size: 25px; }
+.bar span { color: var(--body); font-weight: 500; }
+.bar b { text-align: right; font-weight: 600; }
+.bar .track { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.bar .fill { height: 100%; background: var(--ink); border-radius: 3px; }
+.bar.alt .fill { background: var(--accent); }
+
+/* ---------- content ---------- */
+.content .step { margin-top: 88px; }
+.content h2 { margin-top: 22px; }
+.content .lead { margin-top: 26px; max-height: 112px; }
+.content .figure { margin-top: 56px; margin-bottom: 44px; }
+.stat { margin-top: 40px; display: flex; align-items: baseline; gap: 22px; }
+.stat b { font-size: 72px; font-weight: 700; color: var(--accent); letter-spacing: -0.03em; line-height: 1; }
+.stat span { font-size: 28px; color: var(--body); font-weight: 500; }
+.stat-only { flex: 1; display: flex; flex-direction: column; justify-content: center; border-top: 1px solid var(--line); margin-top: 56px; }
+.stat-only b { font-size: 220px; font-weight: 700; letter-spacing: -0.05em; line-height: 1; color: var(--accent); }
+.stat-only span { margin-top: 24px; font-size: 32px; color: var(--body); font-weight: 500; }
+
+/* ---------- summary ---------- */
+.summary h2 { margin-top: 88px; font-size: 64px; }
+.rows { margin-top: 44px; border-top: 2px solid var(--ink); }
+.row { display: grid; grid-template-columns: 170px 1fr; gap: 28px; padding: 24px 0; border-bottom: 1px solid var(--line); }
+.row .k { font-size: 26px; color: var(--mute); font-weight: 500; padding-top: 4px; }
+.row .v b { display: block; font-size: 33px; font-weight: 600; line-height: 1.35; letter-spacing: -0.02em; }
+.row .v span { display: block; margin-top: 4px; font-size: 24px; color: var(--body); line-height: 1.45; }
+.verdict { margin-top: 40px; display: flex; gap: 40px; align-items: center; }
+.verdict .total b { font-size: 88px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; }
+.verdict .total span { font-size: 26px; color: var(--mute); margin-left: 6px; }
+.verdict .parts { flex: 1; display: flex; flex-direction: column; gap: 16px; }
+
+/* ---------- outro ---------- */
+.outro { background: var(--dark); color: #fff; }
+.outro .page { color: #6b6b6b; }
+.outro .bottom { color: #6b6b6b; }
+.acro { margin-top: 120px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 40px; }
+.acro div { font-size: 64px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.25; color: #5c5c5c; white-space: nowrap; }
+.acro b { color: #fff; font-weight: 700; }
+.outro .claim { margin-top: 96px; font-size: 52px; line-height: 1.35; font-weight: 700; letter-spacing: -0.03em; }
+.outro .cta { margin-top: 28px; font-size: 30px; line-height: 1.6; color: #a3a3a3; }
+.outro .cta b { color: #fff; font-weight: 600; }
+</style>
+</head>
+<body>
+{% macro top(n) %}<div class="top"><div class="logo">{{ brand }}</div><div class="page">{{ n }} / {{ total }}</div></div>{% endmacro %}
+{% macro bottom() %}<div class="bottom"><span class="id">{{ source_ref }}</span><span>{{ handle }}</span></div>{% endmacro %}
+{% macro bar(label, score, cls='') %}<div class="bar {{ cls }}"><span>{{ label }}</span><div class="track"><div class="fill" style="width: {{ (score * 10) | round | int }}%"></div></div><b>{{ score }}</b></div>{% endmacro %}
+
+{# 1. Cover: what is this paper, in one line, and how good is it #}
+<section class="slide cover">
+  {{ top(1) }}
+  <div class="tag">{{ card.category }}</div>
+  <h1 data-fit>{{ card.cover_headline | nl2br }}</h1>
+  <p class="lead" data-fit>{{ card.cover_sub }}</p>
+  <div class="figure">{% if cover_image %}<img src="{{ cover_image }}">{% endif %}</div>
+  <div class="score">
+    <div><div class="label">종합 평점</div><div class="total"><b>{{ review.overall_score }}</b><span>/ 10</span></div></div>
+    <div class="parts">{{ bar('방법론', review.methodology_score) }}{{ bar('참신성', review.novelty_score, 'alt') }}</div>
+  </div>
+  {{ bottom() }}
+</section>
+
+{# 2-4. Problem / method / result #}
+{% for s in slides %}
+<section class="slide content">
+  {{ top(loop.index + 1) }}
+  <div class="step">{{ loop.index }}. {{ s.label }}</div>
+  <h2 data-fit>{{ s.headline | nl2br }}</h2>
+  <p class="lead" data-fit>{{ s.body | nl2br }}</p>
+  {% if s.figure %}
+    {% if s.highlight %}<div class="stat"><b>{{ s.highlight }}</b><span>{{ s.highlight_label }}</span></div>{% endif %}
+    <div class="figure"><img src="{{ s.figure.uri }}"><div class="cap">Figure {{ s.figure.number }}. {{ s.figure.caption | replace('Figure ' ~ s.figure.number ~ ':', '') | replace('Figure ' ~ s.figure.number ~ '.', '') | trim }}</div></div>
+  {% elif s.highlight %}
+    <div class="stat-only"><b data-fit-width>{{ s.highlight }}</b><span>{{ s.highlight_label }}</span></div>
+  {% endif %}
+  {{ bottom() }}
+</section>
+{% endfor %}
+
+{# 5. Summary #}
+<section class="slide summary">
+  {{ top(total - 1) }}
+  <h2>한눈에 정리</h2>
+  <div class="rows">
+    {% for r in card.summary_rows %}
+    <div class="row"><div class="k">{{ r.label }}</div><div class="v"><b>{{ r.value }}</b>{% if r.value_sub %}<span>{{ r.value_sub }}</span>{% endif %}</div></div>
+    {% endfor %}
+  </div>
+  <div class="verdict">
+    <div class="total"><b>{{ review.overall_score }}</b><span>/ 10</span></div>
+    <div class="parts">{{ bar('방법론', review.methodology_score) }}{{ bar('참신성', review.novelty_score, 'alt') }}</div>
+  </div>
+  {{ bottom() }}
+</section>
+
+{# 6. Outro #}
+<section class="slide outro">
+  {{ top(total) }}
+  <div class="acro">
+    {% for initial, rest in acronym[:4] %}<div style="grid-column: 1; grid-row: {{ loop.index }}"><b>{{ initial }}</b>{{ rest }}</div>{% endfor %}
+    {% for initial, rest in acronym[4:] %}<div style="grid-column: 2; grid-row: {{ loop.index }}"><b>{{ initial }}</b>{{ rest }}</div>{% endfor %}
+  </div>
+  <p class="claim">읽을 가치가 있는 논문만<br>골라 읽고, 평가합니다.</p>
+  <p class="cta">원문과 전체 리뷰는 프로필 링크에서 볼 수 있어요.<br>매일 새 논문을 받아보려면 <b>{{ handle }}</b></p>
+  {{ bottom() }}
+</section>
+
+<script>
+// Shrink headlines that would overflow their box.
+document.fonts.ready.then(() => {
+  document.querySelectorAll("[data-fit]").forEach(el => {
+    const max = parseFloat(getComputedStyle(el).maxHeight) || el.clientHeight;
+    let size = parseFloat(getComputedStyle(el).fontSize);
+    el.style.maxHeight = "none";
+    while (el.scrollHeight > max + 2 && size > 18) { size -= 2; el.style.fontSize = size + "px"; }
+  });
+  document.querySelectorAll("[data-fit-width]").forEach(el => {
+    const max = el.parentElement.clientWidth;
+    let size = parseFloat(getComputedStyle(el).fontSize);
+    el.style.display = "inline-block";
+    while (el.scrollWidth > max && size > 40) { size -= 4; el.style.fontSize = size + "px"; }
+  });
+  document.body.dataset.ready = "1";
+});
+</script>
+</body>
+</html>

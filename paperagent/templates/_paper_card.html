@@ -1,0 +1,25 @@
+{% set r = p.review or {} %}
+<article class="prow">
+  <div class="pscore">
+    <b>{{ p.score_overall }}</b>
+    <span>방법론 {{ p.score_method }}<br>참신성 {{ p.score_novelty }}</span>
+  </div>
+  <div>
+    <div class="pmeta">
+      {% if (r.card or {}).category %}<span class="cat">{{ r.card.category }}</span><i>·</i>{% endif %}
+      <span>{{ p.source_name or p.source_kind }}</span><i>·</i><span>{{ p.published | short_date }}</span>
+    </div>
+    <h3><a href="{{ url_for('web.paper_detail', paper_id=p.id) }}">{{ r.title_ko or p.title }}</a></h3>
+    {% if r.title_ko %}<div class="en">{{ p.title }}</div>{% endif %}
+    {% if r.one_liner %}<p class="gist">{{ r.one_liner }}</p>{% endif %}
+    <div class="foot">
+      <a href="{{ url_for('web.paper_detail', paper_id=p.id) }}">리뷰 읽기</a>
+      <a href="{{ p.url }}" target="_blank" rel="noopener">원문</a>
+      {% if p.drive_link %}<a href="{{ p.drive_link }}" target="_blank" rel="noopener">PDF</a>{% elif p.local_pdf %}<a href="{{ url_for('web.file_pdf', paper_id=p.id) }}" target="_blank">PDF</a>{% endif %}
+      {% if p.card_paths %}<a href="{{ url_for('web.file_cards_zip', paper_id=p.id) }}">카드뉴스</a>{% endif %}
+      {% if p.read_depth == 'abstract' %}<span class="warn">초록만 읽음</span>{% endif %}
+      <span class="chips">{% for kw in p.matched_keywords %}<a class="chip" href="{{ url_for('web.index', keyword=kw) }}">{{ kw }}</a>{% endfor %}</span>
+    </div>
+  </div>
+  <a class="thumb" href="{{ url_for('web.paper_detail', paper_id=p.id) }}" aria-label="카드뉴스 미리보기">{% if p.card_paths %}<img loading="lazy" src="{{ url_for('web.file_card', paper_id=p.id, n=1) }}" alt="">{% endif %}</a>
+</article>

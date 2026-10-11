@@ -1,0 +1,2 @@
+{% macro bar(label, score, cls='') %}{% set score = score or 0 %}<div class="bar {{ cls }}"><span>{{ label }}</span><div class="track"><i style="width: {{ (score * 10) | round | int }}%"></i></div><b>{{ score }}</b></div>{% endmacro %}
+{% macro csrf() %}<input type="hidden" name="_csrf" value="{{ csrf_token() }}">{% endmacro %}
