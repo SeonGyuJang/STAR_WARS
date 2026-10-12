@@ -264,28 +264,43 @@ def screen(papers, keywords, batch_size: int = 25, meter: CostMeter | None = Non
 
 NOTES_SCHEMA = _obj({
     "research_question": _str,
+    "background": {**_str, "description": "Why the problem matters and what existing approaches do / where they fall short"},
+    "key_idea": {**_str, "description": "The core insight that makes the approach work, in 2-3 sentences"},
     "method": {**_str, "description": "How the approach works, concretely (architecture, objective, data, training/inference procedure)"},
+    "method_steps": {"type": "array", "description": "The method as ordered steps, each with concrete details (inputs, outputs, losses, key hyperparameters)",
+                     "items": _obj({"step": _str, "detail": _str})},
+    "formulation": {**_str, "description": "Key objective, loss or algorithm written out (plain text or LaTeX); empty if none"},
     "claimed_contributions": _str_list,
-    "experimental_setup": {**_str, "description": "Datasets/benchmarks, model sizes, compute, evaluation protocol"},
+    "datasets": {**_str_list, "description": "Every dataset/benchmark used, with split or size when given"},
+    "models": {**_str_list, "description": "Models evaluated (names, sizes) and what they are used for"},
+    "metrics": {**_str_list, "description": "Evaluation metrics and what higher/lower means"},
+    "experimental_setup": {**_str, "description": "Evaluation protocol, compute, training budget, important settings"},
     "baselines": _str_list,
-    "main_results": {"type": "array", "items": _obj({
+    "main_results": {"type": "array", "description": "Every important number from the main tables and figures", "items": _obj({
         "claim": _str,
         "evidence": {**_str, "description": "Exact numbers as reported, with metric and comparison"},
         "location": {**_str, "description": "Table/figure/section where it appears"},
     })},
-    "ablations_and_analysis": _str,
+    "ablations_and_analysis": {**_str_list, "description": "Each ablation or analysis finding, with numbers"},
     "statistical_rigor": {**_str, "description": "Seeds, variance/error bars, significance tests, sample sizes - or their absence"},
     "reproducibility": {**_str, "description": "Code/data/weights release, hyperparameters, missing details"},
     "stated_limitations": _str_list,
     "possible_concerns": {**_str_list, "description": "Issues a careful reviewer would flag: missing baselines, unfair comparisons, contamination, cherry-picking, overclaiming"},
     "closest_prior_work": {**_str, "description": "Most related prior work the paper cites and how this differs"},
+    "terminology": {"type": "array", "description": "Technical terms a reader must know, defined as the paper uses them",
+                    "items": _obj({"term": _str, "definition": _str})},
     "figures": {"type": "array", "items": _obj({"number": {"type": "integer"}, "shows": _str})},
     "headline_numbers": {"type": "array", "items": _obj({"value": _str, "meaning": _str})},
 })
 
-READER_SYSTEM = """You are a meticulous research assistant. Read the entire paper - every section, table, figure and the appendix - and write structured notes that let a senior reviewer judge it without opening the PDF.
+READER_SYSTEM = """You are a meticulous research assistant. Read the entire paper - every section, table, figure and the appendix - and write structured notes complete enough that someone can explain the paper in full, and a senior reviewer can judge it, without opening the PDF.
 
-Be factual and specific: copy numbers exactly as reported (with metric, dataset and the baseline compared against) and say where they appear. Do not evaluate or praise; record what the paper does and shows, and note plainly what is missing (no error bars, no code, missing baseline, etc.). Write in English. Keep it dense - no filler."""
+Be exhaustive and specific:
+- Method: write it as ordered steps a reader could re-implement, with the concrete inputs, outputs, objectives and key hyperparameters.
+- Results: record every important number from the main tables and figures, copied exactly as reported (metric, dataset, the baseline it is compared against) and where it appears.
+- Setup: list every dataset, model and metric used.
+- Note plainly what is missing (no error bars, no code, missing baseline, etc.).
+Do not evaluate or praise; record what the paper does and shows. Never guess a number that is not in the paper. Write in English."""
 
 
 def _document_block(pdf_path):
@@ -315,7 +330,7 @@ def read_paper(paper, pdf_path, meter):
     block, depth = _document_block(pdf_path)
     content = [block, {"type": "text", "text": f"{_meta(paper, [])}\nWrite the notes for this paper."}]
     notes = _call("read", config.READER_MODEL, READER_SYSTEM, content, NOTES_SCHEMA,
-                  effort=config.READER_EFFORT, max_tokens=16000, meter=meter)
+                  effort=config.READER_EFFORT, max_tokens=32000, meter=meter)
     return notes, depth
 
 
@@ -362,45 +377,90 @@ def judge(paper, keywords, notes, depth, meter):
 # 3. Write (Sonnet): notes + verdict -> Korean review and card copy
 # ---------------------------------------------------------------------------
 
+def _rows(desc, **fields) -> dict:
+    return {"type": "array", "description": desc, "items": _obj(fields)}
+
+
 WRITE_SCHEMA = _obj({
     "title_ko": {**_str, "description": "Natural Korean translation of the title"},
-    "one_liner": {**_str, "description": "One-sentence Korean takeaway (<= 60 chars)"},
-    "tldr": {**_str, "description": "3-4 sentence Korean summary"},
-    "problem": _str,
-    "method": _str,
-    "key_results": {**_str_list, "description": "3-5 concrete results with numbers"},
+    "one_liner": {**_str, "description": "One-sentence Korean takeaway with the key number if there is one (<= 80 chars)"},
+    "tldr": {**_str, "description": "Executive summary, 6-9 Korean sentences in one paragraph: the problem, why existing approaches fall short, "
+                                    "the core idea, how it works, the main results with numbers, the main limitation, and who benefits. "
+                                    "Someone who reads only this must understand the whole paper."},
+    "key_points": {**_str_list, "description": "4-6 self-contained Korean bullet points, each a concrete fact (with numbers where possible)"},
+    "background": {**_str, "description": "3-5 Korean sentences: context, why it matters, what prior approaches do and where they fall short"},
+    "problem": {**_str, "description": "2-4 Korean sentences: the exact problem the paper tackles"},
+    "key_idea": {**_str, "description": "2-3 Korean sentences: the core insight in plain words"},
+    "method": {**_str, "description": "4-6 Korean sentences: overview of how the method works"},
+    "method_steps": _rows("3-6 ordered steps of the method", title={**_str, "description": "Short Korean step name"},
+                          detail={**_str, "description": "1-3 Korean sentences with the concrete details"}),
+    "setup": _rows("4-6 rows: 데이터셋 / 모델 / 비교 대상 / 평가 지표 / 학습·연산 (skip a row only if the paper has nothing on it)",
+                   label=_str, value={**_str, "description": "Concrete names, sizes and settings"}),
+    "results": _rows("4-8 most important results, most important first",
+                     item={**_str, "description": "What was measured (benchmark/metric), Korean"},
+                     value={**_str, "description": "The paper's number, exactly as reported"},
+                     comparison={**_str, "description": "Baseline or previous best and its number, or the change; empty if none"},
+                     source={**_str, "description": "Where it is reported, e.g. 'Table 2', 'Fig. 3'; empty if unknown"}),
+    "analysis": {**_str_list, "description": "2-5 Korean findings from ablations/analysis, with numbers"},
     "contributions": _str_list,
-    "limitations": _str_list,
-    "why_it_matters": _str,
+    "limitations": {**_str_list, "description": "3-5 Korean points: the paper's stated limitations and the reviewer's weaknesses"},
+    "prior_work": {**_str, "description": "2-3 Korean sentences: closest prior work and how this paper differs"},
+    "why_it_matters": {**_str, "description": "2-3 Korean sentences"},
     "who_should_read": _str,
+    "glossary": _rows("3-6 terms a reader needs, explained simply in Korean", term=_str, meaning=_str),
     "tags": {**_str_list, "description": "3-6 short Korean or English topic tags"},
     "card": _obj({
         "category": {**_str, "description": "Short field tag, e.g. 'LLM 에이전트'"},
         "cover_headline": {**_str, "description": "Korean hook, 2 lines separated by \\n, <= 16 chars per line"},
-        "cover_sub": {**_str, "description": "One Korean sentence under the headline"},
-        "slides": {"type": "array", "description": "Exactly 3 slides: problem / how it works / results", "items": _obj({
-            "label": {**_str, "description": "2-6 char section label, e.g. '문제', '방법', '결과'"},
+        "cover_sub": {**_str, "description": "One Korean sentence under the headline (<= 60 chars)"},
+        "cover_points": {**_str_list, "description": "Exactly 3 Korean takeaways, each <= 38 chars, at least one with a number"},
+        "problem": _obj({
             "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
-            "body": {**_str, "description": "2 short Korean sentences separated by \\n, <= 34 chars each"},
-            "figure_number": {"type": "integer", "description": "Figure to show from the available list, 0 for none"},
-            "highlight": {**_str, "description": "Optional big stat, e.g. '+12.4%p' or '3.2x', else empty"},
-            "highlight_label": {**_str, "description": "What the stat measures, else empty"},
-        })},
-        "summary_rows": {"type": "array", "description": "Exactly 5 rows: 문제 / 방법 / 데이터 / 결과 / 한계", "items": _obj({
-            "label": _str,
-            "sub": {**_str, "description": "tiny sub-label"},
-            "value": {**_str, "description": "<= 24 chars"},
-            "value_sub": {**_str, "description": "<= 32 chars detail"},
-        })},
-        "caption": {**_str, "description": "Instagram caption in Korean, 4-8 lines, ends with 5-8 hashtags"},
+            "points": {**_str_list, "description": "3 Korean sentences, each <= 60 chars: the situation, what goes wrong, why it matters"},
+            "figure_number": {"type": "integer", "description": "Figure to show, 0 for none"},
+        }),
+        "idea": _obj({
+            "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
+            "body": {**_str, "description": "2-3 Korean sentences, <= 130 chars in total: the core idea"},
+            "figure_number": {"type": "integer", "description": "The method overview figure, 0 for none"},
+        }),
+        "steps": _rows("3-4 method steps for the card",
+                       title={**_str, "description": "<= 16 chars"}, detail={**_str, "description": "<= 64 chars"}),
+        "setup": _rows("4 rows: 데이터셋 / 모델 / 비교 대상 / 평가 지표",
+                       label={**_str, "description": "<= 8 chars"}, value={**_str, "description": "<= 56 chars"}),
+        "results": _obj({
+            "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
+            "highlight": {**_str, "description": "The single most important number, e.g. '+12.4%p'"},
+            "highlight_label": {**_str, "description": "What it measures, <= 30 chars"},
+            "rows": _rows("3-4 results", item={**_str, "description": "<= 22 chars"}, value={**_str, "description": "<= 16 chars"},
+                          note={**_str, "description": "comparison or context, <= 34 chars"}),
+            "figure_number": {"type": "integer", "description": "A results plot or table, 0 for none"},
+        }),
+        "verdict": _obj({
+            "strengths": {**_str_list, "description": "2 Korean points, each <= 44 chars"},
+            "weaknesses": {**_str_list, "description": "2 Korean points, each <= 44 chars"},
+            "who": {**_str, "description": "Who should read it, <= 60 chars"},
+        }),
+        "summary_rows": _rows("Exactly 5 rows: 문제 / 방법 / 데이터 / 결과 / 한계",
+                              label=_str, sub={**_str, "description": "tiny sub-label"},
+                              value={**_str, "description": "<= 24 chars"}, value_sub={**_str, "description": "<= 40 chars detail"}),
+        "caption": {**_str, "description": "Instagram caption in Korean, 8-14 lines: hook, the problem, the idea, 2-3 results with numbers, "
+                                          "the limitation, who should read; ends with 5-8 hashtags"},
     }),
 })
 
-WRITE_SYSTEM = """You write clear, accurate Korean explanations of new AI/CS papers for engineers and researchers, plus copy for a 6-slide Instagram card-news post.
+WRITE_SYSTEM = """You write clear, accurate and thorough Korean explanations of new AI/CS papers for engineers and researchers, plus copy for an 8-slide Instagram card-news post.
 
-Use only facts in the notes and the reviewer's verdict; keep numbers exact. Plain, natural Korean; keep technical terms in English where natural (e.g. "Transformer", "RLHF"). Limitations should reflect the reviewer's weaknesses.
+Goal: a reader who only reads your summary should understand the whole paper - what problem, why it is hard, the idea, how the method works step by step, how it was tested, what the numbers are, and what the limits are. Be specific and concrete; avoid vague phrases like "성능이 크게 향상" without the number.
 
-Card copy is rendered large, so respect the length limits. Slides: 1 problem/motivation, 2 how the method works, 3 key results. For each slide pick the most informative figure from the available list (by number) - the method overview for slide 2, a results plot or table for slide 3. Use 0 if none fits; never invent figure numbers."""
+Accuracy rules:
+- Use only facts in the notes and the reviewer's verdict. Never invent or round numbers; copy them exactly with their metric, and give the source (Table/Figure) when the notes have it.
+- If the notes do not cover something, say so ("논문에 보고되지 않음") instead of guessing.
+- Limitations must reflect the paper's stated limitations and the reviewer's weaknesses.
+
+Style: plain, natural Korean; keep technical terms in English where natural (e.g. "Transformer", "RLHF") and explain them in the glossary.
+
+Card copy is rendered large, so respect every length limit. For each card figure pick the most informative figure from the available list (by number) - the method overview for `idea`, a results plot or table for `results`, a motivating example for `problem`. Use 0 if none fits; never invent figure numbers or reuse one figure twice."""
 
 
 def write(paper, notes, verdict, figures, depth, meter):
@@ -415,7 +475,7 @@ def write(paper, notes, verdict, figures, depth, meter):
         f"Figures available for the cards:\n{fig_list}\n\nWrite every field."
     )
     return _call("write", config.WRITER_MODEL, WRITE_SYSTEM, prompt, WRITE_SCHEMA,
-                 effort=config.WRITER_EFFORT, max_tokens=16000, meter=meter)
+                 effort=config.WRITER_EFFORT, max_tokens=32000, meter=meter)
 
 
 def review(paper: dict, keywords, pdf_path=None, figures=()):
@@ -431,9 +491,12 @@ def review(paper: dict, keywords, pdf_path=None, figures=()):
     data.update(verdict)
     data["overall_score"] = round((verdict["methodology_score"] + verdict["novelty_score"]) / 2, 1)
     valid = {f["number"] for f in figures}
-    for s in data["card"]["slides"]:
-        if s["figure_number"] not in valid:
-            s["figure_number"] = 0
+    used = set()
+    for key in ("problem", "idea", "results"):
+        slide = data["card"].get(key) or {}
+        n = slide.get("figure_number") or 0
+        slide["figure_number"] = n if n in valid and n not in used else 0
+        used.add(slide["figure_number"])
     data["_notes"] = notes
     data["_models"] = {"read": config.READER_MODEL if notes else None, "judge": config.JUDGE_MODEL,
                        "write": config.WRITER_MODEL}

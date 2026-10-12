@@ -1,4 +1,4 @@
-"""Instagram card-news generator: renders a 6-slide 1080x1350 (4:5) carousel to PNG.
+"""Instagram card-news generator: renders an 8-slide 1080x1350 (4:5) carousel to PNG.
 
 The slides are laid out in HTML/CSS (templates/cards/cards.html) and captured
 with headless Chromium through Playwright, so typography (Korean via the bundled
@@ -36,17 +36,57 @@ def _source_ref(paper):
     return paper.get("source_name") or "source"
 
 
+def _lines(text):
+    return [x.strip() for x in str(text or "").replace("\\n", "\n").split("\n") if x.strip()]
+
+
+def normalize_card(review: dict) -> dict:
+    """The card copy in the current shape. Reviews written before the 8-slide
+    layout (card["slides"]) are mapped onto it as well as they fit."""
+    card = dict(review.get("card") or {})
+    old = card.get("slides")
+    if old and "problem" not in card:
+        old = old + [{}] * (3 - len(old))
+        p, m, r = old[:3]
+        card["problem"] = {"headline": p.get("headline", ""), "points": _lines(p.get("body")), "figure_number": p.get("figure_number", 0)}
+        card["idea"] = {"headline": m.get("headline", ""), "body": " ".join(_lines(m.get("body"))), "figure_number": m.get("figure_number", 0)}
+        card["results"] = {"headline": r.get("headline", ""), "highlight": r.get("highlight", ""),
+                           "highlight_label": r.get("highlight_label", ""), "figure_number": r.get("figure_number", 0),
+                           "rows": [{"item": x, "value": "", "note": ""} for x in review.get("key_results", [])[:4]]}
+    card.setdefault("cover_points", review.get("key_points", [])[:3])
+    card.setdefault("steps", [{"title": s.get("title", ""), "detail": s.get("detail", "")} for s in review.get("method_steps", [])[:4]])
+    card.setdefault("setup", [r for r in review.get("setup", [])[:4]])
+    card.setdefault("verdict", {"strengths": review.get("strengths", [])[:2], "weaknesses": review.get("weaknesses", [])[:2],
+                                "who": review.get("who_should_read", "")})
+    return card
+
+
 def build_html(paper: dict, review: dict, figures, page1=None) -> str:
     """figures: [{number, caption, path}] with local file paths."""
-    card = review["card"]
+    card = normalize_card(review)
     figs = {f["number"]: {**f, "uri": Path(f["path"]).resolve().as_uri()} for f in figures}
-    slides = []
-    for s in card["slides"][:3]:
-        slides.append({**s, "figure": figs.get(s.get("figure_number") or 0)})
-    used = {s["figure"]["number"] for s in slides if s["figure"]}
+
+    def fig(part):
+        return figs.get((card.get(part) or {}).get("figure_number") or 0)
+
+    # One entry per slide, in order; a slide whose content is missing is left out.
+    slides = [{"kind": "cover"}]
+    if card.get("problem", {}).get("points"):
+        slides.append({"kind": "problem", "label": "문제", **card["problem"], "figure": fig("problem")})
+    if card.get("idea", {}).get("body"):
+        slides.append({"kind": "idea", "label": "핵심 아이디어", **card["idea"], "figure": fig("idea")})
+    if card.get("steps"):
+        slides.append({"kind": "steps", "label": "작동 방식", "steps": card["steps"]})
+    if card.get("setup"):
+        slides.append({"kind": "setup", "label": "실험 설정", "rows": card["setup"]})
+    if card.get("results"):
+        slides.append({"kind": "results", "label": "결과", **card["results"], "figure": fig("results")})
+    slides.append({"kind": "verdict", "label": "평가", **card["verdict"]})
+    slides.append({"kind": "summary"})
 
     # Cover visual: a figure not shown on later slides, else the paper's
     # first page, else any figure.
+    used = {s["figure"]["number"] for s in slides if s.get("figure")}
     cover = next((f for n, f in figs.items() if n not in used), None)
     cover_uri = cover["uri"] if cover else None
     if not cover_uri and page1 and Path(page1).exists():
@@ -58,12 +98,11 @@ def build_html(paper: dict, review: dict, figures, page1=None) -> str:
         fonts=FONT_DIR.resolve().as_uri(),
         brand=config.CARD_BRAND,
         handle=config.CARD_HANDLE,
-        acronym=config.BRAND_ACRONYM,
         paper=paper,
         review=review,
         card=card,
         slides=slides,
-        total=len(slides) + 3,
+        total=len(slides),
         cover_image=cover_uri,
         source_ref=_source_ref(paper),
     )

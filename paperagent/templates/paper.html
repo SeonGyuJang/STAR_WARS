@@ -39,17 +39,41 @@
 <div class="dgrid">
   <div class="article">
     <div class="summary-box">
-      <div class="label">한 줄 요약</div>
+      <div class="label">요약</div>
       <p class="lead">{{ r.one_liner }}</p>
       <p>{{ r.tldr }}</p>
+      {% if r.key_points %}<ul class="key-points">{% for x in r.key_points %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
     </div>
+    {% if r.background %}<section class="sec"><h2>배경</h2><p>{{ r.background }}</p></section>{% endif %}
     <section class="sec"><h2>어떤 문제를 푸나요</h2><p>{{ r.problem }}</p></section>
-    <section class="sec"><h2>어떻게 풀었나요</h2><p>{{ r.method }}</p></section>
-    <section class="sec"><h2>핵심 결과</h2><ul>{% for x in r.key_results %}<li>{{ x }}</li>{% endfor %}</ul></section>
+    {% if r.key_idea %}<section class="sec"><h2>핵심 아이디어</h2><p class="callout">{{ r.key_idea }}</p></section>{% endif %}
+    <section class="sec"><h2>어떻게 풀었나요</h2><p>{{ r.method }}</p>
+      {% if r.method_steps %}<ol class="steps">{% for x in r.method_steps %}<li><b>{{ x.title }}</b><span>{{ x.detail }}</span></li>{% endfor %}</ol>{% endif %}
+    </section>
+    {% if r.setup %}
+    <section class="sec"><h2>실험 설정</h2>
+      <dl class="kv">{% for x in r.setup %}<dt>{{ x.label }}</dt><dd>{{ x.value }}</dd>{% endfor %}</dl>
+    </section>
+    {% endif %}
+    <section class="sec"><h2>핵심 결과</h2>
+      {% if r.results %}
+      <div class="table-wrap"><table class="results">
+        <thead><tr><th>항목</th><th>결과</th><th>비교</th><th>출처</th></tr></thead>
+        <tbody>{% for x in r.results %}<tr><td>{{ x.item }}</td><td class="num">{{ x.value }}</td><td>{{ x.comparison }}</td><td class="src">{{ x.source }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+      {% else %}<ul>{% for x in r.key_results %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+    </section>
+    {% if r.analysis %}<section class="sec"><h2>분석과 추가 실험</h2><ul>{% for x in r.analysis %}<li>{{ x }}</li>{% endfor %}</ul></section>{% endif %}
     <section class="sec"><h2>기여</h2><ul>{% for x in r.contributions %}<li>{{ x }}</li>{% endfor %}</ul></section>
     <section class="sec"><h2>한계</h2><ul>{% for x in r.limitations %}<li>{{ x }}</li>{% endfor %}</ul></section>
+    {% if r.prior_work %}<section class="sec"><h2>기존 연구와 다른 점</h2><p>{{ r.prior_work }}</p></section>{% endif %}
     <section class="sec"><h2>왜 중요한가요</h2><p>{{ r.why_it_matters }}</p></section>
     <section class="sec"><h2>추천 독자</h2><p>{{ r.who_should_read }}</p></section>
+    {% if r.glossary %}
+    <section class="sec"><h2>용어 정리</h2>
+      <dl class="kv glossary">{% for x in r.glossary %}<dt>{{ x.term }}</dt><dd>{{ x.meaning }}</dd>{% endfor %}</dl>
+    </section>
+    {% endif %}
     {% if figures %}
     <section class="sec">
       <h2>주요 그림</h2>
@@ -67,6 +91,9 @@
       <div class="score-num"><b>{{ r.overall_score }}</b><span>/ 10</span></div>
       <div class="crit">{{ bar('방법론', r.methodology_score) }}<p>{{ r.methodology_reason }}</p></div>
       <div class="crit">{{ bar('참신성', r.novelty_score, 'alt') }}<p>{{ r.novelty_reason }}</p></div>
+      {% if r.verdict %}<div class="verdict-line">{{ r.verdict }}</div>{% endif %}
+      {% if r.strengths %}<div class="pc"><h4 class="good">강점</h4><ul>{% for x in r.strengths %}<li>{{ x }}</li>{% endfor %}</ul></div>{% endif %}
+      {% if r.weaknesses %}<div class="pc"><h4 class="bad">약점</h4><ul>{% for x in r.weaknesses %}<li>{{ x }}</li>{% endfor %}</ul></div>{% endif %}
       <div class="relevance">관심 주제 관련도 {{ p.relevance }} · {{ p.relevance_reason }}{% if p.cost_usd is not none %}<br>리뷰 비용 ${{ '%.3f' % p.cost_usd }}{% endif %}</div>
     </section>
 
