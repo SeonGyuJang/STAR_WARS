@@ -71,41 +71,90 @@
   </section>
 
   <section class="card panel" id="sources">
-    <div class="panel-h"><h2>저널과 arXiv 분야</h2><span>{{ sources|length }}개</span></div>
-    <table class="tbl">
-      <thead><tr><th>이름</th><th>종류</th><th></th></tr></thead>
+    <div class="panel-h"><h2>논문 출처</h2><span>{{ sources|length }}개</span></div>
+    <p class="desc">여기 등록한 arXiv 분야와 저널·학회에서 관심 키워드에 맞는 새 논문을 모읍니다. 숫자를 누르면 그 출처의 논문만 볼 수 있어요.</p>
+
+    {% macro counts(s) %}{% set c = source_counts.get(s.id, {}) %}
+      <a href="{{ url_for('web.index', source=s.id) }}" title="리뷰한 논문">리뷰 {{ c.get('done', 0) }}</a>
+      <span class="muted">·</span>
+      <a href="{{ url_for('web.queue', source=s.id) }}" title="대기열">대기 {{ c.get('screened', 0) + c.get('new', 0) }}</a>
+    {% endmacro %}
+    {% macro actions(s) %}
+      <form method="post" action="{{ url_for('web.toggle_source', sid=s.id) }}" class="inline">{{ csrf() }}<button class="link small">{{ '끄기' if s.enabled else '켜기' }}</button></form>
+      &nbsp;<form method="post" action="{{ url_for('web.delete_source', sid=s.id) }}" class="inline" data-confirm="'{{ s.name }}'을(를) 삭제할까요? 이미 모은 논문은 그대로 남습니다.">{{ csrf() }}<button class="link small danger">삭제</button></form>
+    {% endmacro %}
+
+    <h3 class="sub-h">저널 · 학회</h3>
+    <table class="tbl sources">
+      <thead><tr><th>이름</th><th>수집 경로</th><th>논문</th><th></th></tr></thead>
       <tbody>
-      {% for s in sources %}
+      {% for s in sources if s.kind == 'journal' %}{% set m = s.meta %}
         <tr class="{{ '' if s.enabled else 'off' }}">
-          <td>{{ s.name }}{% if s.value.startswith('name:') %} <span class="small muted">(첫 실행 때 연결)</span>{% endif %}</td>
-          <td class="small muted nowrap">{{ 'arXiv' if s.kind == 'arxiv' else '저널' }}</td>
-          <td class="acts">{% if is_admin %}
-            <form method="post" action="{{ url_for('web.toggle_source', sid=s.id) }}" class="inline">{{ csrf() }}<button class="link small">{{ '끄기' if s.enabled else '켜기' }}</button></form>
-            &nbsp;<form method="post" action="{{ url_for('web.delete_source', sid=s.id) }}" class="inline" data-confirm="삭제할까요?">{{ csrf() }}<button class="link small danger">삭제</button></form>
-          {% endif %}</td>
+          <td><span class="vtype {{ m.type }}">{{ type_label.get(m.type, '저널') }}</span> <b>{{ s.name }}</b>
+            {% if m.full and m.full != s.name %}<div class="small muted">{{ m.full }}</div>{% endif %}</td>
+          <td class="small">
+            {% if m.arxiv_terms %}<span class="via">arXiv</span>{% endif %}
+            {% if m.openalex_id %}<span class="via">OpenAlex</span>
+            {% elif not m.openalex_checked %}<span class="muted">OpenAlex는 다음 실행 때 연결</span>
+            {% elif not m.arxiv_terms %}<span class="warn-text">OpenAlex에서 찾지 못함</span>{% endif %}
+          </td>
+          <td class="small nowrap">{{ counts(s) }}</td>
+          <td class="acts">{{ actions(s) }}</td>
         </tr>
-      {% endfor %}
+      {% else %}<tr><td colspan="4" class="muted small">등록된 저널·학회가 없습니다.</td></tr>{% endfor %}
       </tbody>
     </table>
-    {% if is_admin %}
     <form method="post" action="{{ url_for('web.search_journal') }}" class="row-form">{{ csrf() }}
-      <input name="name" placeholder="저널·학회 이름으로 검색 (예: NeurIPS)" required><button class="btn ghost">검색</button>
+      <input name="name" placeholder="저널·학회 이름 (예: NeurIPS, CVPR, Nature Machine Intelligence)" required
+             value="{{ candidates.query if candidates else '' }}"><button class="btn ghost">검색</button>
     </form>
     {% if candidates %}
       <div class="candidates">
+        {% if candidates.error %}<p class="small warn-text cand-note">OpenAlex에 연결하지 못해, 잘 알려진 학회·저널만 보여 드립니다.</p>{% endif %}
         {% for c in candidates.results %}
           <form method="post" action="{{ url_for('web.add_journal') }}" class="cand">{{ csrf() }}
-            <input type="hidden" name="id" value="{{ c.id }}"><input type="hidden" name="name" value="{{ c.name }}">
-            <div><div>{{ c.name }}</div><div class="small muted">{{ c.publisher or c.type }} · 논문 {{ c.works_count }}편</div></div>
+            <input type="hidden" name="key" value="{{ c.key or '' }}"><input type="hidden" name="id" value="{{ c.openalex_id or '' }}">
+            <input type="hidden" name="name" value="{{ c.name }}"><input type="hidden" name="type" value="{{ c.type }}">
+            <div>
+              <div><span class="vtype {{ c.type }}">{{ type_label.get(c.type, c.type) }}</span> <b>{{ c.name }}</b>{% if c.key %} <span class="tag-rec">추천</span>{% endif %}</div>
+              <div class="small muted">
+                {% if c.key %}{{ c.full }} · arXiv에 올라온 채택 논문과 OpenAlex 목록에서 모읍니다
+                {% else %}{{ c.publisher or 'OpenAlex' }}{% if c.works_count %} · 논문 {{ '{:,}'.format(c.works_count) }}편{% endif %}{% endif %}
+              </div>
+            </div>
             <button class="btn ghost sm">추가</button>
           </form>
-        {% else %}<p class="small muted" style="padding: 10px 0">'{{ candidates.query }}' 검색 결과가 없습니다.</p>{% endfor %}
+        {% endfor %}
+        {% if not candidates.results %}
+          <form method="post" action="{{ url_for('web.add_journal') }}" class="cand">{{ csrf() }}
+            <input type="hidden" name="name" value="{{ candidates.query }}">
+            <div><div>'{{ candidates.query }}' 검색 결과가 없습니다.</div>
+              <div class="small muted">이름 그대로 추가하면 다음 실행 때 다시 찾아 연결합니다. 정식 이름으로 다시 검색해 보셔도 좋아요.</div></div>
+            <button class="btn ghost sm">이름으로 추가</button>
+          </form>
+        {% endif %}
       </div>
     {% endif %}
+
+    <h3 class="sub-h">arXiv 분야</h3>
+    <table class="tbl sources">
+      <thead><tr><th>분야</th><th>코드</th><th>논문</th><th></th></tr></thead>
+      <tbody>
+      {% for s in sources if s.kind == 'arxiv' %}
+        <tr class="{{ '' if s.enabled else 'off' }}">
+          <td><b>{{ arxiv_categories.get(s.value, s.name | replace('arXiv · ', '')) }}</b></td>
+          <td class="small muted"><code>{{ s.value }}</code></td>
+          <td class="small nowrap">{{ counts(s) }}</td>
+          <td class="acts">{{ actions(s) }}</td>
+        </tr>
+      {% else %}<tr><td colspan="4" class="muted small">등록된 arXiv 분야가 없습니다.</td></tr>{% endfor %}
+      </tbody>
+    </table>
     <form method="post" action="{{ url_for('web.add_arxiv_source') }}" class="row-form">{{ csrf() }}
-      <input name="category" placeholder="arXiv 분야 코드 (예: cs.RO)" required><button class="btn ghost">추가</button>
+      <input name="category" list="arxiv-cats" placeholder="arXiv 분야 코드 (예: cs.RO)" required autocomplete="off">
+      <datalist id="arxiv-cats">{% for code, label in arxiv_categories.items() %}<option value="{{ code }}">{{ label }}</option>{% endfor %}</datalist>
+      <button class="btn ghost">추가</button>
     </form>
-    {% endif %}
   </section>
 
   <section class="card panel" id="runs">

@@ -24,7 +24,10 @@ keywords = Table(
 )
 
 # kind: 'arxiv' (value = arXiv category, e.g. cs.CL) or
-#       'journal' (value = OpenAlex source id, e.g. S4306420609, or 'name:<journal>' until resolved)
+#       'journal' - a journal or conference. value = OpenAlex source id (e.g. S4306420609),
+#       'venue:<key>' for a well-known venue (collectors.venues.KNOWN) not found in OpenAlex,
+#       or 'name:<name>' until the pipeline looks it up.
+# meta (JSON): {"type": "conference"|"journal", "full": ..., "openalex_id": ..., "arxiv_terms": [...]}
 sources = Table(
     "sources", metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
@@ -32,6 +35,7 @@ sources = Table(
     Column("value", String(300), nullable=False),
     Column("name", String(300), nullable=False),
     Column("enabled", Integer, nullable=False, default=1),
+    Column("meta", Text),
     Column("created_at", String(32), nullable=False),
     UniqueConstraint("kind", "value"),
 )
@@ -42,6 +46,10 @@ papers = Table(
     Column("uid", String(300), nullable=False, unique=True),
     Column("source_kind", String(20), nullable=False),
     Column("source_name", String(300)),
+    # the configured source that first found it, and the journal/conference it
+    # appeared in (also set when a venue finds a paper we already had)
+    Column("source_id", Integer, index=True),
+    Column("venue", String(300)),
     Column("title", Text, nullable=False),
     Column("authors", Text, nullable=False, default="[]"),
     Column("abstract", Text),
@@ -109,7 +117,7 @@ blobs = Table(
     Column("updated_at", String(32), nullable=False),
 )
 
-JSON_FIELDS = ("authors", "categories", "matched_keywords", "review", "card_paths")
+JSON_FIELDS = ("authors", "categories", "matched_keywords", "review", "card_paths", "meta")
 
 DEFAULT_KEYWORDS = [
     "large language model",
@@ -279,14 +287,24 @@ def list_sources(kind=None, enabled_only=False):
         return _rows(conn.execute(q.order_by(sources.c.kind, sources.c.name)))
 
 
-def add_source(kind: str, value: str, name: str) -> bool:
+def add_source(kind: str, value: str, name: str, meta=None):
+    """Returns the new source id, or None if it was already there."""
     with engine().begin() as conn:
-        result = conn.execute(_insert(sources).values(kind=kind, value=value, name=name, enabled=1, created_at=now_iso())
+        result = conn.execute(_insert(sources).values(kind=kind, value=value, name=name, enabled=1, created_at=now_iso(),
+                                                      meta=json.dumps(meta, ensure_ascii=False) if meta else None)
                               .on_conflict_do_nothing().returning(sources.c.id))
-        return result.first() is not None
+        row = result.first()
+        return row[0] if row else None
+
+
+def get_source(source_id: int):
+    with engine().connect() as conn:
+        return _row(conn.execute(select(sources).where(sources.c.id == source_id)).first())
 
 
 def update_source(source_id: int, **fields):
+    if isinstance(fields.get("meta"), dict):
+        fields["meta"] = json.dumps(fields["meta"], ensure_ascii=False)
     if fields:
         with engine().begin() as conn:
             conn.execute(update(sources).where(sources.c.id == source_id).values(**fields))
@@ -309,11 +327,38 @@ def insert_paper(p: dict) -> bool:
         categories=json.dumps(p.get("categories", [])),
         matched_keywords=json.dumps(p.get("matched_keywords", []), ensure_ascii=False),
         citation_count=p.get("citation_count"), status="new", card_paths="[]", created_at=ts, updated_at=ts,
+        source_id=p.get("source_id"), venue=p.get("venue"),
     )
     with engine().begin() as conn:
         # rowcount is unreliable for ON CONFLICT on Postgres; RETURNING works on both.
         result = conn.execute(_insert(papers).values(**values).on_conflict_do_nothing().returning(papers.c.id))
         return result.first() is not None
+
+
+def tag_venue(uid: str, venue: str):
+    """Note the journal/conference of a paper we already had (e.g. from an arXiv category)."""
+    with engine().begin() as conn:
+        conn.execute(update(papers).where(papers.c.uid == uid, papers.c.venue.is_(None)).values(venue=venue))
+
+
+def source_filter(src: dict):
+    """SQL condition for 'papers from this configured source'. Papers collected
+    before sources were recorded are matched by their source label."""
+    legacy = f"arXiv · {src['value']}" if src["kind"] == "arxiv" else src["name"]
+    cond = (papers.c.source_id == src["id"]) | (papers.c.source_id.is_(None) & (papers.c.source_name == legacy))
+    if src["kind"] == "journal":
+        cond = cond | (papers.c.venue == src["name"])
+    return cond
+
+
+def source_counts():
+    """{source_id: {status: n}} for every configured source."""
+    out = {}
+    with engine().connect() as conn:
+        for src in list_sources():
+            rows = conn.execute(select(papers.c.status, func.count()).where(source_filter(src)).group_by(papers.c.status)).all()
+            out[src["id"]] = {status: n for status, n in rows}
+    return out
 
 
 def update_paper(paper_id: int, **fields):
@@ -344,8 +389,10 @@ _ORDERS = {
 }
 
 
-def papers_by_status(status: str, limit: int = 1000, order: str = "recent", priority=None):
+def papers_by_status(status: str, limit: int = 1000, order: str = "recent", priority=None, source=None):
     q = select(papers).where(papers.c.status == status)
+    if source:
+        q = q.where(source_filter(source))
     if priority is True:
         q = q.where(func.coalesce(papers.c.priority, 0) > 0)
     elif priority is False:
@@ -388,8 +435,10 @@ def keyword_counts():
     return counts
 
 
-def query_papers(status="done", keyword=None, search=None, sort="recent", days=None, limit=60, offset=0):
+def query_papers(status="done", keyword=None, search=None, sort="recent", days=None, limit=60, offset=0, source=None):
     q = select(papers).where(papers.c.status == status)
+    if source:
+        q = q.where(source_filter(source))
     if keyword:
         q = q.where(papers.c.matched_keywords.like(f'%{json.dumps(keyword, ensure_ascii=False)}%'))
     if search:

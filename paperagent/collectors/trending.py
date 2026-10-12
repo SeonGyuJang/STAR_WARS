@@ -33,7 +33,7 @@ def hf_daily(limit: int = 30):
                 "hf_url": f"https://huggingface.co/papers/{p['id']}",
                 "upvotes": p.get("upvotes", 0),
                 "comments": it.get("numComments", 0),
-                "summary": (p.get("summary") or "")[:400],
+                "summary": (p.get("summary") or "")[:900],
                 "authors": [a.get("name") for a in (p.get("authors") or [])[:4]],
                 "published": p.get("publishedAt"),
             }
@@ -45,6 +45,7 @@ def hf_daily(limit: int = 30):
 def _slim(p, **extra):
     d = {k: p.get(k) for k in ("title", "url", "pdf_url", "doi", "published", "citation_count", "source_name")}
     d["authors"] = p.get("authors", [])[:4]
+    d["summary"] = (p.get("abstract") or "")[:900]
     d.update(extra)
     return d
 
@@ -131,7 +132,10 @@ def refresh_tracked_citations():
     for p in papers:
         growth = db.citation_growth(p["uid"], days=7)
         if growth:
-            out.append({"id": p["id"], "title": p["title"], "growth_7d": growth, "citation_count": p.get("citation_count")})
+            review = p.get("review") or {}
+            out.append({"id": p["id"], "title": review.get("title_ko") or p["title"], "growth_7d": growth,
+                        "citation_count": p.get("citation_count"), "summary": review.get("one_liner") or "",
+                        "source_name": p.get("venue") or p.get("source_name")})
     out.sort(key=lambda x: x["growth_7d"], reverse=True)
     return out[:20]
 

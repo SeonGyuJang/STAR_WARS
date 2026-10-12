@@ -23,6 +23,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """Collectors never reach the internet in tests (unmocked calls fail at once
+    instead of retrying with sleeps). Tests mock what they need."""
+    import requests
+
+    from paperagent import collectors
+    from paperagent.collectors import arxiv
+
+    def offline(*a, **k):
+        raise requests.ConnectionError("network disabled in tests")
+
+    monkeypatch.setattr(collectors._session, "request", offline)
+    monkeypatch.setattr(collectors.time, "sleep", lambda s: None)
+    monkeypatch.setattr(arxiv, "REQUEST_GAP_SECONDS", 0)
+
+
 @pytest.fixture(scope="session")
 def sample_pdf():
     from paperagent import demo

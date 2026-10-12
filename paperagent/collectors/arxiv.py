@@ -10,6 +10,17 @@ from bs4 import BeautifulSoup
 from . import http_get, match_keywords
 
 API_URL = "https://export.arxiv.org/api/query"
+
+# Common AI/CS categories, for the settings page (any valid code can be added).
+CATEGORY_NAMES = {
+    "cs.AI": "Artificial Intelligence", "cs.CL": "Computation and Language", "cs.CV": "Computer Vision",
+    "cs.LG": "Machine Learning", "stat.ML": "Machine Learning (Statistics)", "cs.RO": "Robotics",
+    "cs.IR": "Information Retrieval", "cs.NE": "Neural and Evolutionary Computing", "cs.HC": "Human-Computer Interaction",
+    "cs.MA": "Multiagent Systems", "cs.CR": "Cryptography and Security", "cs.SE": "Software Engineering",
+    "cs.DB": "Databases", "cs.DC": "Distributed Computing", "cs.SD": "Sound", "cs.GR": "Graphics",
+    "cs.CY": "Computers and Society", "eess.AS": "Audio and Speech Processing", "eess.IV": "Image and Video Processing",
+    "q-bio.QM": "Quantitative Methods (Biology)",
+}
 REQUEST_GAP_SECONDS = 3.1
 _last_request = 0.0
 
@@ -43,6 +54,9 @@ def parse_feed(xml_text: str):
         pdf_link = entry.find("link", attrs={"title": "pdf"})
         doi = entry.find("arxiv:doi") or entry.find("doi")
         primary = entry.find("arxiv:primary_category") or entry.find("primary_category")
+        comment = entry.find("arxiv:comment") or entry.find("comment")
+        journal_ref = entry.find("arxiv:journal_ref") or entry.find("journal_ref")
+        updated = entry.find("updated")
         papers.append(
             {
                 "uid": f"arxiv:{arxiv_id}",
@@ -57,6 +71,9 @@ def parse_feed(xml_text: str):
                 "doi": _clean(doi.text) if doi else None,
                 "categories": [c["term"] for c in entry.find_all("category")],
                 "primary_category": primary["term"] if primary else None,
+                "comment": _clean(comment.text) if comment else None,
+                "journal_ref": _clean(journal_ref.text) if journal_ref else None,
+                "updated": _clean(updated.text) if updated else None,
             }
         )
     return papers

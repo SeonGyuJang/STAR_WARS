@@ -1,2 +1,12 @@
 {% macro bar(label, score, cls='') %}{% set score = score or 0 %}<div class="bar {{ cls }}"><span>{{ label }}</span><div class="track"><i style="width: {{ (score * 10) | round | int }}%"></i></div><b>{{ score }}</b></div>{% endmacro %}
 {% macro csrf() %}<input type="hidden" name="_csrf" value="{{ csrf_token() }}">{% endmacro %}
+{% macro src(p, endpoint='web.index') %}<span class="src">{% for label, sid in source_label(p) %}{% if not loop.first %}<i>·</i>{% endif %}{% if sid %}<a href="{{ url_for(endpoint, source=sid) }}" title="이 출처의 논문만 보기">{{ label }}</a>{% else %}{{ label }}{% endif %}{% endfor %}</span>{% endmacro %}
+{% macro source_select(source_nav, current, all_label='모든 출처') %}
+<select name="source" onchange="this.form.submit()" aria-label="출처">
+  <option value="">{{ all_label }}</option>
+  {% set journals = source_nav | selectattr('kind', 'equalto', 'journal') | list %}
+  {% set cats = source_nav | selectattr('kind', 'equalto', 'arxiv') | list %}
+  {% if journals %}<optgroup label="저널 · 학회">{% for s in journals %}<option value="{{ s.id }}" {{ 'selected' if current and current.id == s.id }}>{{ s.name }} ({{ s.count }})</option>{% endfor %}</optgroup>{% endif %}
+  {% if cats %}<optgroup label="arXiv 분야">{% for s in cats %}<option value="{{ s.id }}" {{ 'selected' if current and current.id == s.id }}>{{ s.name }} ({{ s.count }})</option>{% endfor %}</optgroup>{% endif %}
+</select>
+{% endmacro %}

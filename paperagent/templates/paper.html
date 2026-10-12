@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import bar, csrf with context %}
+{% from "_macros.html" import bar, csrf, src with context %}
 {% block title %}{{ r.title_ko or p.title }} · {{ site_name }}{% endblock %}
 {% block meta %}
 <meta property="og:title" content="{{ r.title_ko or p.title }}">
@@ -12,7 +12,7 @@
 <header class="dhead">
   <div class="pmeta">
     {% if (r.card or {}).category %}<span class="cat">{{ r.card.category }}</span><i>·</i>{% endif %}
-    <span>{{ p.source_name or p.source_kind }}</span><i>·</i><span>{{ p.published | short_date }}</span>
+    {{ src(p) }}<i>·</i><span>{{ p.published | short_date }}</span>
     {% if p.read_depth %}<i>·</i><span>{{ {'full_pdf': 'PDF 전문을 읽음', 'full_text': '전문 텍스트를 읽음', 'abstract': '초록만 읽음'}[p.read_depth] }}</span>{% endif %}
   </div>
   <h1>{{ r.title_ko or p.title }}</h1>

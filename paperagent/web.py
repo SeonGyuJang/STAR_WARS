@@ -11,7 +11,8 @@ from flask import (Blueprint, abort, flash, jsonify, redirect, render_template, 
                    url_for)
 
 from . import agent, cardnews, config, db, pipeline, scheduler, storage
-from .collectors import openalex
+from .collectors import arxiv as arxiv_collector
+from .collectors import venues
 
 bp = Blueprint("web", __name__)
 
@@ -72,6 +73,56 @@ def inject_globals():
     }
 
 
+def _source_lookup():
+    """Source label -> configured source id, for linking a paper's source to its filtered list."""
+    out = {}
+    for src in db.list_sources():
+        out[src["name"]] = src["id"]
+        if src["kind"] == "arxiv":
+            out[f"arXiv · {src['value']}"] = src["id"]
+    return out
+
+
+@bp.app_context_processor
+def inject_source_label():
+    cache = {}
+
+    def source_label(p):
+        """[(label, source id or None)] for a paper: its journal/conference first, then where it was found."""
+        if "lookup" not in cache:
+            cache["lookup"] = _source_lookup()
+        lookup = cache["lookup"]
+        labels = []
+        for name in (p.get("venue"), p.get("source_name")):
+            if name and name not in [n for n, _ in labels]:
+                labels.append((name, lookup.get(name) or (p.get("source_id") if name == p.get("source_name") else None)))
+        return labels or [(p.get("source_kind") or "", None)]
+
+    return {"source_label": source_label}
+
+
+def _source_from_args():
+    sid = request.args.get("source", type=int)
+    return db.get_source(sid) if sid else None
+
+
+def _source_nav(status_keys):
+    """Configured sources with paper counts (for the given statuses), busiest first."""
+    counts = db.source_counts()
+    nav = []
+    for src in db.list_sources():
+        n = sum(counts.get(src["id"], {}).get(k, 0) for k in status_keys)
+        label = src["name"].replace("arXiv · ", "") if src["kind"] == "arxiv" else src["name"]
+        nav.append({"id": src["id"], "kind": src["kind"], "name": label, "count": n, "enabled": src["enabled"]})
+    nav.sort(key=lambda x: (-x["count"], x["kind"] != "journal", x["name"].lower()))
+    return nav
+
+
+@bp.app_template_filter("dict_without")
+def dict_without(d, *keys):
+    return {k: v for k, v in (d or {}).items() if k not in keys}
+
+
 @bp.app_template_filter("short_date")
 def short_date(value):
     return (value or "")[:10]
@@ -119,9 +170,10 @@ def index():
     search = request.args.get("q") or None
     days = request.args.get("days", type=int)
     page = max(request.args.get("page", 1, type=int), 1)
+    source = _source_from_args()
     per_page = 24
     papers = db.query_papers(keyword=keyword, search=search, sort=sort, days=days, limit=per_page + 1,
-                             offset=(page - 1) * per_page)
+                             offset=(page - 1) * per_page, source=source)
     has_more = len(papers) > per_page
     hf, _ = db.get_trending("hf_daily")
     surge, _ = db.get_trending("surge")
@@ -133,8 +185,10 @@ def index():
         keywords=db.list_keywords(),
         keyword_counts=db.keyword_counts(),
         counts=db.paper_counts(),
-        filters={"keyword": keyword, "sort": sort, "q": search or "", "days": days},
-        filter_args={k: v for k, v in {"keyword": keyword, "sort": sort, "q": search, "days": days}.items() if v},
+        filters={"keyword": keyword, "sort": sort, "q": search or "", "days": days, "source": source},
+        filter_args={k: v for k, v in {"keyword": keyword, "sort": sort, "q": search, "days": days,
+                                       "source": source["id"] if source else None}.items() if v},
+        source_nav=_source_nav(("done",)),
         hf=(hf or [])[:6],
         surge=(surge or [])[:5],
         runs=db.recent_runs(1),
@@ -176,8 +230,11 @@ def trending_view():
 def queue():
     threshold = db.pipeline_settings()["min_relevance"]
     db.apply_threshold(threshold)
-    lists = {s: db.papers_by_status(s, limit=300, order="relevance") for s in ("screened", "reading", "error", "skipped", "new")}
-    return render_template("queue.html", lists=lists, threshold=threshold)
+    source = _source_from_args()
+    lists = {s: db.papers_by_status(s, limit=300, order="relevance", source=source)
+             for s in ("screened", "reading", "error", "skipped", "new")}
+    return render_template("queue.html", lists=lists, threshold=threshold, source=source,
+                           source_nav=_source_nav(("screened", "reading", "error", "skipped", "new")))
 
 
 def _api_ready_or_flash() -> bool:
@@ -252,7 +309,10 @@ def settings():
     return render_template(
         "settings.html",
         keywords=db.list_keywords(),
-        sources=db.list_sources(),
+        sources=[{**src, "meta": pipeline.venue_meta(src) if src["kind"] == "journal" else {}} for src in db.list_sources()],
+        source_counts=db.source_counts(),
+        arxiv_categories=arxiv_collector.CATEGORY_NAMES,
+        type_label=venues.TYPE_LABEL,
         settings=db.pipeline_settings(),
         runs=db.recent_runs(8),
         next_run=scheduler.next_run(),
@@ -311,37 +371,69 @@ def delete_keyword(kid):
 @bp.route("/settings/sources/arxiv", methods=["POST"])
 @admin_required
 def add_arxiv_source():
-    cat = request.form.get("category", "").strip()
+    # the field suggests "cs.RO  Robotics"; keep just the code
+    cat = (request.form.get("category", "").split() or [""])[0]
     if not ARXIV_CAT_RE.match(cat):
-        flash("arXiv 카테고리 형식이 아닙니다 (예: cs.RO, stat.ML).", "error")
-    elif db.add_source("arxiv", cat, f"arXiv · {cat}"):
-        flash(f"arXiv {cat} 카테고리를 추가했습니다.", "ok")
+        flash("arXiv 분야 코드 형식이 아닙니다 (예: cs.RO, stat.ML).", "error")
+    elif db.add_source("arxiv", cat, f"arXiv · {arxiv_collector.CATEGORY_NAMES.get(cat, cat)}"):
+        flash(f"arXiv {cat} 분야를 추가했습니다. 다음 실행부터 이 분야의 새 논문을 모읍니다.", "ok")
     else:
-        flash("이미 등록된 카테고리입니다.", "warn")
+        flash("이미 등록된 분야입니다.", "warn")
     return redirect(url_for("web.settings") + "#sources")
 
 
 @bp.route("/settings/sources/journal/search", methods=["POST"])
 @admin_required
 def search_journal():
-    name = request.form.get("name", "").strip()
-    if not name:
-        return redirect(url_for("web.settings") + "#sources")
-    try:
-        session["journal_candidates"] = {"query": name, "results": openalex.search_sources(name)}
-    except Exception as exc:
-        flash(f"OpenAlex 검색 실패: {exc}", "error")
+    name = request.form.get("name", "").strip()[:200]
+    if name:
+        results, error = venues.search(name)
+        session["journal_candidates"] = {"query": name, "results": results, "error": bool(error)}
     return redirect(url_for("web.settings") + "#sources")
+
+
+def _same_name(name):
+    return next((s for s in db.list_sources(kind="journal") if s["name"].lower() == name.lower()), None)
 
 
 @bp.route("/settings/sources/journal", methods=["POST"])
 @admin_required
 def add_journal():
-    sid, name = request.form.get("id", "").strip(), request.form.get("name", "").strip()
-    if not re.fullmatch(r"S\d+", sid) or not name:
+    """Add a journal/conference: a well-known venue (key), an OpenAlex source (id),
+    or just a name to look up on the next run."""
+    f = request.form
+    key, oa_id, name = f.get("key", "").strip(), f.get("id", "").strip(), f.get("name", "").strip()[:200]
+    known = venues.KNOWN.get(key) or (venues.find_known(name) if name else None)
+    if oa_id and not re.fullmatch(r"S\d+", oa_id):
         flash("잘못된 저널 선택입니다.", "error")
-    elif db.add_source("journal", sid, name):
-        flash(f"저널 '{name}'을(를) 추가했습니다.", "ok")
+        return redirect(url_for("web.settings") + "#sources")
+    if known and not oa_id:
+        name, value = known["short"], f"venue:{known['key']}"
+        meta = {"type": known["type"], "full": known["full"], "arxiv_terms": known["arxiv_terms"]}
+    elif oa_id:
+        vtype = f.get("type") or "journal"
+        meta = {"type": "conference" if vtype == "conference" else "journal", "full": name, "openalex_id": oa_id,
+                "arxiv_terms": known["arxiv_terms"] if known else []}
+        if known:
+            name = known["short"]
+        value = oa_id
+    elif name:
+        value, meta = f"name:{name}", None
+    else:
+        return redirect(url_for("web.settings") + "#sources")
+    existing = _same_name(name)
+    if existing:
+        flash(f"'{name}'은(는) 이미 등록되어 있습니다.", "warn")
+    elif db.add_source("journal", value, name, meta):
+        label = venues.TYPE_LABEL.get((meta or {}).get("type"), "저널·학회")
+        how = []
+        if (meta or {}).get("arxiv_terms"):
+            how.append("arXiv에 올라온 논문 중 이 이름이 적힌 것")
+        if (meta or {}).get("openalex_id") or (known and not oa_id):
+            how.append("OpenAlex 목록")
+        detail = f" ({' + '.join(how)}에서 모읍니다)" if how else " (다음 실행 때 OpenAlex에서 찾아 연결합니다)"
+        flash(f"{label} '{name}'을(를) 추가했습니다{detail}.", "ok")
+        session.pop("journal_candidates", None)
     else:
         flash("이미 등록된 저널입니다.", "warn")
     return redirect(url_for("web.settings") + "#sources")

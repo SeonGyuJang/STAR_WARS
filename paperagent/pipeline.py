@@ -8,7 +8,7 @@ from pathlib import Path
 import anthropic
 
 from . import agent, cardnews, config, db, pdfs, storage
-from .collectors import arxiv, openalex, trending
+from .collectors import arxiv, openalex, trending, venues
 
 log = logging.getLogger(__name__)
 _lock = threading.Lock()
@@ -38,23 +38,48 @@ class RunLogger:
         db.append_run_log(self.run_id, msg)
 
 
+def venue_meta(src: dict) -> dict:
+    """What we know about a journal/conference source: its type, OpenAlex id and
+    the words that name it in arXiv comments."""
+    meta = dict(src.get("meta") or {})
+    value = src["value"]
+    if not meta.get("openalex_id") and value.startswith("S"):
+        meta["openalex_id"] = value
+    known = venues.find_known(meta.get("full") or src["name"])
+    if known:
+        meta.setdefault("type", known["type"])
+        meta.setdefault("full", known["full"])
+        meta.setdefault("arxiv_terms", known["arxiv_terms"])
+    meta.setdefault("type", "journal")
+    meta.setdefault("arxiv_terms", [])
+    return meta
+
+
 def resolve_journals(say):
+    """Fill in sources added by name: link known venues and look up OpenAlex ids.
+    A venue that OpenAlex does not know is still collected through arXiv."""
     for src in db.list_sources(kind="journal", enabled_only=True):
-        if not src["value"].startswith("name:"):
+        meta = venue_meta(src)
+        if meta.get("openalex_id") or meta.get("openalex_checked"):
+            if meta != (src.get("meta") or {}):
+                db.update_source(src["id"], meta=meta)
             continue
+        known = venues.find_known(src["name"])
         try:
-            hit = openalex.resolve_source(src["name"])
+            hit = venues.best_openalex_match(known) if known else openalex.resolve_source(src["name"])
         except Exception as exc:
             say(f"journal lookup failed for {src['name']}: {exc}")
             continue
-        if not hit:
+        meta["openalex_checked"] = True
+        if hit:
+            meta["openalex_id"] = hit["id"]
+            meta.setdefault("full", hit["name"])
+            say(f"resolved '{src['name']}' -> {hit['name']} ({hit['id']})")
+        elif meta["arxiv_terms"]:
+            say(f"'{src['name']}' not in OpenAlex; collecting it from arXiv comments only")
+        else:
             say(f"journal not found in OpenAlex: {src['name']}")
-            continue
-        try:
-            db.update_source(src["id"], value=hit["id"], name=hit["name"])
-        except Exception:  # already registered under its id
-            db.delete_source(src["id"])
-        say(f"resolved journal '{src['name']}' -> {hit['name']} ({hit['id']})")
+        db.update_source(src["id"], meta=meta)
 
 
 def collect(keywords, settings, say):
@@ -65,20 +90,39 @@ def collect(keywords, settings, say):
         except Exception as exc:
             say(f"arXiv {src['value']} failed: {exc}")
             continue
-        added = sum(db.insert_paper({**p, "source_name": f"arXiv · {p.get('primary_category') or src['value']}"}) for p in found)
+        added = sum(db.insert_paper({**p, "source_id": src["id"],
+                                     "source_name": f"arXiv · {p.get('primary_category') or src['value']}"}) for p in found)
         new += added
         say(f"arXiv {src['value']}: {len(found)} matched, {added} new")
     for src in db.list_sources(kind="journal", enabled_only=True):
-        if src["value"].startswith("name:"):
+        meta = venue_meta(src)
+        days = venues.lookback_for(meta["type"], settings["lookback_days"])
+        found, notes = [], []
+        if meta.get("openalex_id"):
+            try:
+                hits = venues.fetch_openalex(meta["openalex_id"], keywords, days, settings["max_per_source"])
+                found += hits
+                notes.append(f"OpenAlex {len(hits)}")
+            except Exception as exc:
+                notes.append(f"OpenAlex failed: {exc}")
+        if meta["arxiv_terms"]:
+            try:
+                hits = venues.fetch_arxiv(src["name"], meta["arxiv_terms"], keywords, days, settings["max_per_source"])
+                found += hits
+                notes.append(f"arXiv {len(hits)}")
+            except Exception as exc:
+                notes.append(f"arXiv failed: {exc}")
+        if not notes:
+            say(f"{src['name']}: no way to collect yet (not in OpenAlex, no arXiv names)")
             continue
-        try:
-            found = openalex.fetch_journal(src["value"], src["name"], keywords, settings["lookback_days"], settings["max_per_source"])
-        except Exception as exc:
-            say(f"journal {src['name']} failed: {exc}")
-            continue
-        added = sum(db.insert_paper(p) for p in found)
+        added = 0
+        for p in found:
+            if db.insert_paper({**p, "source_kind": "journal", "source_id": src["id"], "source_name": src["name"], "venue": src["name"]}):
+                added += 1
+            else:
+                db.tag_venue(p["uid"], src["name"])
         new += added
-        say(f"{src['name']}: {len(found)} matched, {added} new")
+        say(f"{src['name']}: {len(found)} matched ({', '.join(notes)}), {added} new")
     return new
 
 

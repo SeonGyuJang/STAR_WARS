@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import csrf with context %}
+{% from "_macros.html" import csrf, src, source_select with context %}
 {% block title %}대기열 · {{ site_name }}{% endblock %}
 {% block content %}
 <section class="page-head"><div>
@@ -7,6 +7,12 @@
   <p>모은 논문은 모두 관련도(0~10)를 판단합니다. 기준({{ threshold }}점) 이상은 다음 실행 때 관련도 순으로 읽고,
      기준 미만은 <b>관련도 미달</b>로 남겨 둡니다.{% if is_admin %} 미달 논문도 골라서 AI에게 읽힐 수 있어요.{% endif %}</p>
 </div></section>
+
+<form class="filter-bar" method="get">
+  {{ source_select(source_nav, source, '모든 출처의 논문') }}
+  {% if source %}<a class="small" href="{{ url_for('web.queue') }}">필터 해제</a>{% endif %}
+  <noscript><button class="btn ghost sm">보기</button></noscript>
+</form>
 
 {% set sections = [
   ('reading', '읽는 중', 'AI가 지금 읽고 있는 논문입니다.', False),
@@ -28,8 +34,9 @@
           {% if can_pick %}<input type="checkbox" name="paper_id" value="{{ p.id }}" aria-label="{{ p.title }} 선택">{% endif %}
           <span class="rank">{{ p.relevance if p.relevance is not none else '-' }}</span>
           <div><a class="t" href="{{ url_for('web.paper_detail', paper_id=p.id) }}">{{ p.title }}</a>{% if p.priority %}<span class="tag-manual">직접 선택</span>{% endif %}
-            <div class="sub">{{ p.source_name }} · {{ p.published | short_date }}{% if p.matched_keywords %} · {{ p.matched_keywords | join(', ') }}{% endif %}</div>
-            {% if p.relevance_reason %}<div class="sub">{{ p.relevance_reason }}</div>{% endif %}
+            <div class="sub">{{ src(p, 'web.queue') }} · {{ p.published | short_date }}{% if p.matched_keywords %} · {{ p.matched_keywords | join(', ') }}{% endif %}</div>
+            {% if p.relevance_reason %}<div class="why"><b>관련도 판단</b>{{ p.relevance_reason }}</div>{% endif %}
+            {% if p.abstract %}<details class="abs"><summary>초록 보기</summary><p>{{ p.abstract }}</p></details>{% endif %}
           </div>
         </div>
       {% endfor %}
@@ -44,7 +51,7 @@
     </form>
   </section>
 {% else %}
-  <div class="card empty"><h3>대기 중인 논문이 없습니다</h3></div>
+  <div class="card empty"><h3>{{ '이 출처에서 대기 중인 논문이 없습니다' if source else '대기 중인 논문이 없습니다' }}</h3></div>
 {% endfor %}
 </div>
 {% endblock %}
