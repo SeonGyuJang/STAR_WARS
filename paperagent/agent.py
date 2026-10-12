@@ -178,16 +178,21 @@ def _call(stage: str, model: str, system: str, content, schema: dict, effort: st
         output_config={"effort": effort, "format": {"type": "json_schema", "schema": schema}},
     )
     ensure_api()
+    constrained = True
     try:
-        if config.CLAUDE_FALLBACKS and _supports_fallback(model):
-            # On a safety-classifier refusal the API re-runs the request on
-            # Anthropic's recommended fallback model instead of failing.
-            kwargs.update(betas=["server-side-fallback-2026-07-01"], fallbacks="default")
-            stream_ctx = client().beta.messages.stream(**kwargs)
-        else:
-            stream_ctx = client().messages.stream(**kwargs)
-        with stream_ctx as stream:
-            msg = stream.get_final_message()
+        try:
+            msg = _stream(model, kwargs)
+        except anthropic.BadRequestError as exc:
+            if not _grammar_too_large(exc):
+                raise
+            # The API refused to compile this schema into a grammar. Ask for
+            # the same JSON in the instructions instead and check it ourselves.
+            log.warning("%s: schema too large for constrained output; retrying unconstrained", stage)
+            constrained = False
+            kwargs["output_config"] = {"effort": effort}
+            kwargs["system"] = (f"{system}\n\nReply with one JSON object only - no prose, no code fences - "
+                                f"that matches this JSON Schema exactly:\n{json.dumps(schema, ensure_ascii=False)}")
+            msg = _stream(model, kwargs)
     except anthropic.AnthropicError as exc:
         problem = classify_api_error(exc)
         if problem:
@@ -205,7 +210,40 @@ def _call(stage: str, model: str, system: str, content, schema: dict, effort: st
     text = next((b.text for b in msg.content if b.type == "text"), None)
     if not text:
         raise ReviewError(f"{stage}: no text in response (stop_reason={msg.stop_reason})")
-    return json.loads(text)
+    if constrained:
+        return json.loads(text)
+    return _loose_json(stage, text, schema)
+
+
+def _stream(model, kwargs):
+    if config.CLAUDE_FALLBACKS and _supports_fallback(model):
+        # On a safety-classifier refusal the API re-runs the request on
+        # Anthropic's recommended fallback model instead of failing.
+        stream_ctx = client().beta.messages.stream(**kwargs, betas=["server-side-fallback-2026-07-01"], fallbacks="default")
+    else:
+        stream_ctx = client().messages.stream(**kwargs)
+    with stream_ctx as stream:
+        return stream.get_final_message()
+
+
+def _grammar_too_large(exc) -> bool:
+    text = str(getattr(exc, "message", "") or exc).lower()
+    return "grammar" in text and ("too large" in text or "too complex" in text or "simplify" in text)
+
+
+def _loose_json(stage, text, schema) -> dict:
+    """Parse JSON written without a schema constraint and check the top-level fields."""
+    start, end = text.find("{"), text.rfind("}")
+    try:
+        data = json.loads(text[start:end + 1]) if start >= 0 < end else None
+    except json.JSONDecodeError:
+        data = None
+    if not isinstance(data, dict):
+        raise ReviewError(f"{stage}: response was not a JSON object")
+    missing = [k for k in schema.get("required", []) if k not in data]
+    if missing:
+        raise ReviewError(f"{stage}: response is missing {', '.join(missing)}")
+    return data
 
 
 _str = {"type": "string"}
@@ -409,47 +447,9 @@ WRITE_SCHEMA = _obj({
     "who_should_read": _str,
     "glossary": _rows("3-6 terms a reader needs, explained simply in Korean", term=_str, meaning=_str),
     "tags": {**_str_list, "description": "3-6 short Korean or English topic tags"},
-    "card": _obj({
-        "category": {**_str, "description": "Short field tag, e.g. 'LLM 에이전트'"},
-        "cover_headline": {**_str, "description": "Korean hook, 2 lines separated by \\n, <= 16 chars per line"},
-        "cover_sub": {**_str, "description": "One Korean sentence under the headline (<= 60 chars)"},
-        "cover_points": {**_str_list, "description": "Exactly 3 Korean takeaways, each <= 38 chars, at least one with a number"},
-        "problem": _obj({
-            "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
-            "points": {**_str_list, "description": "3 Korean sentences, each <= 60 chars: the situation, what goes wrong, why it matters"},
-            "figure_number": {"type": "integer", "description": "Figure to show, 0 for none"},
-        }),
-        "idea": _obj({
-            "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
-            "body": {**_str, "description": "2-3 Korean sentences, <= 130 chars in total: the core idea"},
-            "figure_number": {"type": "integer", "description": "The method overview figure, 0 for none"},
-        }),
-        "steps": _rows("3-4 method steps for the card",
-                       title={**_str, "description": "<= 16 chars"}, detail={**_str, "description": "<= 64 chars"}),
-        "setup": _rows("4 rows: 데이터셋 / 모델 / 비교 대상 / 평가 지표",
-                       label={**_str, "description": "<= 8 chars"}, value={**_str, "description": "<= 56 chars"}),
-        "results": _obj({
-            "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
-            "highlight": {**_str, "description": "The single most important number, e.g. '+12.4%p'"},
-            "highlight_label": {**_str, "description": "What it measures, <= 30 chars"},
-            "rows": _rows("3-4 results", item={**_str, "description": "<= 22 chars"}, value={**_str, "description": "<= 16 chars"},
-                          note={**_str, "description": "comparison or context, <= 34 chars"}),
-            "figure_number": {"type": "integer", "description": "A results plot or table, 0 for none"},
-        }),
-        "verdict": _obj({
-            "strengths": {**_str_list, "description": "2 Korean points, each <= 44 chars"},
-            "weaknesses": {**_str_list, "description": "2 Korean points, each <= 44 chars"},
-            "who": {**_str, "description": "Who should read it, <= 60 chars"},
-        }),
-        "summary_rows": _rows("Exactly 5 rows: 문제 / 방법 / 데이터 / 결과 / 한계",
-                              label=_str, sub={**_str, "description": "tiny sub-label"},
-                              value={**_str, "description": "<= 24 chars"}, value_sub={**_str, "description": "<= 40 chars detail"}),
-        "caption": {**_str, "description": "Instagram caption in Korean, 8-14 lines: hook, the problem, the idea, 2-3 results with numbers, "
-                                          "the limitation, who should read; ends with 5-8 hashtags"},
-    }),
 })
 
-WRITE_SYSTEM = """You write clear, accurate and thorough Korean explanations of new AI/CS papers for engineers and researchers, plus copy for an 8-slide Instagram card-news post.
+WRITE_SYSTEM = """You write clear, accurate and thorough Korean explanations of new AI/CS papers for engineers and researchers.
 
 Goal: a reader who only reads your summary should understand the whole paper - what problem, why it is hard, the idea, how the method works step by step, how it was tested, what the numbers are, and what the limits are. Be specific and concrete; avoid vague phrases like "성능이 크게 향상" without the number.
 
@@ -458,35 +458,89 @@ Accuracy rules:
 - If the notes do not cover something, say so ("논문에 보고되지 않음") instead of guessing.
 - Limitations must reflect the paper's stated limitations and the reviewer's weaknesses.
 
-Style: plain, natural Korean; keep technical terms in English where natural (e.g. "Transformer", "RLHF") and explain them in the glossary.
+Style: plain, natural Korean; keep technical terms in English where natural (e.g. "Transformer", "RLHF") and explain them in the glossary."""
 
-Card copy is rendered large, so respect every length limit. For each card figure pick the most informative figure from the available list (by number) - the method overview for `idea`, a results plot or table for `results`, a motivating example for `problem`. Use 0 if none fits; never invent figure numbers or reuse one figure twice."""
+CARD_SCHEMA = _obj({
+    "category": {**_str, "description": "Short field tag, e.g. 'LLM 에이전트'"},
+    "cover_headline": {**_str, "description": "Korean hook, 2 lines separated by \\n, <= 16 chars per line"},
+    "cover_sub": {**_str, "description": "One Korean sentence under the headline (<= 60 chars)"},
+    "cover_points": {**_str_list, "description": "Exactly 3 Korean takeaways, each <= 38 chars, at least one with a number"},
+    "problem": _obj({
+        "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
+        "points": {**_str_list, "description": "3 Korean sentences, each <= 60 chars: the situation, what goes wrong, why it matters"},
+        "figure_number": {"type": "integer", "description": "Figure to show, 0 for none"},
+    }),
+    "idea": _obj({
+        "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
+        "body": {**_str, "description": "2-3 Korean sentences, <= 130 chars in total: the core idea"},
+        "figure_number": {"type": "integer", "description": "The method overview figure, 0 for none"},
+    }),
+    "steps": _rows("3-4 method steps for the card",
+                   title={**_str, "description": "<= 16 chars"}, detail={**_str, "description": "<= 64 chars"}),
+    "setup": _rows("4 rows: 데이터셋 / 모델 / 비교 대상 / 평가 지표",
+                   label={**_str, "description": "<= 8 chars"}, value={**_str, "description": "<= 56 chars"}),
+    "results": _obj({
+        "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
+        "highlight": {**_str, "description": "The single most important number, e.g. '+12.4%p'"},
+        "highlight_label": {**_str, "description": "What it measures, <= 30 chars"},
+        "rows": _rows("3-4 results", item={**_str, "description": "<= 22 chars"}, value={**_str, "description": "<= 16 chars"},
+                      note={**_str, "description": "comparison or context, <= 34 chars"}),
+        "figure_number": {"type": "integer", "description": "A results plot or table, 0 for none"},
+    }),
+    "verdict": _obj({
+        "strengths": {**_str_list, "description": "2 Korean points, each <= 44 chars"},
+        "weaknesses": {**_str_list, "description": "2 Korean points, each <= 44 chars"},
+        "who": {**_str, "description": "Who should read it, <= 60 chars"},
+    }),
+    "summary_rows": _rows("Exactly 5 rows: 문제 / 방법 / 데이터 / 결과 / 한계",
+                          label=_str, sub={**_str, "description": "tiny sub-label"},
+                          value={**_str, "description": "<= 24 chars"}, value_sub={**_str, "description": "<= 40 chars detail"}),
+    "caption": {**_str, "description": "Instagram caption in Korean, 8-14 lines: hook, the problem, the idea, 2-3 results with numbers, "
+                                      "the limitation, who should read; ends with 5-8 hashtags"},
+})
+
+CARD_SYSTEM = """You turn a Korean paper review into copy for an 8-slide Instagram card-news post (cover, problem, key idea, how it works, setup, results, verdict, summary).
+
+Use only facts from the review; keep numbers exactly as written there. Card copy is rendered large, so respect every length limit - shorten wording, never cut a number.
+
+For each card figure pick the most informative figure from the available list (by number) - the method overview for `idea`, a results plot or table for `results`, a motivating example for `problem`. Use 0 if none fits; never invent figure numbers or reuse one figure twice."""
 
 
 def write(paper, notes, verdict, figures, depth, meter):
+    """Korean review (WRITE_SCHEMA), then the card copy from that review (CARD_SCHEMA).
+    Two smaller schemas instead of one keeps each structured-output grammar small."""
     described = {f.get("number"): f.get("shows") for f in (notes or {}).get("figures", [])}
     fig_list = "\n".join(
         f"- Figure {f['number']}: {described.get(f['number']) or f['caption'][:200]}" for f in figures
     ) or "(none available)"
     facts = (f"Abstract only:\n{paper.get('abstract')}" if depth == "abstract"
              else f"Notes from the full paper:\n{json.dumps(notes, ensure_ascii=False, indent=1)}")
-    prompt = (
-        f"{_meta(paper, [])}\n{facts}\n\nReviewer's verdict:\n{json.dumps(verdict, ensure_ascii=False, indent=1)}\n\n"
-        f"Figures available for the cards:\n{fig_list}\n\nWrite every field."
-    )
-    return _call("write", config.WRITER_MODEL, WRITE_SYSTEM, prompt, WRITE_SCHEMA,
+    verdict_json = json.dumps(verdict, ensure_ascii=False, indent=1)
+    prompt = f"{_meta(paper, [])}\n{facts}\n\nReviewer's verdict:\n{verdict_json}\n\nWrite every field."
+    data = _call("write", config.WRITER_MODEL, WRITE_SYSTEM, prompt, WRITE_SCHEMA,
                  effort=config.WRITER_EFFORT, max_tokens=32000, meter=meter)
+    card_prompt = (
+        f"{_meta(paper, [])}\nReview:\n{json.dumps(data, ensure_ascii=False, indent=1)}\n\n"
+        f"Reviewer's verdict:\n{verdict_json}\n\nFigures available for the cards:\n{fig_list}\n\nWrite every field."
+    )
+    data["card"] = _call("card", config.WRITER_MODEL, CARD_SYSTEM, card_prompt, CARD_SCHEMA,
+                         effort=config.WRITER_EFFORT, max_tokens=16000, meter=meter)
+    return data
 
 
 def review(paper: dict, keywords, pdf_path=None, figures=()):
     """Full review. Returns (review_dict, read_depth); review_dict["_cost"] has the spend."""
     meter = CostMeter()
-    if pdf_path:
-        notes, depth = read_paper(paper, pdf_path, meter)
-    else:
-        notes, depth = None, "abstract"
-    verdict = judge(paper, keywords, notes, depth, meter)
-    data = write(paper, notes, verdict, figures, depth, meter)
+    try:
+        if pdf_path:
+            notes, depth = read_paper(paper, pdf_path, meter)
+        else:
+            notes, depth = None, "abstract"
+        verdict = judge(paper, keywords, notes, depth, meter)
+        data = write(paper, notes, verdict, figures, depth, meter)
+    except Exception as exc:
+        exc.cost_usd = meter.total_usd  # calls that already ran are still billed
+        raise
 
     data.update(verdict)
     data["overall_score"] = round((verdict["methodology_score"] + verdict["novelty_score"]) / 2, 1)

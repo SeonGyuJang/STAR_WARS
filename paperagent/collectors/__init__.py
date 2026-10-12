@@ -10,12 +10,12 @@ _session = requests.Session()
 _session.headers["User-Agent"] = config.HTTP_USER_AGENT
 
 
-def http_get(url, params=None, retries=3, timeout=60, **kwargs):
-    """GET with simple exponential backoff on network errors, 429 and 5xx."""
+def _request(method, url, retries=3, timeout=60, **kwargs):
+    """Request with simple exponential backoff on network errors, 429 and 5xx."""
     last_exc = None
     for attempt in range(retries):
         try:
-            resp = _session.get(url, params=params, timeout=timeout, **kwargs)
+            resp = _session.request(method, url, timeout=timeout, **kwargs)
             if resp.status_code == 429 or resp.status_code >= 500:
                 raise requests.HTTPError(f"{resp.status_code} from {url}", response=resp)
             resp.raise_for_status()
@@ -25,14 +25,17 @@ def http_get(url, params=None, retries=3, timeout=60, **kwargs):
             status = getattr(getattr(exc, "response", None), "status_code", None)
             if status and 400 <= status < 500 and status != 429:
                 raise
-            time.sleep(3 * (2 ** attempt))
+            if attempt + 1 < retries:
+                time.sleep(3 * (2 ** attempt))
     raise last_exc
 
 
-def http_post(url, json=None, params=None, timeout=60, **kwargs):
-    resp = _session.post(url, json=json, params=params, timeout=timeout, **kwargs)
-    resp.raise_for_status()
-    return resp
+def http_get(url, params=None, retries=3, timeout=60, **kwargs):
+    return _request("GET", url, retries=retries, timeout=timeout, params=params, **kwargs)
+
+
+def http_post(url, json=None, params=None, retries=3, timeout=60, **kwargs):
+    return _request("POST", url, retries=retries, timeout=timeout, json=json, params=params, **kwargs)
 
 
 def _keyword_pattern(term: str):

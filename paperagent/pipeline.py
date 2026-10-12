@@ -103,9 +103,9 @@ def screen_new(keywords, settings, say, meter=None):
     return kept
 
 
-def process_paper(paper: dict, keywords, say=log.info) -> bool:
-    """Fully review one paper and render its cards. Returns the review cost in
-    USD, or None if it failed.
+def process_paper(paper: dict, keywords, say=log.info) -> tuple[bool, float]:
+    """Fully review one paper and render its cards. Returns
+    (ok, cost_usd); a failed review still reports what its finished calls cost.
 
     The PDF is downloaded into a temporary directory and deleted as soon as
     Claude has read it and the figures are extracted; only the figure PNGs and
@@ -158,19 +158,28 @@ def process_paper(paper: dict, keywords, say=log.info) -> bool:
             cost_usd=cost,
             priority=0,
         )
-        return cost
+        return True, cost
     except agent.ApiUnavailable:
         # Not this paper's fault: put it back in the queue and stop the AI steps.
         db.update_paper(pid, status="screened" if before == "skipped" else before)
         raise
     except (agent.ReviewError, anthropic.APIError, ValueError) as exc:
+        spent = _spent(exc, say)
         say(f"  review failed: {exc}")
-        db.update_paper(pid, status="error", error=str(exc)[:1000])
-        return None
+        db.update_paper(pid, status="error", error=str(exc)[:1000], cost_usd=spent)
+        return False, spent
     except Exception as exc:
+        spent = _spent(exc, say)
         say(f"  unexpected error: {exc}")
-        db.update_paper(pid, status="error", error=traceback.format_exc()[-2000:])
-        return None
+        db.update_paper(pid, status="error", error=traceback.format_exc()[-2000:], cost_usd=spent)
+        return False, spent
+
+
+def _spent(exc, say):
+    spent = getattr(exc, "cost_usd", 0.0) or 0.0
+    if spent:
+        say(f"  ${spent:.3f} spent before the failure")
+    return spent
 
 
 def rerender_cards(paper_id: int):
@@ -246,12 +255,9 @@ def run(trigger: str = "schedule", paper_ids=None):
             for p in targets:
                 if p is None:
                     continue
-                cost = process_paper(p, keywords, say)
-                if cost is not None:
-                    stats["reviewed"] += 1
-                    stats["cost_usd"] += cost
-                else:
-                    stats["failed"] += 1
+                ok, cost = process_paper(p, keywords, say)
+                stats["cost_usd"] += cost
+                stats["reviewed" if ok else "failed"] += 1
         except agent.ApiUnavailable as exc:
             status = "partial"
             stats["api_error"] = exc.message
