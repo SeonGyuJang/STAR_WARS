@@ -5,6 +5,7 @@ SQLAlchemy Core keeps one code path for SQLite (local runs) and Postgres
 stored as ISO-8601 UTC strings and compared as strings, which keeps queries
 free of dialect-specific date functions."""
 import json
+import re
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import (Column, Float, Integer, LargeBinary, MetaData, String, Table, Text, UniqueConstraint,
@@ -211,17 +212,70 @@ def _add_missing_columns():
                     conn.execute(text(ddl))
 
 
-def _backfill_reviewed_at():
-    """Reviews made before reviewed_at existed: their last update is the best guess."""
+_LOG_LINE = re.compile(r"^\[(\d\d):(\d\d):(\d\d)\] (.*)$", re.M)
+
+
+def review_times_from_runs() -> dict:
+    """{paper_id: UTC ISO time} of each paper's last successful review, read
+    from the run logs ("reading #12: ..." followed by "  reviewed (...)").
+    Log lines carry only a time of day - UTC in older logs, Korea time since -
+    so each run's zone is the one that puts its first line closest to the run's
+    start, and the date comes from the start."""
+    out = {}
+    with engine().connect() as conn:
+        rows = conn.execute(select(runs.c.started_at, runs.c.log).order_by(runs.c.id)).all()
+    for started, log in rows:
+        lines = _LOG_LINE.findall(log or "")
+        if not lines:
+            continue
+        start = datetime.fromisoformat(started)
+
+        def at(local_start, h, m, sec):
+            t = local_start.replace(hour=int(h), minute=int(m), second=int(sec), microsecond=0)
+            return t + timedelta(days=1) if t < local_start - timedelta(minutes=5) else t
+
+        zone = min((timezone.utc, config.TIMEZONE),
+                   key=lambda z: abs(at(start.astimezone(z), *lines[0][:3]) - start.astimezone(z)))
+        base, prev, current = start.astimezone(zone), None, None
+        for h, m, sec, text in lines:
+            t = at(base, h, m, sec)
+            while prev and t < prev:  # past midnight
+                t += timedelta(days=1)
+            prev = t
+            reading = re.match(r"reading #(\d+):", text)
+            if reading:
+                current = int(reading.group(1))
+            elif current and text.lstrip().startswith("reviewed ("):
+                out[current] = t.astimezone(timezone.utc).isoformat()
+    return out
+
+
+def backfill_review_times():
+    """Give reviews made before reviewed_at existed their real review time: from
+    the run logs, else when their cards were rendered. Runs once."""
+    if get_setting("reviewed_at_v2"):
+        return
+    from . import storage  # storage imports db
+
+    from_logs = review_times_from_runs()
     with engine().begin() as conn:
+        done = conn.execute(select(papers.c.id, papers.c.card_paths).where(papers.c.status == "done")).all()
+        for pid, cards in done:
+            when = from_logs.get(pid)
+            if not when:
+                keys = json.loads(cards or "[]")
+                when = storage.stored_at(keys[0]) if keys else None
+            if when:  # a direct update: this is not a change to the paper
+                conn.execute(update(papers).where(papers.c.id == pid).values(reviewed_at=when))
         conn.execute(update(papers).where(papers.c.status == "done", papers.c.reviewed_at.is_(None))
                      .values(reviewed_at=papers.c.updated_at))
+    set_setting("reviewed_at_v2", True)
 
 
 def init_db(seed: bool = True):
     metadata.create_all(engine())
     _add_missing_columns()
-    _backfill_reviewed_at()
+    backfill_review_times()
     if not seed or get_setting("seeded"):
         return
     ts = now_iso()
@@ -343,6 +397,13 @@ def insert_paper(p: dict) -> bool:
         # rowcount is unreliable for ON CONFLICT on Postgres; RETURNING works on both.
         result = conn.execute(_insert(papers).values(**values).on_conflict_do_nothing().returning(papers.c.id))
         return result.first() is not None
+
+
+def set_citation_count(paper_id: int, count: int):
+    """Citation refreshes touch every reviewed paper each run; they are not edits,
+    so updated_at stays as it was."""
+    with engine().begin() as conn:
+        conn.execute(update(papers).where(papers.c.id == paper_id).values(citation_count=count))
 
 
 def tag_venue(uid: str, venue: str):
@@ -594,6 +655,11 @@ def put_blob(key: str, data: bytes, content_type: str):
     with engine().begin() as conn:
         conn.execute(stmt.on_conflict_do_update(index_elements=["key"], set_={
             "data": stmt.excluded.data, "content_type": stmt.excluded.content_type, "updated_at": stmt.excluded.updated_at}))
+
+
+def blob_updated_at(key: str):
+    with engine().connect() as conn:
+        return conn.execute(select(blobs.c.updated_at).where(blobs.c.key == key)).scalar()
 
 
 def get_blob(key: str):
