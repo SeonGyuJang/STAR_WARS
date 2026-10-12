@@ -158,7 +158,7 @@ def _full_run(fresh_db, sample_pdf, tmp_path):
     assert len(done) == 1
     p = done[0]
     assert p["status"] == "done" and p["read_depth"] == "full_pdf"
-    assert p["score_overall"] == 7.8 and len(p["card_paths"]) == 8
+    assert p["score_overall"] == 7.8 and len(p["card_paths"]) == 9
     assert [f["number"] for f in p["review"]["_figures"]] == [1, 2]
     # the PDF was only kept for the review, then deleted with its temp dir
     assert downloaded and not downloaded[0].exists() and not downloaded[0].parent.exists()
@@ -278,7 +278,7 @@ def test_demo_seed_and_clear(fresh_db):
 
     pid = demo.seed()
     p = fresh_db.get_paper(pid)
-    assert p["status"] == "done" and len(p["card_paths"]) == 8
+    assert p["status"] == "done" and len(p["card_paths"]) == 9
     assert [f["number"] for f in p["review"]["_figures"]] == [1, 2]
     assert len(fresh_db.papers_by_status("screened")) == 2
     c = create_app(start_scheduler=False).test_client()

@@ -112,12 +112,14 @@ h2 { flex: none; margin-top: calc(16px * var(--k)); font-size: calc(62px * var(-
 .crit { flex: none; margin-top: calc(26px * var(--k)); }
 .crit p { margin-top: calc(10px * var(--k)); font-size: calc(26px * var(--k)); line-height: 1.5; color: var(--body); }
 .verdict .score { margin-top: calc(34px * var(--k)); }
-.pc { flex: none; margin-top: calc(34px * var(--k)); display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-.pc div { background: var(--well); border-radius: 20px; padding: calc(24px * var(--k)) 26px; }
-.pc h4 { font-size: calc(25px * var(--k)); font-weight: 700; margin-bottom: calc(10px * var(--k)); }
+.pc { flex: none; margin-top: calc(30px * var(--k)); border-top: 2px solid var(--ink); }
+.pc section { padding: calc(22px * var(--k)) 0; border-bottom: 1px solid var(--line); }
+.pc h4 { font-size: calc(26px * var(--k)); font-weight: 700; margin-bottom: calc(10px * var(--k)); }
 .pc .good h4 { color: var(--good); }
 .pc .bad h4 { color: var(--bad); }
-.pc li { list-style: none; font-size: calc(27px * var(--k)); line-height: 1.45; padding: calc(6px * var(--k)) 0; }
+.pc li { list-style: none; position: relative; padding-left: 28px; font-size: calc(29px * var(--k)); line-height: 1.5; }
+.pc li + li { margin-top: calc(8px * var(--k)); }
+.pc li::before { content: ""; position: absolute; left: 4px; top: calc(19px * var(--k)); width: 9px; height: 9px; border-radius: 50%; background: currentColor; opacity: .35; }
 .who { flex: none; margin-top: calc(26px * var(--k)); padding: calc(24px * var(--k)) 28px; border-radius: 20px; background: var(--accent-soft);
        font-size: calc(28px * var(--k)); line-height: 1.5; }
 .who b { color: var(--accent); margin-right: 10px; }
@@ -133,11 +135,16 @@ h2 { flex: none; margin-top: calc(16px * var(--k)); font-size: calc(62px * var(-
 /* ---------- summary ---------- */
 .summary .rows { margin-top: calc(32px * var(--k)); }
 .summary .row { padding: calc(22px * var(--k)) 0; }
-.cta { flex: none; margin-top: auto; background: var(--dark); color: #fff; border-radius: 24px; padding: calc(30px * var(--k)) 36px;
-       display: flex; justify-content: space-between; align-items: center; gap: 24px; }
-.cta p { font-size: calc(27px * var(--k)); line-height: 1.5; color: #c9c9c9; }
-.cta p b { color: #fff; }
-.cta .acr { font-size: 22px; color: #7a7a7a; text-align: right; white-space: nowrap; }
+
+/* ---------- outro ---------- */
+.outro { background: var(--dark); color: #fff; }
+.outro .page, .outro .bottom { color: #6b6b6b; }
+.acro { margin-top: 110px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 40px; }
+.acro div { font-size: 64px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.25; color: #5c5c5c; white-space: nowrap; }
+.acro b { color: #fff; font-weight: 700; }
+.outro .claim { margin-top: 96px; font-size: 52px; line-height: 1.35; font-weight: 700; letter-spacing: -0.03em; }
+.outro .cta { margin-top: 28px; font-size: 30px; line-height: 1.6; color: #a3a3a3; }
+.outro .cta b { color: #fff; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -239,8 +246,8 @@ h2 { flex: none; margin-top: calc(16px * var(--k)); font-size: calc(62px * var(-
     </div>
     <div class="crit"><p><b>방법론</b> · {{ review.methodology_reason }}</p><p><b>참신성</b> · {{ review.novelty_reason }}</p></div>
     {% if s.strengths or s.weaknesses %}<div class="pc">
-      <div class="good"><h4>강점</h4><ul>{% for x in s.strengths[:2] %}<li>{{ x }}</li>{% endfor %}</ul></div>
-      <div class="bad"><h4>한계</h4><ul>{% for x in s.weaknesses[:2] %}<li>{{ x }}</li>{% endfor %}</ul></div>
+      {% if s.strengths %}<section class="good"><h4>강점</h4><ul>{% for x in s.strengths[:2] %}<li>{{ x }}</li>{% endfor %}</ul></section>{% endif %}
+      {% if s.weaknesses %}<section class="bad"><h4>한계</h4><ul>{% for x in s.weaknesses[:2] %}<li>{{ x }}</li>{% endfor %}</ul></section>{% endif %}
     </div>{% endif %}
     {% if s.who %}<div class="who"><b>추천</b>{{ s.who }}</div>{% endif %}
   </div>
@@ -257,8 +264,20 @@ h2 { flex: none; margin-top: calc(16px * var(--k)); font-size: calc(62px * var(-
       <div class="row"><div class="k">{{ r.label }}</div><div class="v"><b>{{ r.value }}</b>{% if r.value_sub %}<span>{{ r.value_sub }}</span>{% endif %}</div></div>
       {% endfor %}
     </div>
-    <div class="cta"><p>원문 링크와 전체 리뷰는<br><b>프로필 링크</b>에서 볼 수 있어요.</p><div class="acr">{{ handle }}</div></div>
   </div>
+  {{ bottom() }}
+</section>
+
+{% elif s.kind == 'outro' %}
+<section class="slide outro">
+  {{ top(n) }}
+  <div class="acro">
+    {% for initial, rest in acronym[:4] %}<div style="grid-column: 1; grid-row: {{ loop.index }}"><b>{{ initial }}</b>{{ rest }}</div>{% endfor %}
+    {% for initial, rest in acronym[4:] %}<div style="grid-column: 2; grid-row: {{ loop.index }}"><b>{{ initial }}</b>{{ rest }}</div>{% endfor %}
+  </div>
+  <p class="claim">읽을 가치가 있는 논문만<br>골라 읽고, 평가합니다.</p>
+  <p class="cta">원문 링크와 전체 리뷰는 <b>프로필 링크</b>에서 볼 수 있어요.<br>매일 새 논문을 받아보려면 <b>{{ handle }}</b></p>
+  <div style="flex: 1"></div>
   {{ bottom() }}
 </section>
 {% endif %}
@@ -272,6 +291,7 @@ document.fonts.ready.then(() => {
   Promise.all(imgs).then(() => {
     document.querySelectorAll(".slide").forEach((slide) => {
       const main = slide.querySelector(".main");
+      if (!main) return;
       // where the last block ends (glyphs that poke out of their line box don't count)
       const bottom = () => Math.max(...[...main.children].map((c) => c.offsetTop + c.offsetHeight));
       let k = 1;

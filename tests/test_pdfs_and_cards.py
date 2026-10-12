@@ -29,7 +29,7 @@ def test_render_cards(sample_pdf, tmp_path):
     paper = {"uid": "arxiv:2610.01234", "title": "Self-Verification Loops", "authors": ["A. Kim"],
              "source_kind": "arxiv", "source_name": "arXiv · cs.CL", "published": "2026-10-09", "url": "https://arxiv.org/abs/2610.01234"}
     paths = cardnews.render(paper, review, figs, tmp_path / "cards")
-    assert len(paths) == 8
+    assert len(paths) == 9
     for p in paths:
         assert Image.open(p).size == (1080, 1350)
     caption = (tmp_path / "cards" / "caption.txt").read_text()
@@ -37,7 +37,7 @@ def test_render_cards(sample_pdf, tmp_path):
 
 
 def test_old_card_format_still_renders(sample_pdf, tmp_path):
-    """Reviews written before the 8-slide layout keep working with "카드 다시 만들기"."""
+    """Reviews written before the current layout keep working with "카드 다시 만들기"."""
     figs = pdfs.extract_figures(sample_pdf, tmp_path / "figs")
     review = copy.deepcopy(demo.SAMPLE_REVIEW)
     card = review["card"]
@@ -55,5 +55,5 @@ def test_old_card_format_still_renders(sample_pdf, tmp_path):
     paper = {"uid": "arxiv:2610.01234", "title": "Self-Verification Loops", "authors": ["A. Kim"],
              "source_kind": "arxiv", "published": "2026-10-09", "url": "https://arxiv.org/abs/2610.01234"}
     paths = cardnews.render(paper, review, figs, tmp_path / "cards")
-    assert len(paths) == 6  # no steps / setup slides for the old format
+    assert len(paths) == 7  # no steps / setup slides for the old format
     assert all(Image.open(p).size == (1080, 1350) for p in paths)
