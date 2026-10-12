@@ -63,7 +63,8 @@ def _fake_client(payload=None, stop_reason="end_turn", by_schema=None, usage=(10
 def test_review_uses_cheap_reader_and_strong_judge(fresh_db, sample_pdf):
     payloads = _stage_payloads()
     payloads[id(agent.JUDGE_SCHEMA)]["methodology_score"] = 11  # out of range -> clamped
-    payloads[id(agent.WRITE_SCHEMA)]["card"]["slides"][0]["figure_number"] = 7  # not extracted -> 0
+    payloads[id(agent.WRITE_SCHEMA)]["card"]["problem"]["figure_number"] = 7  # not extracted -> 0
+    payloads[id(agent.WRITE_SCHEMA)]["card"]["results"]["figure_number"] = 1  # same figure as idea -> 0
     client = _fake_client(by_schema=payloads, usage=(50_000, 2_000))
     with mock.patch.object(agent, "client", return_value=client):
         out, depth = agent.review(_paper(), ["AI agent"], sample_pdf, [{"number": 1, "page": 1, "caption": "Figure 1: x", "path": "x"}])
@@ -79,7 +80,10 @@ def test_review_uses_cheap_reader_and_strong_judge(fresh_db, sample_pdf):
     assert write["model"] == "claude-sonnet-5-5"
     assert depth == "full_pdf"
     assert out["methodology_score"] == 10.0 and out["overall_score"] == 9.0
-    assert out["card"]["slides"][0]["figure_number"] == 0
+    assert out["card"]["problem"]["figure_number"] == 0
+    assert out["card"]["idea"]["figure_number"] == 1 and out["card"]["results"]["figure_number"] == 0
+    # the reader and writer have room for the longer notes and review
+    assert read["max_tokens"] >= 32000 and write["max_tokens"] >= 32000
     # cost: 50k in / 2k out on each model
     expected = (50_000 * 0.10 + 2_000 * 0.50 + 50_000 * 4 + 2_000 * 20 + 50_000 * 2 + 2_000 * 10) / 1e6
     assert abs(out["_cost"]["total_usd"] - expected) < 1e-4
@@ -150,7 +154,7 @@ def _full_run(fresh_db, sample_pdf, tmp_path):
     assert len(done) == 1
     p = done[0]
     assert p["status"] == "done" and p["read_depth"] == "full_pdf"
-    assert p["score_overall"] == 7.8 and len(p["card_paths"]) == 6
+    assert p["score_overall"] == 7.8 and len(p["card_paths"]) == 8
     assert [f["number"] for f in p["review"]["_figures"]] == [1, 2]
     # the PDF was only kept for the review, then deleted with its temp dir
     assert downloaded and not downloaded[0].exists() and not downloaded[0].parent.exists()
@@ -270,11 +274,14 @@ def test_demo_seed_and_clear(fresh_db):
 
     pid = demo.seed()
     p = fresh_db.get_paper(pid)
-    assert p["status"] == "done" and len(p["card_paths"]) == 6
+    assert p["status"] == "done" and len(p["card_paths"]) == 8
     assert [f["number"] for f in p["review"]["_figures"]] == [1, 2]
     assert len(fresh_db.papers_by_status("screened")) == 2
     c = create_app(start_scheduler=False).test_client()
-    assert demo.SAMPLE_REVIEW["one_liner"] in c.get(f"/paper/{pid}").get_data(as_text=True)
+    html = c.get(f"/paper/{pid}").get_data(as_text=True)
+    assert demo.SAMPLE_REVIEW["one_liner"] in html
+    for part in ("핵심 아이디어", "실험 설정", "Table 1", "분석과 추가 실험", "기존 연구와 다른 점", "용어 정리", "강점"):
+        assert part in html, part
     assert demo.clear() == 4
     assert fresh_db.get_paper(pid) is None and storage.get(f"cards/{pid}/card_01.png") is None
 
