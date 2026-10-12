@@ -229,10 +229,20 @@ def run(trigger: str = "schedule", paper_ids=None):
             if paper_ids:
                 targets = [db.get_paper(i) for i in paper_ids]
             else:
+                min_rel = settings["min_relevance"]
+                moved = db.apply_threshold(min_rel)
+                if moved["skipped"] or moved["screened"]:
+                    say(f"queue matched to relevance {min_rel}: {moved['skipped']} moved to 관련도 미달, "
+                        f"{moved['screened']} back to 읽을 차례")
                 stats["screened_in"] = screen_new(keywords, settings, say, meter)
-                # hand-picked papers first (all of them), then the best of the rest
+                # hand-picked papers first (all of them), then the best N at or above the threshold
                 targets = db.papers_by_status("screened", limit=1000, order="relevance", priority=True)
-                targets += db.papers_by_status("screened", limit=settings["max_full_reads"], order="relevance", priority=False)
+                auto = [p for p in db.papers_by_status("screened", limit=1000, order="relevance", priority=False)
+                        if (p["relevance"] or 0) >= min_rel]
+                picked = len(targets)
+                targets += auto[:settings["max_full_reads"]]
+                say(f"reading {len(targets)} papers: {picked} hand-picked + top {len(targets) - picked} "
+                    f"of {len(auto)} at relevance >= {min_rel}")
             for p in targets:
                 if p is None:
                     continue

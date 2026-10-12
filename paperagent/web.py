@@ -174,8 +174,10 @@ def trending_view():
 
 @bp.route("/queue")
 def queue():
+    threshold = db.pipeline_settings()["min_relevance"]
+    db.apply_threshold(threshold)
     lists = {s: db.papers_by_status(s, limit=300, order="relevance") for s in ("screened", "reading", "error", "skipped", "new")}
-    return render_template("queue.html", lists=lists, threshold=db.pipeline_settings()["min_relevance"])
+    return render_template("queue.html", lists=lists, threshold=threshold)
 
 
 def _api_ready_or_flash() -> bool:
@@ -379,6 +381,7 @@ def save_pipeline():
         return redirect(url_for("web.settings") + "#pipeline")
     for k, v in values.items():
         db.set_setting(k, v)
+    db.apply_threshold(values["min_relevance"])
     flash("파이프라인 설정을 저장했습니다.", "ok")
     return redirect(url_for("web.settings") + "#pipeline")
 
