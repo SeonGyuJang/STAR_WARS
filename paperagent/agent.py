@@ -499,7 +499,7 @@ CARD_SCHEMA = _obj({
                                       "the limitation, who should read; ends with 5-8 hashtags"},
 })
 
-CARD_SYSTEM = """You turn a Korean paper review into copy for an 8-slide Instagram card-news post (cover, problem, key idea, how it works, setup, results, verdict, summary).
+CARD_SYSTEM = """You turn a Korean paper review into copy for an Instagram card-news post (cover, problem, key idea, how it works, setup, results, verdict, summary; a fixed closing slide follows).
 
 Use only facts from the review; keep numbers exactly as written there. Card copy is rendered large, so respect every length limit - shorten wording, never cut a number.
 

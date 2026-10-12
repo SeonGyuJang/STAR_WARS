@@ -1,4 +1,4 @@
-"""Instagram card-news generator: renders an 8-slide 1080x1350 (4:5) carousel to PNG.
+"""Instagram card-news generator: renders a 9-slide 1080x1350 (4:5) carousel to PNG.
 
 The slides are laid out in HTML/CSS (templates/cards/cards.html) and captured
 with headless Chromium through Playwright, so typography (Korean via the bundled
@@ -41,7 +41,7 @@ def _lines(text):
 
 
 def normalize_card(review: dict) -> dict:
-    """The card copy in the current shape. Reviews written before the 8-slide
+    """The card copy in the current shape. Reviews written before the current
     layout (card["slides"]) are mapped onto it as well as they fit."""
     card = dict(review.get("card") or {})
     old = card.get("slides")
@@ -83,6 +83,7 @@ def build_html(paper: dict, review: dict, figures, page1=None) -> str:
         slides.append({"kind": "results", "label": "결과", **card["results"], "figure": fig("results")})
     slides.append({"kind": "verdict", "label": "평가", **card["verdict"]})
     slides.append({"kind": "summary"})
+    slides.append({"kind": "outro"})
 
     # Cover visual: a figure not shown on later slides, else the paper's
     # first page, else any figure.
@@ -98,6 +99,7 @@ def build_html(paper: dict, review: dict, figures, page1=None) -> str:
         fonts=FONT_DIR.resolve().as_uri(),
         brand=config.CARD_BRAND,
         handle=config.CARD_HANDLE,
+        acronym=config.BRAND_ACRONYM,
         paper=paper,
         review=review,
         card=card,
