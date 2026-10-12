@@ -21,7 +21,10 @@
       {% if is_admin %}<a href="{{ url_for('web.settings') }}" class="{{ 'on' if request.endpoint == 'web.settings' }}">설정</a>{% endif %}
     </nav>
     <div class="head-right">
-      {% if running %}<span class="live"><i></i>논문 읽는 중</span>{% endif %}
+      <button type="button" class="live {{ 'on' if running }}" data-console-open {{ 'hidden' if not running }}
+              aria-haspopup="dialog" aria-controls="console" title="진행 상황 보기">
+        <i aria-hidden="true"></i><span data-live-label>논문 읽는 중</span><b data-live-count></b></button>
+      {% if is_admin and not running %}<button type="button" class="link small console-link" data-console-open aria-controls="console">실행 콘솔</button>{% endif %}
       {% if is_admin and admin_enabled %}<form method="post" action="{{ url_for('web.logout') }}"><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="link">로그아웃</button></form>
       {% elif not is_admin %}<a href="{{ url_for('web.login', next=request.path) }}">관리자 로그인</a>{% endif %}
     </div>
@@ -42,7 +45,9 @@
 {% endif %}
 <main class="wrap">
   {% with messages = get_flashed_messages(with_categories=true) %}
-    {% for cat, msg in messages %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+    {% if messages %}<div class="toasts" role="status" aria-live="polite">{% for cat, msg in messages %}
+      <div class="toast {{ cat }}" data-toast><span>{{ msg }}</span><button type="button" class="toast-x" aria-label="닫기" data-toast-close>✕</button></div>
+    {% endfor %}</div>{% endif %}
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
@@ -52,6 +57,43 @@
     <p class="foot-note">요약과 평점은 AI가 원문을 읽고 자동으로 작성합니다. <br>중요한 판단 전에는 원문을 꼭 확인해 주세요.</p>
   </div>
 </footer>
+<div class="console-backdrop" data-console-close hidden></div>
+<aside class="console" id="console" role="dialog" aria-modal="true" aria-labelledby="console-title" hidden
+       data-admin="{{ '1' if is_admin else '0' }}" data-runs-url="{{ url_for('web.settings') }}#runs"
+       data-stop-url="{{ url_for('web.run_stop') }}" data-run-url="{{ url_for('web.run_now') }}">
+  <header class="console-h">
+    <div><h2 id="console-title">실행 상황</h2><p class="console-meta" data-c-meta>불러오는 중…</p></div>
+    <button type="button" class="icon-btn" data-console-close aria-label="닫기">✕</button>
+  </header>
+  <ol class="stepper" data-c-steps>
+    <li data-step="collect">수집</li><li data-step="screen">관련도 판단</li><li data-step="read">정독·리뷰</li>
+    <li data-step="trending">트렌드</li><li data-step="done">완료</li>
+  </ol>
+  <section class="console-now" data-c-now hidden>
+    <div class="now-label">지금 하는 일</div>
+    <div class="now-title" data-c-title></div>
+    <div class="now-stage" data-c-stage></div>
+    <div class="meter"><i data-c-bar></i></div>
+    <div class="meter-label" data-c-count></div>
+  </section>
+  <section class="console-sec" data-c-targets-wrap hidden>
+    <h3>이번 실행에서 읽는 논문</h3>
+    <ol class="targets" data-c-targets></ol>
+  </section>
+  {% if is_admin %}
+  <section class="console-sec log-sec">
+    <h3>실행 로그 <span class="small muted" data-c-follow>실시간</span></h3>
+    <pre class="console-log" data-c-log tabindex="0"></pre>
+  </section>
+  {% endif %}
+  <footer class="console-f">
+    {% if is_admin %}
+      <button type="button" class="btn danger-btn sm" data-c-stop hidden>강제 종료</button>
+      <form method="post" action="{{ url_for('web.run_now') }}" data-c-start hidden class="inline"><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="btn sm">지금 실행</button></form>
+      <a class="small" href="{{ url_for('web.settings') }}#runs">지난 실행 기록</a>
+    {% else %}<span class="small muted">새 논문을 읽는 중입니다. 끝나면 목록에 올라옵니다.</span>{% endif %}
+  </footer>
+</aside>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

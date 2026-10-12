@@ -1,6 +1,11 @@
-{% from "_macros.html" import src, ig_toggle with context %}
+{% from "_macros.html" import src, ig_check, ig_cancel with context %}
 {% set r = p.review or {} %}
-<article class="prow">
+{% set posted = p.instagram_posted_at %}
+<div class="pitem {{ 'posted' if posted and is_admin }}" id="p-{{ p.id }}">
+{% if is_admin %}<div class="gutter">{% if not posted %}{{ ig_check(p) }}{% endif %}</div>{% endif %}
+<article class="prow card">
+  {% if is_admin %}<div class="ig-ribbon" {{ 'hidden' if not posted }}><span class="tick" aria-hidden="true"></span>인스타 업로드 완료<span data-ig-date>{{ '· ' ~ (posted | kst('%m.%d')) if posted }}</span>
+    {% if posted and filters.ig == 'posted' %}{{ ig_cancel(p) }}{% endif %}</div>{% endif %}
   <div class="pscore">
     <b>{{ p.score_overall }}</b>
     <span>방법론 {{ p.score_method }}<br>참신성 {{ p.score_novelty }}</span>
@@ -20,9 +25,10 @@
       {% if p.pdf_url %}<a href="{{ p.pdf_url }}" target="_blank" rel="noopener">PDF</a>{% endif %}
       {% if p.card_paths %}<a href="{{ url_for('web.file_cards_zip', paper_id=p.id) }}">카드뉴스</a>{% endif %}
       {% if p.read_depth == 'abstract' %}<span class="warn">초록만 읽음</span>{% endif %}
-      {% if is_admin %}{{ ig_toggle(p) }}{% elif p.instagram_posted_at %}<span class="ig-badge">인스타 게시</span>{% endif %}
+      {% if posted and not is_admin %}<span class="ig-badge">인스타 게시</span>{% endif %}
       <span class="chips">{% for kw in p.matched_keywords %}<a class="chip" href="{{ url_for('web.index', keyword=kw) }}">{{ kw }}</a>{% endfor %}</span>
     </div>
   </div>
   <a class="thumb" href="{{ url_for('web.paper_detail', paper_id=p.id) }}" aria-label="카드뉴스 미리보기">{% if p.card_paths %}<img loading="lazy" src="{{ url_for('web.file_card', paper_id=p.id, n=1) }}" alt="">{% endif %}</a>
 </article>
+</div>

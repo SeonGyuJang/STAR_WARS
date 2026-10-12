@@ -11,12 +11,19 @@ from . import agent, cardnews, config, db, pdfs, storage
 from .collectors import arxiv, openalex, trending, venues
 
 log = logging.getLogger(__name__)
-_lock = threading.Lock()
+_start_lock = threading.Lock()  # makes "nothing running? then start" atomic within this process
+
+STAGE_LABELS = {"screen": "관련도 판단", "read": "원문 읽는 중", "judge": "평가 중", "write": "리뷰 작성 중",
+                "card": "카드 문구 작성 중", "download": "PDF 받는 중", "render": "카드뉴스 그리는 중"}
+
+
+class RunCancelled(Exception):
+    """The admin stopped the run from the dashboard."""
 
 
 def is_running() -> bool:
     """True while a run is going here or in another process/dyno."""
-    return _lock.locked() or db.active_run() is not None
+    return db.active_run() is not None
 
 
 def is_due(settings=None) -> bool:
@@ -30,12 +37,29 @@ def is_due(settings=None) -> bool:
 
 
 class RunLogger:
+    """Writes the run log and live progress, and is where a stopped run notices:
+    every log line checks whether the admin pressed 강제 종료."""
+
     def __init__(self, run_id):
         self.run_id = run_id
+        self.progress = {"phase": "start"}
 
     def __call__(self, msg):
         log.info(msg)
+        self.check()
         db.append_run_log(self.run_id, msg)
+
+    def check(self):
+        if db.run_status(self.run_id) == "aborted":
+            raise RunCancelled()
+
+    def update(self, **fields):
+        self.progress.update(fields)
+        db.set_run_progress(self.run_id, self.progress)
+
+    def stage(self, stage, model=None):
+        self.check()
+        self.update(stage=STAGE_LABELS.get(stage, stage), model=model)
 
 
 def venue_meta(src: dict) -> dict:
@@ -156,13 +180,15 @@ def process_paper(paper: dict, keywords, say=log.info) -> tuple[bool, float]:
     the cards are kept (in storage)."""
     pid = paper["id"]
     before = paper["status"] if paper["status"] != "reading" else "screened"
-    db.update_paper(pid, status="reading", error=None)
+    stage = getattr(say, "stage", lambda *a: None)
     say(f"reading #{pid}: {paper['title'][:90]}")
+    db.update_paper(pid, status="reading", error=None)
     try:
         with tempfile.TemporaryDirectory(prefix="paperagent-") as tmp:
             tmp = Path(tmp)
             pdf_path, figures, page1_key = None, [], None
             try:
+                stage("download")
                 pdf_path = pdfs.download_pdf(paper, tmp)
                 figures = pdfs.extract_figures(pdf_path, tmp / "figs")
                 say(f"  downloaded PDF ({pdf_path.stat().st_size // 1024} KB, {len(figures)} figures)")
@@ -185,6 +211,7 @@ def process_paper(paper: dict, keywords, say=log.info) -> tuple[bool, float]:
 
         card_paths = []
         try:
+            stage("render")
             card_paths = cardnews.render_and_store({**paper, "id": pid}, review)
             say(f"  rendered {len(card_paths)} cards")
         except Exception as exc:
@@ -204,7 +231,7 @@ def process_paper(paper: dict, keywords, say=log.info) -> tuple[bool, float]:
             reviewed_at=db.now_iso(),
         )
         return True, cost
-    except agent.ApiUnavailable:
+    except (agent.ApiUnavailable, RunCancelled):
         # Not this paper's fault: put it back in the queue and stop the AI steps.
         db.update_paper(pid, status="screened" if before == "skipped" else before)
         raise
@@ -252,75 +279,109 @@ def add_arxiv_paper(arxiv_id: str):
     return row["id"]
 
 
+def next_targets(settings=None):
+    """The papers the next run will read, in order: every hand-picked paper, then
+    the best `max_full_reads` at or above the minimum relevance. Returns
+    (targets, number hand-picked, number eligible)."""
+    settings = settings or db.pipeline_settings()
+    min_rel = settings["min_relevance"]
+    picked = db.papers_by_status("screened", limit=1000, order="relevance", priority=True)
+    auto = [p for p in db.papers_by_status("screened", limit=1000, order="relevance", priority=False)
+            if (p["relevance"] or 0) >= min_rel]
+    return picked + auto[:settings["max_full_reads"]], len(picked), len(auto)
+
+
 def run(trigger: str = "schedule", paper_ids=None):
     """One full cycle. Returns the run id, or None if a run is already in progress.
 
     Collecting papers and refreshing the trend panels need no Claude API, so
     they always run. If the API is unusable (no key, bad key, no credit...),
     only the AI steps stop; the run is marked 'partial' and the dashboard shows
-    a notice asking the admin to check the API."""
-    if not _lock.acquire(blocking=False):
-        return None
-    if db.active_run() is not None:  # running in another dyno/process
-        _lock.release()
-        return None
-    run_id = db.start_run(trigger)
+    a notice asking the admin to check the API. The admin can stop a run at any
+    time from the dashboard (강제 종료)."""
+    with _start_lock:
+        if db.active_run() is not None:  # running here or in another dyno/process
+            return None
+        run_id = db.start_run(trigger)
     say = RunLogger(run_id)
+    agent.set_call_listener(say.stage)
     stats = {"new": 0, "screened_in": 0, "reviewed": 0, "failed": 0, "cost_usd": 0.0}
     meter = agent.CostMeter()
     status = "ok"
     keywords = []
+    cancelled = False
     try:
         settings = db.pipeline_settings()
         keywords = [k["term"] for k in db.list_keywords()]
         if not keywords:
             say("no keywords registered - add some on the settings page")
         if not paper_ids:
+            say.update(phase="collect", stage="논문 수집 중")
             resolve_journals(say)
             stats["new"] = collect(keywords, settings, say)
         try:
             agent.ensure_api()
             if paper_ids:
-                targets = [db.get_paper(i) for i in paper_ids]
+                targets = [p for p in (db.get_paper(i) for i in paper_ids) if p]
             else:
                 min_rel = settings["min_relevance"]
                 moved = db.apply_threshold(min_rel)
                 if moved["skipped"] or moved["screened"]:
                     say(f"queue matched to relevance {min_rel}: {moved['skipped']} moved to 관련도 미달, "
                         f"{moved['screened']} back to 읽을 차례")
+                say.update(phase="screen", stage="관련도 판단 중")
                 stats["screened_in"] = screen_new(keywords, settings, say, meter)
-                # hand-picked papers first (all of them), then the best N at or above the threshold
-                targets = db.papers_by_status("screened", limit=1000, order="relevance", priority=True)
-                auto = [p for p in db.papers_by_status("screened", limit=1000, order="relevance", priority=False)
-                        if (p["relevance"] or 0) >= min_rel]
-                picked = len(targets)
-                targets += auto[:settings["max_full_reads"]]
+                targets, picked, eligible = next_targets(settings)
                 say(f"reading {len(targets)} papers: {picked} hand-picked + top {len(targets) - picked} "
-                    f"of {len(auto)} at relevance >= {min_rel}")
-            for p in targets:
-                if p is None:
-                    continue
+                    f"of {eligible} at relevance >= {min_rel}")
+            say.update(phase="read", targets=[{"id": p["id"], "title": p["title"]} for p in targets],
+                       done=[], failed=[], current=None, stage=None)
+            for i, p in enumerate(targets, start=1):
+                say.update(current=p["id"], index=i)
                 ok, cost = process_paper(p, keywords, say)
                 stats["cost_usd"] += cost
                 stats["reviewed" if ok else "failed"] += 1
+                say.progress["done" if ok else "failed"].append(p["id"])
+                say.update(current=None, stage=None)
         except agent.ApiUnavailable as exc:
             status = "partial"
             stats["api_error"] = exc.message
             say(f"AI 단계 중단: {exc.message} API 키와 결제 상태를 확인하세요. 수집과 트렌드는 계속 진행합니다.")
+    except RunCancelled:
+        cancelled = True
     except Exception as exc:
         status = "error"
-        say(f"run failed: {exc}\n{traceback.format_exc()[-1500:]}")
+        try:
+            say(f"run failed: {exc}\n{traceback.format_exc()[-1500:]}")
+        except RunCancelled:
+            cancelled = True
     finally:
-        if not paper_ids:
+        agent.set_call_listener(None)
+        if not paper_ids and not cancelled:
             try:
+                say.update(phase="trending", stage="트렌드 갱신 중", current=None)
                 trending.refresh_all(keywords, logger=say)
+            except RunCancelled:
+                cancelled = True
             except Exception as exc:  # never let trends break the run record
-                say(f"trending failed: {exc}")
+                log.warning("trending failed: %s", exc)
         stats["cost_usd"] = round(stats["cost_usd"] + meter.total_usd, 4)
-        say(f"run cost ${stats['cost_usd']:.3f}")
+        if not cancelled:
+            try:
+                say(f"run cost ${stats['cost_usd']:.3f}")
+                say.update(phase="done", stage=None, current=None)
+            except RunCancelled:
+                cancelled = True
         db.finish_run(run_id, status, stats)
-        _lock.release()
     return run_id
+
+
+def stop(run_id=None, who="관리자") -> bool:
+    """Force-stop the active run (or the given one)."""
+    run = db.get_run(run_id) if run_id else db.active_run()
+    if not run:
+        return False
+    return db.abort_run(run["id"], f"{who}가 실행을 강제 종료했습니다. 읽던 논문은 대기열로 돌아갑니다.")
 
 
 def refresh_trending_only(say=log.info):

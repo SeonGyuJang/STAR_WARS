@@ -448,6 +448,14 @@ def test_instagram_posted_mark_and_list(fresh_db):
     assert visitor.post(f"/paper/{pid}/instagram", data={"_csrf": token}).status_code in (302, 400)  # refused
     assert db.get_paper(pid)["instagram_posted_at"]
 
-    # a plain form post (no script) toggles it back off
-    admin.post(f"/paper/{pid}/instagram", data={"_csrf": token})
+    # posted cards are green with no checkbox; the undo button is only on the posted tab
+    main = admin.get("/").get_data(as_text=True)
+    card = main[main.index(f'id="p-{pid}"'):main.index("</article>", main.index(f'id="p-{pid}"'))]
+    assert 'class="pitem posted"' in main and "data-ig>" not in card and "업로드 취소" not in card
+    assert "업로드 취소" in posted
+    # undoing it sends the admin back to the main list, at that paper
+    r = admin.post(f"/paper/{pid}/instagram", data={"_csrf": token, "posted": "0", "back": "main"})
+    assert r.status_code == 302 and r.headers["Location"].endswith(f"/?hl={pid}#p-{pid}")
     assert db.get_paper(pid)["instagram_posted_at"] is None
+    main = admin.get(f"/?hl={pid}").get_data(as_text=True)
+    assert 'class="pitem posted"' not in main and "인스타 업로드를 취소했습니다" in main

@@ -8,6 +8,49 @@
      기준 미만은 <b>관련도 미달</b>로 남겨 둡니다.{% if is_admin %} 미달 논문도 골라서 AI에게 읽힐 수 있어요.{% endif %}</p>
 </div></section>
 
+<section class="runbar card {{ 'running' if run else '' }}">
+  {% if run %}
+    <div class="rb-main"><span class="dot"></span><div><b>지금 실행 중</b>
+      <span class="muted small">{{ run.started_at | kst('%H:%M') }} 시작 · {{ {'collect': '논문 수집', 'screen': '관련도 판단', 'read': '정독·리뷰', 'trending': '트렌드 갱신'}.get(run.progress.get('phase'), '준비') }} 단계</span></div></div>
+    <div class="rb-act">
+      <button type="button" class="btn ghost sm" data-console-open>진행 상황 보기</button>
+      {% if is_admin %}<form method="post" action="{{ url_for('web.run_stop') }}" data-confirm="실행을 강제 종료할까요? 지금 읽던 논문은 대기열로 돌아갑니다.">{{ csrf() }}<button class="btn sm danger-btn">강제 종료</button></form>{% endif %}
+    </div>
+  {% else %}
+    <div class="rb-main"><span class="dot idle"></span><div><b>쉬는 중</b>
+      <span class="muted small">{% if next_run %}다음 자동 실행 {{ next_run | kst('%m.%d %H:%M') }}{% else %}자동 실행은 Heroku Scheduler가 맡습니다{% endif %}</span></div></div>
+    {% if is_admin %}<div class="rb-act">
+      <button type="button" class="btn ghost sm" data-console-open>지난 실행 보기</button>
+      <form method="post" action="{{ url_for('web.run_now') }}">{{ csrf() }}<button class="btn sm">지금 실행</button></form>
+    </div>{% endif %}
+  {% endif %}
+</section>
+
+<section class="card panel plan" id="plan">
+  <div class="panel-h"><h2>{{ '이번 실행에서 읽는 논문' if plan_running else '다음 실행에서 읽을 논문' }}</h2><span>{{ plan|length }}편</span></div>
+  <p class="desc">{% if plan_running %}이 순서대로 읽고 있습니다. 끝난 논문은 바로 오늘의 논문에 올라갑니다.
+    {% else %}직접 고른 논문을 먼저, 그다음 관련도 {{ threshold }}점 이상 중 높은 순으로 {{ max_reads }}편을 읽습니다.{% endif %}</p>
+  {% if plan %}
+  <form method="post" action="{{ url_for('web.queue_read') }}">{{ csrf() }}
+  <ol class="plan-list">
+    {% for p in plan %}
+    <li class="{{ p.state }}">
+      <span class="no">{{ p.order }}</span>
+      <div class="pl-body">
+        <a class="t" href="{{ url_for('web.paper_detail', paper_id=p.id) }}">{{ p.title }}</a>{% if (p.priority or 0) > 0 %}<span class="tag-manual">직접 선택</span>{% endif %}
+        <div class="sub">{% if p.uid %}{{ src(p, 'web.queue') }} · {% endif %}관련도 {{ p.relevance if p.relevance is not none else '-' }}{% if p.relevance_reason %} · {{ p.relevance_reason }}{% endif %}</div>
+        {% if p.abstract %}<details class="abs"><summary>초록 보기</summary><p>{{ p.abstract }}</p></details>{% endif %}
+      </div>
+      <span class="pl-state">{{ {'done': '완료', 'failed': '실패', 'now': '읽는 중', 'wait': '대기', 'next': ''}[p.state] }}</span>
+      {% if is_admin and p.state == 'next' %}<button class="link small" name="paper_id" value="{{ p.id }}" title="이번에는 읽지 않고 관련도 미달로 보냅니다">읽지 않기</button>{% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  <input type="hidden" name="when" value="skip">
+  </form>
+  {% else %}<p class="empty-line">읽을 논문이 없습니다. 다음 실행에서 새 논문을 모으면 여기에 나타납니다.</p>{% endif %}
+</section>
+
 <form class="filter-bar" method="get">
   {{ source_select(source_nav, source, '모든 출처의 논문') }}
   {% if source %}<a class="small" href="{{ url_for('web.queue') }}">필터 해제</a>{% endif %}
@@ -16,7 +59,7 @@
 
 {% set sections = [
   ('reading', '읽는 중', 'AI가 지금 읽고 있는 논문입니다.', False),
-  ('screened', '읽을 차례', '다음 실행 때 직접 고른 논문을 먼저, 그다음 관련도 높은 순으로 읽습니다.', True),
+  ('screened', '그 밖의 읽을 차례', '관련도 기준은 넘었지만 이번 차례에 들지 못한 논문입니다. 다음 실행부터 순서대로 읽습니다.', True),
   ('skipped', '관련도 미달', '관련도가 ' ~ threshold ~ '점 미만이라 자동으로는 읽지 않는 논문입니다.', True),
   ('new', '관련도 판단 전', 'Claude API를 쓸 수 있을 때 다음 실행에서 판단합니다.', True),
   ('error', '오류', '리뷰 중 오류가 난 논문입니다. 다시 읽힐 수 있습니다.', True),
@@ -33,8 +76,8 @@
         <div class="trow {{ 'pick' if can_pick }}">
           {% if can_pick %}<input type="checkbox" name="paper_id" value="{{ p.id }}" aria-label="{{ p.title }} 선택">{% endif %}
           <span class="rank">{{ p.relevance if p.relevance is not none else '-' }}</span>
-          <div><a class="t" href="{{ url_for('web.paper_detail', paper_id=p.id) }}">{{ p.title }}</a>{% if p.priority %}<span class="tag-manual">직접 선택</span>{% endif %}
-            <div class="sub">{{ src(p, 'web.queue') }} · {{ p.published | short_date }}{% if p.matched_keywords %} · {{ p.matched_keywords | join(', ') }}{% endif %}</div>
+          <div><a class="t" href="{{ url_for('web.paper_detail', paper_id=p.id) }}">{{ p.title }}</a>{% if (p.priority or 0) > 0 %}<span class="tag-manual">직접 선택</span>{% elif (p.priority or 0) < 0 %}<span class="tag-manual off">직접 제외</span>{% endif %}
+            <div class="sub">{{ src(p, 'web.queue') }}{% if p.published %} · {{ p.published | short_date }}{% endif %}{% if p.matched_keywords %} · {{ p.matched_keywords | join(', ') }}{% endif %}</div>
             {% if p.relevance_reason %}<div class="why"><b>관련도 판단</b>{{ p.relevance_reason }}</div>{% endif %}
             {% if p.abstract %}<details class="abs"><summary>초록 보기</summary><p>{{ p.abstract }}</p></details>{% endif %}
           </div>
@@ -44,6 +87,7 @@
       <div class="pick-bar">
         <label><input type="checkbox" data-pick-all> 전체 선택</label>
         <span class="sp"></span>
+        {% if status in ('screened', 'new', 'error') %}<button class="btn ghost sm" name="when" value="skip">읽지 않기</button>{% endif %}
         <button class="btn ghost sm" name="when" value="next">다음 실행 때 먼저 읽기</button>
         <button class="btn sm" name="when" value="now">선택한 논문 지금 읽기</button>
       </div>

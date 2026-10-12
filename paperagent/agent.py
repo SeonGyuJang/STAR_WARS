@@ -16,6 +16,7 @@ import base64
 import json
 import logging
 import os
+import threading
 
 import anthropic
 
@@ -32,8 +33,25 @@ _client = None
 def client() -> anthropic.Anthropic:
     global _client
     if _client is None:
-        _client = anthropic.Anthropic(max_retries=4, timeout=900)
+        # Streams send events (and pings) continuously, so a 3-minute silence means
+        # the connection is stuck: fail and retry instead of waiting forever.
+        _client = anthropic.Anthropic(max_retries=2, timeout=anthropic.Timeout(900, connect=20, read=180))
     return _client
+
+
+# Lets the pipeline show which step is running ("원문 읽는 중", "평가 중", ...).
+_listener = threading.local()
+
+
+def set_call_listener(fn):
+    """fn(stage, model) is called before each Claude request made by this thread."""
+    _listener.fn = fn
+
+
+def _notify(stage, model):
+    fn = getattr(_listener, "fn", None)
+    if fn:
+        fn(stage, model)
 
 
 class ReviewError(RuntimeError):
@@ -178,6 +196,7 @@ def _call(stage: str, model: str, system: str, content, schema: dict, effort: st
         output_config={"effort": effort, "format": {"type": "json_schema", "schema": schema}},
     )
     ensure_api()
+    _notify(stage, model)
     constrained = True
     try:
         try:

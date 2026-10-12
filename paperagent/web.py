@@ -234,12 +234,39 @@ def trending_view():
 
 @bp.route("/queue")
 def queue():
-    threshold = db.pipeline_settings()["min_relevance"]
+    settings = db.pipeline_settings()
+    threshold = settings["min_relevance"]
     db.apply_threshold(threshold)
     source = _source_from_args()
     lists = {s: db.papers_by_status(s, limit=300, order="relevance", source=source)
              for s in ("screened", "reading", "error", "skipped", "new")}
-    return render_template("queue.html", lists=lists, threshold=threshold, source=source,
+
+    # What will be read: the running run's list (with progress), else what the next run would pick.
+    active = db.active_run()
+    run = db.get_run(active["id"]) if active else None
+    progress = (run or {}).get("progress") or {}
+    if run and progress.get("targets"):
+        plan = []
+        for t in progress["targets"]:
+            p = db.get_paper(t["id"]) or {"id": t["id"], "title": t["title"]}
+            state = ("done" if t["id"] in progress.get("done", []) else "failed" if t["id"] in progress.get("failed", [])
+                     else "now" if t["id"] == progress.get("current") else "wait")
+            plan.append({**p, "state": state})
+        plan_running = True
+    else:
+        plan = [{**p, "state": "next"} for p in pipeline.next_targets(settings)[0]]
+        plan_running = False
+    for i, p in enumerate(plan, start=1):
+        p["order"] = i
+    planned = {p["id"] for p in plan}
+    if source:  # keep the reading order numbers, show only this source's papers
+        mine = db.ids_from_source(source, planned)
+        plan = [p for p in plan if p["id"] in mine]
+    lists["screened"] = [p for p in lists["screened"] if p["id"] not in planned]
+    lists["reading"] = [p for p in lists["reading"] if p["id"] not in planned]
+    return render_template("queue.html", lists=lists, threshold=threshold, source=source, plan=plan,
+                           plan_running=plan_running, run=run, max_reads=settings["max_full_reads"],
+                           next_run=scheduler.next_run(),
                            source_nav=_source_nav(("screened", "reading", "error", "skipped", "new")))
 
 
@@ -259,6 +286,10 @@ def queue_read():
     ids = [int(i) for i in request.form.getlist("paper_id") if i.isdigit()]
     if not ids:
         flash("읽힐 논문을 하나 이상 선택해 주세요.", "warn")
+        return redirect(url_for("web.queue"))
+    if request.form.get("when") == "skip":
+        n = db.skip_papers(ids)
+        flash(f"{n}편을 읽지 않기로 했습니다. '관련도 미달'에서 언제든 다시 고를 수 있어요.", "ok")
         return redirect(url_for("web.queue"))
     n = db.queue_papers(ids)
     if request.form.get("when") == "now" and _api_ready_or_flash():
@@ -490,12 +521,23 @@ def run_now():
     api_ok = agent.api_status().get("ok")
     if pipeline.run_in_background("manual"):
         if api_ok:
-            flash("파이프라인을 시작했습니다. 진행 상황은 설정 페이지의 실행 기록에서 볼 수 있습니다.", "ok")
+            flash("실행을 시작했습니다. 오른쪽 위 '논문 읽는 중'을 누르면 진행 상황을 볼 수 있어요.", "ok")
         else:
             flash("Claude API에 문제가 있어 논문 수집과 트렌드 갱신만 진행합니다. API 키와 결제 상태를 확인해 주세요.", "warn")
     else:
         flash("이미 실행 중입니다.", "warn")
     return redirect(request.referrer or url_for("web.index"))
+
+
+@bp.route("/run/stop", methods=["POST"])
+@admin_required
+def run_stop():
+    stopped = pipeline.stop(request.form.get("run_id", type=int))
+    if request.accept_mimetypes.best == "application/json":
+        return jsonify(stopped=stopped)
+    flash("실행을 강제 종료했습니다. 읽던 논문은 대기열로 돌아갔습니다." if stopped else "실행 중인 작업이 없습니다.",
+          "ok" if stopped else "warn")
+    return redirect(request.referrer or url_for("web.queue"))
 
 
 @bp.route("/papers/add", methods=["POST"])
@@ -558,19 +600,46 @@ def toggle_instagram(paper_id):
     if request.accept_mimetypes.best == "application/json":
         return jsonify({"posted": bool(when), "posted_at": when, "label": to_local(when, "%m.%d") if when else None,
                         "counts": db.instagram_counts()})
+    if not posted and request.form.get("back") == "main":
+        flash("인스타 업로드를 취소했습니다. 이 논문은 다시 업로드 전 상태로 돌아왔습니다.", "ok")
+        return redirect(url_for("web.index", hl=paper_id) + f"#p-{paper_id}")
     flash("인스타 업로드 완료로 표시했습니다." if posted else "인스타 업로드 표시를 지웠습니다.", "ok")
     return redirect(request.referrer or url_for("web.paper_detail", paper_id=paper_id))
 
 
 # --- JSON API -----------------------------------------------------------------
 
+def _run_summary(run, with_log):
+    started = datetime.fromisoformat(run["started_at"])
+    ended = datetime.fromisoformat(run["finished_at"]) if run.get("finished_at") else datetime.now(timezone.utc)
+    out = {k: run.get(k) for k in ("id", "status", "trigger", "started_at", "finished_at")}
+    out.update(elapsed_s=int((ended - started).total_seconds()), progress=run.get("progress") or {},
+               stats={k: run["stats"].get(k) for k in ("new", "screened_in", "reviewed", "failed", "cost_usd") if k in run["stats"]},
+               started_label=to_local(run["started_at"], "%m.%d %H:%M"))
+    if with_log:
+        out["log"] = (run.get("log") or "").splitlines()[-400:]
+    return out
+
+
 @bp.route("/api/status")
 def api_status():
     nr = scheduler.next_run()
     api = agent.api_status()
+    last = (db.recent_runs(1) or [None])[0]
     return jsonify(running=pipeline.is_running(), next_run=nr.isoformat() if nr else None,
-                   counts=db.paper_counts(), last_run=(db.recent_runs(1) or [None])[0],
+                   counts=db.paper_counts(), last_run=_run_summary(last, is_admin()) if last else None,
                    api={"ok": bool(api.get("ok")), "message": api.get("message")})
+
+
+@bp.route("/api/run/live")
+def run_live():
+    """What the console drawer shows: the active run, else the last one."""
+    active = db.active_run()
+    run = db.get_run(active["id"]) if active else None
+    if not run:
+        last = (db.recent_runs(1) or [None])[0]
+        run = db.get_run(last["id"]) if last else None
+    return jsonify(running=bool(active), admin=is_admin(), run=_run_summary(run, is_admin()) if run else None)
 
 
 @bp.route("/api/papers")
