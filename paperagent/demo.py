@@ -333,7 +333,8 @@ def seed(render_cards=True):
     db.update_paper(pid, status="done", read_depth="full_pdf", review=review, relevance=9.0,
                     relevance_reason="관심 키워드와 직접 관련된 데모 논문",
                     score_method=review["methodology_score"], score_novelty=review["novelty_score"],
-                    score_overall=review["overall_score"], card_paths=card_keys, cost_usd=0.0)
+                    score_overall=review["overall_score"], card_paths=card_keys, cost_usd=0.0,
+                    reviewed_at=db.now_iso())
     for uid, title, status, rel, reason in QUEUED:
         db.insert_paper({**SAMPLE_PAPER, "uid": uid, "title": title, "matched_keywords": SAMPLE_PAPER["matched_keywords"][:1]})
         db.update_paper(db.get_paper_by_uid(uid)["id"], status=status, relevance=rel, relevance_reason=reason)
