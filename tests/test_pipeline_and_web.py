@@ -30,8 +30,9 @@ def _stage_payloads():
     judge = {k: sample[k] for k in JUDGE_KEYS}
     judge.update(strengths=["s"], weaknesses=["w"], verdict="v")
     write = {k: v for k, v in sample.items()
-             if k not in JUDGE_KEYS + ("strengths", "weaknesses", "verdict", "overall_score") and not k.startswith("_")}
-    return {id(agent.NOTES_SCHEMA): NOTES, id(agent.JUDGE_SCHEMA): judge, id(agent.WRITE_SCHEMA): write}
+             if k not in JUDGE_KEYS + ("strengths", "weaknesses", "verdict", "overall_score", "card") and not k.startswith("_")}
+    return {id(agent.NOTES_SCHEMA): NOTES, id(agent.JUDGE_SCHEMA): judge, id(agent.WRITE_SCHEMA): write,
+            id(agent.CARD_SCHEMA): sample["card"]}
 
 
 def _fake_message(payload, stop_reason="end_turn", model="m", usage=(1000, 100)):
@@ -63,12 +64,12 @@ def _fake_client(payload=None, stop_reason="end_turn", by_schema=None, usage=(10
 def test_review_uses_cheap_reader_and_strong_judge(fresh_db, sample_pdf):
     payloads = _stage_payloads()
     payloads[id(agent.JUDGE_SCHEMA)]["methodology_score"] = 11  # out of range -> clamped
-    payloads[id(agent.WRITE_SCHEMA)]["card"]["problem"]["figure_number"] = 7  # not extracted -> 0
-    payloads[id(agent.WRITE_SCHEMA)]["card"]["results"]["figure_number"] = 1  # same figure as idea -> 0
+    payloads[id(agent.CARD_SCHEMA)]["problem"]["figure_number"] = 7  # not extracted -> 0
+    payloads[id(agent.CARD_SCHEMA)]["results"]["figure_number"] = 1  # same figure as idea -> 0
     client = _fake_client(by_schema=payloads, usage=(50_000, 2_000))
     with mock.patch.object(agent, "client", return_value=client):
         out, depth = agent.review(_paper(), ["AI agent"], sample_pdf, [{"number": 1, "page": 1, "caption": "Figure 1: x", "path": "x"}])
-    read, judge, write = client.calls
+    read, judge, write, card = client.calls
     # 1. the cheap model gets the whole PDF; Haiku has no server-side fallback
     assert read["model"] == "claude-haiku-5-5" and "fallbacks" not in read
     doc = read["messages"][0]["content"][0]
@@ -84,10 +85,13 @@ def test_review_uses_cheap_reader_and_strong_judge(fresh_db, sample_pdf):
     assert out["card"]["idea"]["figure_number"] == 1 and out["card"]["results"]["figure_number"] == 0
     # the reader and writer have room for the longer notes and review
     assert read["max_tokens"] >= 32000 and write["max_tokens"] >= 32000
+    # the card copy is a separate, smaller request built from the written review
+    assert card["model"] == "claude-sonnet-5-5" and "card" not in agent.WRITE_SCHEMA["properties"]
+    assert demo.SAMPLE_REVIEW["one_liner"] in card["messages"][0]["content"]
     # cost: 50k in / 2k out on each model
-    expected = (50_000 * 0.10 + 2_000 * 0.50 + 50_000 * 4 + 2_000 * 20 + 50_000 * 2 + 2_000 * 10) / 1e6
+    expected = (50_000 * 0.10 + 2_000 * 0.50 + 50_000 * 4 + 2_000 * 20 + 2 * (50_000 * 2 + 2_000 * 10)) / 1e6
     assert abs(out["_cost"]["total_usd"] - expected) < 1e-4
-    assert [c["stage"] for c in out["_cost"]["calls"]] == ["read", "judge", "write"]
+    assert [c["stage"] for c in out["_cost"]["calls"]] == ["read", "judge", "write", "card"]
 
 
 def test_abstract_only_skips_reader(fresh_db):
@@ -95,7 +99,7 @@ def test_abstract_only_skips_reader(fresh_db):
     with mock.patch.object(agent, "client", return_value=client):
         out, depth = agent.review(_paper(pdf_url=None), ["AI agent"])
     assert depth == "abstract" and out["read_confidence"] == "low"
-    assert [c["model"] for c in client.calls] == ["claude-opus-5-5", "claude-sonnet-5-5"]
+    assert [c["model"] for c in client.calls] == ["claude-opus-5-5", "claude-sonnet-5-5", "claude-sonnet-5-5"]
 
 
 def test_haiku_long_prompt_price():
@@ -164,7 +168,7 @@ def _full_run(fresh_db, sample_pdf, tmp_path):
     assert p["card_paths"][0] == f"cards/{p['id']}/card_01.png"
     # screen + read + judge + write were all priced
     assert p["cost_usd"] > 0 and run["stats"]["cost_usd"] > p["cost_usd"]
-    assert [c["stage"] for c in p["review"]["_cost"]["calls"]] == ["read", "judge", "write"]
+    assert [c["stage"] for c in p["review"]["_cost"]["calls"]] == ["read", "judge", "write", "card"]
     return p
 
 
@@ -295,3 +299,67 @@ def test_init_db_adds_new_columns(fresh_db):
     assert "cost_usd" not in {c["name"] for c in inspect(fresh_db.engine()).get_columns("papers")}
     fresh_db.init_db()
     assert "cost_usd" in {c["name"] for c in inspect(fresh_db.engine()).get_columns("papers")}
+
+
+def test_schema_too_large_falls_back_to_unconstrained_json(fresh_db):
+    """The API can refuse to compile a big schema; the call then asks for the JSON in the prompt instead."""
+    import anthropic
+    import httpx2 as httpx
+
+    req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    msg = ("The compiled grammar is too large, which would cause performance issues. "
+           "Simplify your tool schemas or reduce the number of strict tools.")
+    too_big = anthropic.BadRequestError(msg, response=httpx.Response(400, request=req), body=None)
+    answer = {"methodology_score": 7, "methodology_reason": "r", "novelty_score": 6, "novelty_reason": "r",
+              "strengths": ["s"], "weaknesses": ["w"], "verdict": "v", "read_confidence": "high"}
+    calls = []
+
+    def stream(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            raise too_big
+        cm = mock.MagicMock()
+        text = "```json\n" + json.dumps(answer) + "\n```"
+        cm.__enter__.return_value.get_final_message.return_value = SimpleNamespace(
+            stop_reason="end_turn", stop_details=None, model=kwargs["model"],
+            usage=SimpleNamespace(input_tokens=10, output_tokens=10), content=[SimpleNamespace(type="text", text=text)])
+        return cm
+
+    client = mock.Mock()
+    client.beta.messages.stream.side_effect = stream
+    client.messages.stream.side_effect = stream
+    meter = agent.CostMeter()
+    with mock.patch.object(agent, "client", return_value=client):
+        out = agent.judge(_paper(), ["AI agent"], NOTES, "full_pdf", meter)
+    assert out["methodology_score"] == 7.0 and out["verdict"] == "v"
+    assert "format" in calls[0]["output_config"] and "format" not in calls[1]["output_config"]
+    assert '"methodology_score"' in calls[1]["system"]  # the schema moved into the instructions
+    assert [c["stage"] for c in meter.calls] == ["judge"]  # only the call that ran is billed
+
+
+def test_failed_review_still_counts_what_it_spent(fresh_db, sample_pdf, tmp_path):
+    fresh_db.insert_paper(_paper())
+    paper = fresh_db.get_paper_by_uid("arxiv:2610.01234")
+    err = agent.ReviewError("write: response truncated at max_tokens")
+    err.cost_usd = 0.042
+
+    def review(*a, **k):
+        raise err
+
+    pdf = tmp_path / "p.pdf"
+    shutil.copy(sample_pdf, pdf)
+    with mock.patch.object(pipeline.pdfs, "download_pdf", return_value=pdf), mock.patch.object(agent, "review", side_effect=review):
+        ok, cost = pipeline.process_paper(paper, ["AI agent"])
+    p = fresh_db.get_paper(paper["id"])
+    assert not ok and cost == 0.042 and p["status"] == "error" and p["cost_usd"] == 0.042
+
+
+def test_post_retries_rate_limits():
+    from paperagent import collectors
+
+    limited = mock.Mock(status_code=429)
+    ok = mock.Mock(status_code=200, raise_for_status=lambda: None)
+    with mock.patch.object(collectors._session, "request", side_effect=[limited, ok]) as req, \
+         mock.patch.object(collectors.time, "sleep") as sleep:
+        assert collectors.http_post("https://api.semanticscholar.org/x", json={}) is ok
+    assert req.call_count == 2 and sleep.call_count == 1

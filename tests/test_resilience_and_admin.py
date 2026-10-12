@@ -168,7 +168,7 @@ def test_skipped_papers_can_be_picked_for_reading(fresh_db):
     read = []
     with mock.patch.object(pipeline, "collect", return_value=0), mock.patch.object(pipeline, "resolve_journals"), \
          mock.patch.object(pipeline, "screen_new", return_value=0), mock.patch.object(pipeline.trending, "refresh_all"), \
-         mock.patch.object(pipeline, "process_paper", side_effect=lambda p, *a: read.append(p["id"]) or 0.1):
+         mock.patch.object(pipeline, "process_paper", side_effect=lambda p, *a: read.append(p["id"]) or (True, 0.1)):
         pipeline.run("test")
     assert read == [low]
 
@@ -185,7 +185,7 @@ def test_only_papers_at_or_above_threshold_are_read_automatically(fresh_db):
     read = []
     with mock.patch.object(pipeline, "collect", return_value=0), mock.patch.object(pipeline, "resolve_journals"), \
          mock.patch.object(pipeline, "screen_new", return_value=0), mock.patch.object(pipeline.trending, "refresh_all"), \
-         mock.patch.object(pipeline, "process_paper", side_effect=lambda p, *a: read.append(p["relevance"]) or 0.1):
+         mock.patch.object(pipeline, "process_paper", side_effect=lambda p, *a: read.append(p["relevance"]) or (True, 0.1)):
         pipeline.run("test")
     assert read == [9.5, 8.0, 7.0]  # 5 slots, but only three papers reach 7
     for uid, rel in rels.items():
@@ -202,7 +202,7 @@ def test_max_full_reads_caps_automatic_reviews(fresh_db):
     read = []
     with mock.patch.object(pipeline, "collect", return_value=0), mock.patch.object(pipeline, "resolve_journals"), \
          mock.patch.object(pipeline, "screen_new", return_value=0), mock.patch.object(pipeline.trending, "refresh_all"), \
-         mock.patch.object(pipeline, "process_paper", side_effect=lambda p, *a: read.append(p["relevance"]) or 0.1):
+         mock.patch.object(pipeline, "process_paper", side_effect=lambda p, *a: read.append(p["relevance"]) or (True, 0.1)):
         pipeline.run("test")
     assert read == [9.0, 8.5]
 
