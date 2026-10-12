@@ -16,6 +16,7 @@ def create_app(start_scheduler: bool = True):
 
     app = Flask(__name__)
     app.config["SECRET_KEY"] = config.SECRET_KEY
+    app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # PDF uploads (60MB each)
     app.register_blueprint(web.bp)
 
     # Under the Flask debug reloader only the child process should schedule.

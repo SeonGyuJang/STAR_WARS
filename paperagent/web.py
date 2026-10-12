@@ -10,7 +10,7 @@ from functools import wraps
 from flask import (Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, session,
                    url_for)
 
-from . import agent, cardnews, config, db, pipeline, scheduler, storage
+from . import agent, cardnews, config, db, pdfs, pipeline, scheduler, storage
 from .collectors import arxiv as arxiv_collector
 from .collectors import venues
 
@@ -559,6 +559,54 @@ def add_paper():
     else:
         flash("다른 실행이 진행 중입니다. 논문은 대기열에 추가되어 다음 실행 때 읽습니다.", "warn")
     return redirect(url_for("web.paper_detail", paper_id=pid))
+
+
+@bp.route("/settings/upload", methods=["POST"])
+@admin_required
+def upload_pdf():
+    """PDFs uploaded by the admin: rated, read in full, reviewed and turned into card news."""
+    files = [f for f in request.files.getlist("pdf") if f and f.filename]
+    if not files:
+        flash("올릴 PDF 파일을 골라 주세요.", "warn")
+        return redirect(url_for("web.settings") + "#upload")
+    title = request.form.get("title", "").strip() if len(files) == 1 else ""
+    added, errors = [], []
+    for f in files:
+        try:
+            pid, new = pipeline.add_uploaded_pdf(f.read(), f.filename, title)
+            added.append(pid)
+            if not new:
+                db.queue_papers([pid])
+        except ValueError as exc:
+            errors.append(str(exc))
+    for e in errors:
+        flash(e, "error")
+    if not added:
+        return redirect(url_for("web.settings") + "#upload")
+    if not _api_ready_or_flash():
+        flash(f"{len(added)}편을 대기열 맨 앞에 넣었습니다. API를 확인하면 다음 실행 때 읽습니다.", "warn")
+    elif pipeline.run_in_background("manual", paper_ids=added):
+        flash(f"{len(added)}편을 올렸습니다. 관련도 판단 → 정독 → 평가 → 카드뉴스 순서로 진행합니다. "
+              "오른쪽 위 '논문 읽는 중'을 누르면 진행 상황을 볼 수 있어요.", "ok")
+    else:
+        flash(f"다른 실행이 진행 중이라 {len(added)}편을 대기열 맨 앞에 넣었습니다. 다음 실행 때 가장 먼저 읽습니다.", "warn")
+    return redirect(url_for("web.paper_detail", paper_id=added[0]) if len(added) == 1 else url_for("web.queue"))
+
+
+@bp.route("/files/upload/<int:paper_id>.pdf")
+@admin_required
+def file_upload(paper_id):
+    """An uploaded PDF, while it is still kept (until its review succeeds)."""
+    p = db.get_paper(paper_id)
+    if not p or not (p.get("pdf_url") or "").startswith("storage:"):
+        abort(404)
+    return _send_stored(p["pdf_url"][len("storage:"):], download_name=pdfs.safe_filename(p["title"]))
+
+
+@bp.app_errorhandler(413)
+def too_large(_):
+    flash("파일이 너무 큽니다. 한 번에 200MB, 파일당 60MB까지 올릴 수 있어요.", "error")
+    return redirect(url_for("web.settings") + "#upload")
 
 
 @bp.route("/paper/<int:paper_id>/reprocess", methods=["POST"])

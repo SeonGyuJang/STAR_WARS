@@ -11,18 +11,18 @@
     <span>방법론 {{ p.score_method }}<br>참신성 {{ p.score_novelty }}</span>
   </div>
   <div>
-    <div class="pmeta">
-      {% if (r.card or {}).category %}<span class="cat">{{ r.card.category }}</span><i>·</i>{% endif %}
-      {{ src(p) }}<i>·</i><span title="논문 발표일">{{ p.published | short_date }}</span>
-      {% if p.reviewed_at %}<i>·</i><span class="reviewed" title="AI가 분석을 마친 시각">{{ p.reviewed_at | kst('%m.%d %H:%M') }} 분석</span>{% endif %}
-    </div>
+    <div class="pmeta meta"><div>
+      {% if (r.card or {}).category %}<span class="mi cat">{{ r.card.category }}</span>{% endif %}
+      {{ src(p) }}{% if p.published %}<span class="mi" title="논문 발표일">{{ p.published | short_date }}</span>{% endif %}
+      {% if p.reviewed_at %}<span class="mi reviewed" title="AI가 분석을 마친 시각">{{ p.reviewed_at | kst('%m.%d %H:%M') }} 분석</span>{% endif %}
+    </div></div>
     <h3><a href="{{ url_for('web.paper_detail', paper_id=p.id) }}">{{ r.title_ko or p.title }}</a></h3>
     {% if r.title_ko %}<div class="en">{{ p.title }}</div>{% endif %}
     {% if r.one_liner %}<p class="gist">{{ r.one_liner }}</p>{% endif %}
     <div class="foot">
       <a href="{{ url_for('web.paper_detail', paper_id=p.id) }}">리뷰 읽기</a>
-      <a href="{{ p.url }}" target="_blank" rel="noopener">원문</a>
-      {% if p.pdf_url %}<a href="{{ p.pdf_url }}" target="_blank" rel="noopener">PDF</a>{% endif %}
+      {% if p.url %}<a href="{{ p.url }}" target="_blank" rel="noopener">원문</a>{% endif %}
+      {% if p.pdf_url and not p.pdf_url.startswith('storage:') %}<a href="{{ p.pdf_url }}" target="_blank" rel="noopener">PDF</a>{% endif %}
       {% if p.card_paths %}<a href="{{ url_for('web.file_cards_zip', paper_id=p.id) }}">카드뉴스</a>{% endif %}
       {% if p.read_depth == 'abstract' %}<span class="warn">초록만 읽음</span>{% endif %}
       {% if posted and not is_admin %}<span class="ig-badge">인스타 게시</span>{% endif %}

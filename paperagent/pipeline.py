@@ -1,4 +1,5 @@
 """The repeating job: collect -> screen -> read & review -> cards -> trending."""
+import hashlib
 import logging
 import tempfile
 import threading
@@ -8,7 +9,7 @@ from pathlib import Path
 import anthropic
 
 from . import agent, cardnews, config, db, pdfs, storage
-from .collectors import arxiv, openalex, trending, venues
+from .collectors import arxiv, match_keywords, openalex, trending, venues
 
 log = logging.getLogger(__name__)
 _start_lock = threading.Lock()  # makes "nothing running? then start" atomic within this process
@@ -162,7 +163,7 @@ def screen_new(keywords, settings, say, meter=None):
         scores = agent.screen(pending, keywords, meter=meter)
         for p in pending:
             rel, reason = scores.get(p["id"], (0.0, "평가 누락"))
-            ok = rel >= settings["min_relevance"]
+            ok = rel >= settings["min_relevance"] or (p.get("priority") or 0) > 0  # hand-picked/uploaded: read anyway
             kept += ok
             db.update_paper(p["id"], relevance=rel, relevance_reason=reason, status="screened" if ok else "skipped")
         total += len(pending)
@@ -230,6 +231,9 @@ def process_paper(paper: dict, keywords, say=log.info) -> tuple[bool, float]:
             priority=0,
             reviewed_at=db.now_iso(),
         )
+        if (paper.get("pdf_url") or "").startswith("storage:"):  # uploaded PDF: read, so no longer kept
+            storage.delete(paper["pdf_url"][len("storage:"):])
+            db.update_paper(pid, pdf_url=None)
         return True, cost
     except (agent.ApiUnavailable, RunCancelled):
         # Not this paper's fault: put it back in the queue and stop the AI steps.
@@ -291,6 +295,41 @@ def next_targets(settings=None):
     return picked + auto[:settings["max_full_reads"]], len(picked), len(auto)
 
 
+def add_uploaded_pdf(data: bytes, filename: str = "", title: str = "") -> tuple[int, bool]:
+    """Add a PDF the admin uploaded. It is kept in storage only until its review
+    succeeds. Returns (paper id, whether it is new)."""
+    if not data.startswith(b"%PDF"):
+        raise ValueError(f"{filename or '파일'}: PDF 파일이 아닙니다")
+    if len(data) > pdfs.MAX_PDF_BYTES:
+        raise ValueError(f"{filename or '파일'}: 60MB보다 큽니다")
+    digest = hashlib.sha256(data).hexdigest()[:20]
+    uid = f"upload:{digest}"
+    existing = db.get_paper_by_uid(uid)
+    if existing:
+        return existing["id"], False
+    with tempfile.TemporaryDirectory(prefix="upload-") as tmp:
+        path = Path(tmp) / "upload.pdf"
+        path.write_bytes(data)
+        try:
+            meta = pdfs.read_metadata(path)
+        except Exception as exc:
+            raise ValueError(f"{filename or '파일'}: PDF를 열 수 없습니다 ({exc})") from exc
+    key = f"uploads/{digest}.pdf"
+    storage.put(key, data, "application/pdf")
+    keywords = [k["term"] for k in db.list_keywords()]
+    name = title.strip() or meta["title"] or Path(filename or "uploaded.pdf").stem
+    db.insert_paper({
+        "uid": uid, "source_kind": "upload", "source_name": "직접 업로드", "title": name,
+        "abstract": meta["abstract"], "authors": meta["authors"], "doi": meta["doi"],
+        "url": f"https://arxiv.org/abs/{meta['arxiv_id']}" if meta["arxiv_id"] else (f"https://doi.org/{meta['doi']}" if meta["doi"] else None),
+        "pdf_url": f"storage:{key}",
+        "matched_keywords": match_keywords(f"{name} {meta['abstract']}", keywords),
+    })
+    pid = db.get_paper_by_uid(uid)["id"]
+    db.update_paper(pid, priority=1)  # read it whatever its relevance
+    return pid, True
+
+
 def run(trigger: str = "schedule", paper_ids=None):
     """One full cycle. Returns the run id, or None if a run is already in progress.
 
@@ -323,6 +362,15 @@ def run(trigger: str = "schedule", paper_ids=None):
             agent.ensure_api()
             if paper_ids:
                 targets = [p for p in (db.get_paper(i) for i in paper_ids) if p]
+                unrated = [p for p in targets if p.get("relevance") is None]
+                if unrated:  # e.g. uploaded PDFs: rate them too, then read them anyway
+                    say.update(phase="screen", stage="관련도 판단 중")
+                    scores = agent.screen(unrated, keywords, meter=meter)
+                    for p in unrated:
+                        rel, reason = scores.get(p["id"], (None, None))
+                        db.update_paper(p["id"], relevance=rel, relevance_reason=reason, status="screened")
+                        say(f"relevance of #{p['id']}: {rel} - {reason}")
+                    targets = [db.get_paper(p["id"]) for p in targets]
             else:
                 min_rel = settings["min_relevance"]
                 moved = db.apply_threshold(min_rel)

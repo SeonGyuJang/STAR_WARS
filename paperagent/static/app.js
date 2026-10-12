@@ -107,9 +107,8 @@ document.querySelectorAll("form[data-confirm]").forEach((f) => {
     // log
     const log = $("[data-c-log]");
     if (log && run.log) {
-      const text = run.log.join("\n");
-      if (log.textContent !== text) {
-        log.textContent = text;
+      if (log.childElementCount !== run.log.length || log.lastElementChild?.textContent !== run.log.at(-1)) {
+        log.replaceChildren(...run.log.map((line) => { const d = document.createElement("div"); d.textContent = line; return d; }));
         if (followLog) { selfScroll = true; log.scrollTop = log.scrollHeight; }
       }
     }
@@ -273,3 +272,29 @@ document.querySelectorAll("form[data-ig]").forEach((form) => {
   const el = hl && document.getElementById(`p-${hl}`);
   if (el) { el.classList.add("hl"); el.scrollIntoView({ block: "center" }); }
 })();
+
+// PDF upload: drag & drop, show what was picked, one title field only for a single file
+document.querySelectorAll("[data-upload]").forEach((form) => {
+  const drop = form.querySelector("[data-drop]");
+  const input = drop.querySelector("input[type=file]");
+  const label = form.querySelector("[data-drop-label]");
+  const title = form.querySelector("[data-upload-title]");
+  const btn = form.querySelector("[data-upload-btn]");
+  const show = () => {
+    const files = [...input.files];
+    drop.classList.toggle("has-files", files.length > 0);
+    label.textContent = files.length === 0 ? "PDF 파일을 끌어다 놓거나 눌러서 고르세요"
+      : files.length === 1 ? files[0].name : `${files.length}개 파일: ${files.map((f) => f.name).join(", ")}`;
+    title.disabled = files.length > 1;
+    title.placeholder = files.length > 1 ? "여러 파일은 각 PDF에서 제목을 읽어 옵니다" : "논문 제목 (비워 두면 PDF에서 읽어 옵니다)";
+  };
+  input.addEventListener("change", show);
+  ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, () => drop.classList.remove("over")));
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault();
+    const pdfs = [...e.dataTransfer.files].filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
+    const dt = new DataTransfer(); pdfs.forEach((f) => dt.items.add(f)); input.files = dt.files; show();
+  });
+  form.addEventListener("submit", () => { btn.disabled = true; btn.textContent = "올리는 중…"; });
+});

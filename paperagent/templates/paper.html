@@ -10,17 +10,19 @@
 {% block content %}
 <a class="back" href="{{ url_for('web.index') }}">← 목록으로</a>
 <header class="dhead">
-  <div class="pmeta">
-    {% if (r.card or {}).category %}<span class="cat">{{ r.card.category }}</span><i>·</i>{% endif %}
-    {{ src(p) }}<i>·</i><span>{{ p.published | short_date }}</span>
-    {% if p.read_depth %}<i>·</i><span>{{ {'full_pdf': 'PDF 전문을 읽음', 'full_text': '전문 텍스트를 읽음', 'abstract': '초록만 읽음'}[p.read_depth] }}</span>{% endif %}
-  </div>
+  <div class="pmeta meta"><div>
+    {% if (r.card or {}).category %}<span class="mi cat">{{ r.card.category }}</span>{% endif %}
+    {{ src(p) }}{% if p.published %}<span class="mi">{{ p.published | short_date }}</span>{% endif %}
+    {% if p.read_depth %}<span class="mi">{{ {'full_pdf': 'PDF 전문을 읽음', 'full_text': '전문 텍스트를 읽음', 'abstract': '초록만 읽음'}[p.read_depth] }}</span>{% endif %}
+  </div></div>
   <h1>{{ r.title_ko or p.title }}</h1>
   {% if r.title_ko %}<p class="en">{{ p.title }}</p>{% endif %}
   <p class="authors">{{ p.authors[:8] | join(', ') }}{% if p.authors|length > 8 %} 외 {{ p.authors|length - 8 }}명{% endif %}</p>
   <div class="actions">
-    {% if p.pdf_url %}<a class="btn" href="{{ p.pdf_url }}" target="_blank" rel="noopener">원문 PDF 받기</a>{% endif %}
-    <a class="btn {{ 'ghost' if p.pdf_url }}" href="{{ p.url }}" target="_blank" rel="noopener">논문 페이지</a>
+    {% set uploaded = (p.pdf_url or '').startswith('storage:') %}
+    {% if uploaded %}{% if is_admin %}<a class="btn" href="{{ url_for('web.file_upload', paper_id=p.id) }}">업로드한 PDF</a>{% endif %}
+    {% elif p.pdf_url %}<a class="btn" href="{{ p.pdf_url }}" target="_blank" rel="noopener">원문 PDF 받기</a>{% endif %}
+    {% if p.url %}<a class="btn {{ 'ghost' if p.pdf_url }}" href="{{ p.url }}" target="_blank" rel="noopener">논문 페이지</a>{% endif %}
     <button class="btn ghost" data-share="{{ share_url }}" data-title="{{ r.title_ko or p.title }}">링크 공유</button>
     {% if is_admin %}<form method="post" action="{{ url_for('web.reprocess', paper_id=p.id) }}">{{ csrf() }}<button class="btn ghost">다시 읽기</button></form>{% endif %}
   </div>
@@ -31,6 +33,8 @@
     <div class="summary-box">
       {% if p.status == 'error' %}<div class="label">리뷰 중 오류가 났습니다</div><pre class="log">{{ p.error }}</pre>
       {% elif p.status == 'skipped' %}<div class="label">관련도가 낮아 건너뛴 논문입니다</div><p>관련도 {{ p.relevance }} · {{ p.relevance_reason }}</p>
+      {% elif p.status == 'reading' %}<div class="label">AI가 지금 이 논문을 읽고 있습니다</div><p>오른쪽 위 <button type="button" class="link" data-console-open>논문 읽는 중</button>을 누르면 진행 상황을 볼 수 있어요.</p>
+      {% elif p.source_kind == 'upload' %}<div class="label">업로드한 PDF · 읽을 차례입니다</div><p>{% if p.relevance is not none %}관련도 {{ p.relevance }} · {{ p.relevance_reason }}{% else %}관련도 판단부터 시작합니다.{% endif %}</p>
       {% else %}<div class="label">아직 읽지 않은 논문입니다</div>{% if p.relevance_reason %}<p>{{ p.relevance_reason }}</p>{% endif %}{% endif %}
     </div>
     <section class="sec"><h2>초록</h2><p>{{ p.abstract }}</p></section>

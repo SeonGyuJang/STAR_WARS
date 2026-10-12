@@ -27,6 +27,14 @@ def download_pdf(paper: dict, dest_dir: Path) -> Path:
     if not paper.get("pdf_url"):
         raise ValueError("no open-access PDF url")
     target = Path(dest_dir) / safe_filename(paper["title"])
+    if paper["pdf_url"].startswith("storage:"):  # a PDF the admin uploaded
+        from . import storage
+
+        item = storage.get(paper["pdf_url"][len("storage:"):])
+        if item is None:
+            raise ValueError("uploaded PDF is no longer stored; upload it again")
+        target.write_bytes(item[0])
+        return target
     resp = http_get(paper["pdf_url"], timeout=120, stream=True)
     data = b""
     for chunk in resp.iter_content(1 << 16):
@@ -37,6 +45,44 @@ def download_pdf(paper: dict, dest_dir: Path) -> Path:
         raise ValueError(f"not a PDF (content-type {resp.headers.get('content-type')})")
     target.write_bytes(data)
     return target
+
+
+ARXIV_IN_TEXT = re.compile(r"arXiv:\s*(\d{4}\.\d{4,5})(v\d+)?", re.IGNORECASE)
+DOI_IN_TEXT = re.compile(r"\b(10\.\d{4,9}/[^\s\"<>,;]+[^\s\"<>,;.)])")
+_BAD_META_TITLE = re.compile(r"^(untitled|microsoft word|document|paper|main|arxiv|\S+\.(pdf|docx?|tex))", re.IGNORECASE)
+
+
+def _clean(text):
+    return re.sub(r"\s+", " ", (text or "").replace("-\n", "")).strip()
+
+
+def read_metadata(path: Path) -> dict:
+    """Best-effort title, authors, abstract, arXiv id and DOI of an uploaded paper.
+    The title is the PDF's own metadata if it looks real, else the largest text
+    near the top of page 1; the abstract is the text after an 'Abstract' heading."""
+    with fitz.open(path) as doc:
+        meta = doc.metadata or {}
+        first = doc[0] if doc.page_count else None
+        head_text = "\n".join(doc[i].get_text() for i in range(min(2, doc.page_count)))
+        title = ""
+        if first is not None:
+            spans = [(round(s["size"], 1), s["text"].strip(), line["bbox"][1])
+                     for b in first.get_text("dict")["blocks"] for line in b.get("lines", []) for s in line["spans"]
+                     if s["text"].strip() and line["bbox"][1] < first.rect.height * 0.5]
+            if spans:
+                biggest = max(size for size, text, _ in spans if len(text) > 3) if any(len(t) > 3 for _, t, _ in spans) else 0
+                title = _clean(" ".join(text for size, text, _ in sorted(spans, key=lambda x: x[2]) if size == biggest))
+    meta_title = _clean(meta.get("title"))
+    if len(meta_title) > 12 and not _BAD_META_TITLE.match(meta_title):
+        title = meta_title
+    m = re.search(r"\bA\s?BSTRACT\b[\s.:—–-]*(.+?)(?=\n\s*(?:\d\.?|I\.?)?\s*(?:Introduction|INTRODUCTION|Keywords|Index Terms)\b)",
+                  head_text, re.DOTALL | re.IGNORECASE)
+    abstract = _clean(m.group(1))[:3000] if m else _clean(head_text)[:1500]
+    authors = [a.strip() for a in re.split(r"[;,]| and ", meta.get("author") or "") if a.strip()][:20]
+    arxiv = ARXIV_IN_TEXT.search(head_text)
+    doi = DOI_IN_TEXT.search(head_text)
+    return {"title": title[:300] or None, "authors": authors, "abstract": abstract,
+            "arxiv_id": arxiv.group(1) if arxiv else None, "doi": doi.group(1) if doi else None}
 
 
 def pdf_text(path: Path, max_chars: int = 400_000) -> str:

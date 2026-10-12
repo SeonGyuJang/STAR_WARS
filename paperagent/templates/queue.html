@@ -38,7 +38,7 @@
       <span class="no">{{ p.order }}</span>
       <div class="pl-body">
         <a class="t" href="{{ url_for('web.paper_detail', paper_id=p.id) }}">{{ p.title }}</a>{% if (p.priority or 0) > 0 %}<span class="tag-manual">직접 선택</span>{% endif %}
-        <div class="sub">{% if p.uid %}{{ src(p, 'web.queue') }} · {% endif %}관련도 {{ p.relevance if p.relevance is not none else '-' }}{% if p.relevance_reason %} · {{ p.relevance_reason }}{% endif %}</div>
+        <div class="sub meta"><div>{% if p.uid %}{{ src(p, 'web.queue') }}{% endif %}<span class="mi">관련도 {{ p.relevance if p.relevance is not none else '-' }}</span>{% if p.relevance_reason %}<span class="mi">{{ p.relevance_reason }}</span>{% endif %}</div></div>
         {% if p.abstract %}<details class="abs"><summary>초록 보기</summary><p>{{ p.abstract }}</p></details>{% endif %}
       </div>
       <span class="pl-state">{{ {'done': '완료', 'failed': '실패', 'now': '읽는 중', 'wait': '대기', 'next': ''}[p.state] }}</span>
@@ -77,7 +77,7 @@
           {% if can_pick %}<input type="checkbox" name="paper_id" value="{{ p.id }}" aria-label="{{ p.title }} 선택">{% endif %}
           <span class="rank">{{ p.relevance if p.relevance is not none else '-' }}</span>
           <div><a class="t" href="{{ url_for('web.paper_detail', paper_id=p.id) }}">{{ p.title }}</a>{% if (p.priority or 0) > 0 %}<span class="tag-manual">직접 선택</span>{% elif (p.priority or 0) < 0 %}<span class="tag-manual off">직접 제외</span>{% endif %}
-            <div class="sub">{{ src(p, 'web.queue') }}{% if p.published %} · {{ p.published | short_date }}{% endif %}{% if p.matched_keywords %} · {{ p.matched_keywords | join(', ') }}{% endif %}</div>
+            <div class="sub meta"><div>{{ src(p, 'web.queue') }}{% if p.published %}<span class="mi">{{ p.published | short_date }}</span>{% endif %}{% if p.matched_keywords %}<span class="mi">{{ p.matched_keywords | join(', ') }}</span>{% endif %}</div></div>
             {% if p.relevance_reason %}<div class="why"><b>관련도 판단</b>{{ p.relevance_reason }}</div>{% endif %}
             {% if p.abstract %}<details class="abs"><summary>초록 보기</summary><p>{{ p.abstract }}</p></details>{% endif %}
           </div>

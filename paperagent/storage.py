@@ -62,6 +62,13 @@ def exists(key: str) -> bool:
     return get(key) is not None
 
 
+def delete(key: str):
+    if config.STORAGE_BACKEND == "db":
+        db.delete_blobs(key, exact=True)
+    else:
+        _local_path(key).unlink(missing_ok=True)
+
+
 def delete_prefix(prefix: str):
     if config.STORAGE_BACKEND == "db":
         db.delete_blobs(prefix)
