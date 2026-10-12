@@ -127,7 +127,7 @@ def refresh_tracked_citations():
             p = ids[key]
             count = item.get("citationCount") or 0
             db.snapshot_citations(p["uid"], count)
-            db.update_paper(p["id"], citation_count=count)
+            db.set_citation_count(p["id"], count)
     out = []
     for p in papers:
         growth = db.citation_growth(p["uid"], days=7)

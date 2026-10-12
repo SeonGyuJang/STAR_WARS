@@ -381,14 +381,34 @@ def test_recent_sort_follows_review_time(fresh_db, monkeypatch):
     assert "10.12 17:00 분석" in html  # shown in Korea time
 
 
-def test_old_reviews_get_a_review_time(fresh_db):
-    from paperagent import db
+def test_old_reviews_get_their_real_review_time(fresh_db):
+    """Reviews made before reviewed_at existed get the time from the run logs
+    (UTC-stamped older logs and KST-stamped newer ones), else from their cards."""
+    from paperagent import db, storage
 
-    db.insert_paper({"uid": "arxiv:legacy", "source_kind": "arxiv", "title": "Reviewed before reviewed_at existed"})
-    pid = db.get_paper_by_uid("arxiv:legacy")["id"]
-    db.update_paper(pid, status="done")
+    ids = {}
+    for uid in ("arxiv:a", "arxiv:b", "arxiv:c", "arxiv:d"):
+        db.insert_paper({"uid": uid, "source_kind": "arxiv", "title": uid})
+        ids[uid] = db.get_paper_by_uid(uid)["id"]
+        db.update_paper(ids[uid], status="done", card_paths=[f"cards/{ids[uid]}/card_01.png"] if uid == "arxiv:c" else [])
+    a, b, d = ids["arxiv:a"], ids["arxiv:b"], ids["arxiv:d"]
     with db.engine().begin() as conn:
-        conn.execute(db.papers.update().where(db.papers.c.id == pid).values(reviewed_at=None))
+        # older run, log stamped in UTC: started 2026-10-10 23:50 UTC, b reviewed after midnight
+        conn.execute(db.runs.insert().values(trigger="t", status="ok", started_at="2026-10-10T23:50:00+00:00", log=(
+            f"[23:50:01] arXiv cs.CL: 3 matched, 3 new\n[23:58:00] reading #{b}: B\n[00:02:10]   reviewed (full_pdf): method 7\n")))
+        # newer run, log stamped in Korea time: started 2026-10-12 01:00 UTC = 10:00 KST
+        conn.execute(db.runs.insert().values(trigger="t", status="ok", started_at="2026-10-12T01:00:00+00:00", log=(
+            f"[10:00:02] arXiv cs.CL: 1 matched\n[10:01:00] reading #{a}: A\n[10:03:30]   reviewed (full_pdf): method 8\n"
+            f"[10:04:00] reading #{d}: D\n[10:05:00]   review failed: boom\n")))
+        conn.execute(db.papers.update().values(reviewed_at=None, updated_at="2026-10-12T05:00:00+00:00"))
+    storage.put(f"cards/{ids['arxiv:c']}/card_01.png", b"png")
+    db.set_setting("reviewed_at_v2", False)
     db.init_db()
-    p = db.get_paper(pid)
-    assert p["reviewed_at"] == p["updated_at"]
+    assert db.get_paper(b)["reviewed_at"] == "2026-10-11T00:02:10+00:00"
+    assert db.get_paper(a)["reviewed_at"] == "2026-10-12T01:03:30+00:00"
+    assert db.get_paper(ids["arxiv:c"])["reviewed_at"] == storage.stored_at(f"cards/{ids['arxiv:c']}/card_01.png")
+    assert db.get_paper(d)["reviewed_at"] == "2026-10-12T05:00:00+00:00"  # failed review: no evidence, last update
+    # citation refreshes no longer look like edits
+    before = db.get_paper(a)["updated_at"]
+    db.set_citation_count(a, 12)
+    assert db.get_paper(a)["updated_at"] == before and db.get_paper(a)["citation_count"] == 12

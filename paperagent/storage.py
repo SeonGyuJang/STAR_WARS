@@ -7,6 +7,7 @@ Keys look like "cards/12/card_01.png" or "figures/12/fig3.png".
 """
 import mimetypes
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import config, db
@@ -45,6 +46,16 @@ def get(key: str):
     if not path.is_file():
         return None
     return path.read_bytes(), _type(key)
+
+
+def stored_at(key: str):
+    """When an object was last written (UTC ISO), or None."""
+    if config.STORAGE_BACKEND == "db":
+        return db.blob_updated_at(key)
+    path = _local_path(key)
+    if not path.is_file():
+        return None
+    return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).replace(microsecond=0).isoformat()
 
 
 def exists(key: str) -> bool:
