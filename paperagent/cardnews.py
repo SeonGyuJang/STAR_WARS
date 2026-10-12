@@ -4,6 +4,7 @@ The slides are laid out in HTML/CSS (templates/cards/cards.html) and captured
 with headless Chromium through Playwright, so typography (Korean via the bundled
 Pretendard font) stays crisp and the design is easy to tweak."""
 import io
+import json
 import logging
 import os
 import re
@@ -23,6 +24,15 @@ FONT_DIR = PKG_DIR / "static" / "fonts"
 
 _env = Environment(loader=FileSystemLoader(PKG_DIR / "templates" / "cards"), autoescape=select_autoescape(["html"]))
 _env.filters["nl2br"] = lambda s: Markup("<br>".join(escape(line) for line in str(s or "").replace("\\n", "\n").split("\n")))
+
+
+def _text(s):
+    """Card text: escaped, line breaks kept, and the * after an explained word raised."""
+    html = _env.filters["nl2br"](s)
+    return Markup(re.sub(r"(?<=\S)\*", '<sup class="star">*</sup>', str(html)))
+
+
+_env.filters["t"] = _text
 
 
 def _source_ref(paper):
@@ -84,6 +94,16 @@ def build_html(paper: dict, review: dict, figures, page1=None) -> str:
     slides.append({"kind": "verdict", "label": "평가", **card["verdict"]})
     slides.append({"kind": "summary"})
     slides.append({"kind": "outro"})
+
+    explained = set()
+    for s in slides:
+        text = json.dumps({k: v for k, v in s.items() if k != "figure"}, ensure_ascii=False)
+        if s["kind"] == "cover":
+            text += json.dumps([card.get(k) for k in ("cover_headline", "cover_sub", "cover_points")], ensure_ascii=False)
+        elif s["kind"] == "summary":
+            text += json.dumps(card.get("summary_rows"), ensure_ascii=False)
+        s["notes"] = [t for t in card.get("terms") or [] if t.get("term") and f"{t['term']}*" in text and t["term"] not in explained]
+        explained.update(t["term"] for t in s["notes"])
 
     # Cover visual: a figure not shown on later slides, else the paper's
     # first page, else any figure.
@@ -155,10 +175,28 @@ def render(paper: dict, review: dict, figures, out_dir: Path, page1=None):
     return paths
 
 
+_HASHTAG = re.compile(r"#[^\s#]+")
+
+
+def hashtags(card: dict) -> list[str]:
+    """The fixed account tags plus the paper's own, without duplicates, capped at
+    Instagram's per-post limit. Older reviews carried their tags in the caption."""
+    own = card.get("hashtags") or _HASHTAG.findall(card.get("caption") or "")
+    out = []
+    for tag in config.CARD_BASE_HASHTAGS + own:
+        tag = "#" + tag.strip().lstrip("#").replace(" ", "")
+        if len(tag) > 1 and tag.lower() not in {t.lower() for t in out}:
+            out.append(tag)
+    return out[: config.CARD_HASHTAG_LIMIT]
+
+
 def build_caption(paper, review):
-    caption = review["card"]["caption"].replace("\\n", "\n").strip()
+    card = review["card"]
+    body = _HASHTAG.sub("", card["caption"].replace("\\n", "\n")).strip()
     link = paper.get("url") or ""
-    return f"{caption}\n\n📄 원문: {paper['title']}\n🔗 {link}\n⭐ 평점 {review['overall_score']}/10 (방법론 {review['methodology_score']} · 참신성 {review['novelty_score']})"
+    return (f"{body}\n\n📄 원문: {paper['title']}\n🔗 {link}\n"
+            f"⭐ 평점 {review['overall_score']}/10 (방법론 {review['methodology_score']} · 참신성 {review['novelty_score']})\n\n"
+            + " ".join(hashtags(card)))
 
 
 def render_and_store(paper: dict, review: dict) -> list[str]:
