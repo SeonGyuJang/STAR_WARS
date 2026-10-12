@@ -8,7 +8,8 @@
   <div>
     <div class="pmeta">
       {% if (r.card or {}).category %}<span class="cat">{{ r.card.category }}</span><i>·</i>{% endif %}
-      {{ src(p) }}<i>·</i><span>{{ p.published | short_date }}</span>
+      {{ src(p) }}<i>·</i><span title="논문 발표일">{{ p.published | short_date }}</span>
+      {% if p.reviewed_at %}<i>·</i><span class="reviewed" title="AI가 분석을 마친 시각">{{ p.reviewed_at | kst('%m.%d %H:%M') }} 분석</span>{% endif %}
     </div>
     <h3><a href="{{ url_for('web.paper_detail', paper_id=p.id) }}">{{ r.title_ko or p.title }}</a></h3>
     {% if r.title_ko %}<div class="en">{{ p.title }}</div>{% endif %}

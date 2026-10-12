@@ -201,6 +201,7 @@ def process_paper(paper: dict, keywords, say=log.info) -> tuple[bool, float]:
             card_paths=card_paths,
             cost_usd=cost,
             priority=0,
+            reviewed_at=db.now_iso(),
         )
         return True, cost
     except agent.ApiUnavailable:

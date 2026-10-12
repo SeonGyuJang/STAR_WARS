@@ -363,3 +363,32 @@ def test_post_retries_rate_limits():
          mock.patch.object(collectors.time, "sleep") as sleep:
         assert collectors.http_post("https://api.semanticscholar.org/x", json={}) is ok
     assert req.call_count == 2 and sleep.call_count == 1
+
+
+def test_recent_sort_follows_review_time(fresh_db, monkeypatch):
+    """'최근 분석순' lists papers by when their review finished, not when they were collected."""
+    from paperagent import create_app, db
+
+    stamps = iter(["2026-10-10T01:00:00+00:00", "2026-10-10T02:00:00+00:00"])  # collected: old first, new second
+    monkeypatch.setattr(db, "now_iso", lambda: next(stamps, "2026-10-12T09:00:00+00:00"))
+    for uid, title in (("arxiv:old", "Collected first, reviewed last"), ("arxiv:new", "Collected last, reviewed first")):
+        db.insert_paper({"uid": uid, "source_kind": "arxiv", "title": title})
+    db.update_paper(db.get_paper_by_uid("arxiv:new")["id"], status="done", score_overall=7, reviewed_at="2026-10-11T08:00:00+00:00")
+    db.update_paper(db.get_paper_by_uid("arxiv:old")["id"], status="done", score_overall=7, reviewed_at="2026-10-12T08:00:00+00:00")
+    assert [p["uid"] for p in db.query_papers(sort="recent")] == ["arxiv:old", "arxiv:new"]
+    html = create_app(start_scheduler=False).test_client().get("/?sort=recent").get_data(as_text=True)
+    assert html.index("Collected first, reviewed last") < html.index("Collected last, reviewed first")
+    assert "10.12 17:00 분석" in html  # shown in Korea time
+
+
+def test_old_reviews_get_a_review_time(fresh_db):
+    from paperagent import db
+
+    db.insert_paper({"uid": "arxiv:legacy", "source_kind": "arxiv", "title": "Reviewed before reviewed_at existed"})
+    pid = db.get_paper_by_uid("arxiv:legacy")["id"]
+    db.update_paper(pid, status="done")
+    with db.engine().begin() as conn:
+        conn.execute(db.papers.update().where(db.papers.c.id == pid).values(reviewed_at=None))
+    db.init_db()
+    p = db.get_paper(pid)
+    assert p["reviewed_at"] == p["updated_at"]

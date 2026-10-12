@@ -68,6 +68,8 @@ papers = Table(
     Column("score_novelty", Float),
     Column("score_overall", Float),
     Column("cost_usd", Float),
+    # when the review finished (what "최신순" on the dashboard follows)
+    Column("reviewed_at", String(32), index=True),
     # > 0 when an admin picked the paper by hand (read first, even if below the relevance threshold)
     Column("priority", Integer, default=0),
     Column("card_paths", Text, nullable=False, default="[]"),
@@ -209,9 +211,17 @@ def _add_missing_columns():
                     conn.execute(text(ddl))
 
 
+def _backfill_reviewed_at():
+    """Reviews made before reviewed_at existed: their last update is the best guess."""
+    with engine().begin() as conn:
+        conn.execute(update(papers).where(papers.c.status == "done", papers.c.reviewed_at.is_(None))
+                     .values(reviewed_at=papers.c.updated_at))
+
+
 def init_db(seed: bool = True):
     metadata.create_all(engine())
     _add_missing_columns()
+    _backfill_reviewed_at()
     if not seed or get_setting("seeded"):
         return
     ts = now_iso()
@@ -382,9 +392,12 @@ def get_paper_by_uid(uid: str):
         return _row(conn.execute(select(papers).where(papers.c.uid == uid)).first())
 
 
+# newest review first; papers not reviewed yet fall back to when they were collected
+_LATEST = func.coalesce(papers.c.reviewed_at, papers.c.created_at)
+
 _ORDERS = {
-    "recent": (papers.c.created_at.desc(),),
-    "score": (papers.c.score_overall.desc(), papers.c.created_at.desc()),
+    "recent": (_LATEST.desc(), papers.c.id.desc()),
+    "score": (papers.c.score_overall.desc(), _LATEST.desc()),
     "relevance": (func.coalesce(papers.c.priority, 0).desc(), papers.c.relevance.desc(), papers.c.created_at.desc()),
 }
 
@@ -445,7 +458,7 @@ def query_papers(status="done", keyword=None, search=None, sort="recent", days=N
         pat = f"%{search}%"
         q = q.where(papers.c.title.ilike(pat) | papers.c.abstract.ilike(pat) | papers.c.review.ilike(pat))
     if days:
-        q = q.where(papers.c.created_at >= ago_iso(days=int(days)))
+        q = q.where(_LATEST >= ago_iso(days=int(days)))
     q = q.order_by(*_ORDERS.get(sort, _ORDERS["recent"])).limit(limit).offset(offset)
     with engine().connect() as conn:
         return _rows(conn.execute(q))
@@ -455,7 +468,7 @@ def paper_counts():
     with engine().connect() as conn:
         rows = conn.execute(select(papers.c.status, func.count()).group_by(papers.c.status)).all()
         today = conn.execute(select(func.count()).select_from(papers)
-                             .where(papers.c.status == "done", papers.c.updated_at >= ago_iso(days=1))).scalar()
+                             .where(papers.c.status == "done", _LATEST >= ago_iso(days=1))).scalar()
     counts = {status: n for status, n in rows}
     counts["today"] = today
     return counts
