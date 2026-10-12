@@ -171,9 +171,14 @@ def index():
     days = request.args.get("days", type=int)
     page = max(request.args.get("page", 1, type=int), 1)
     source = _source_from_args()
+    instagram = request.args.get("ig") if request.args.get("ig") in ("posted", "pending") else None
+    if instagram == "pending" and not is_admin():
+        instagram = None
+    if instagram == "posted" and "sort" not in request.args:
+        sort = "posted"
     per_page = 24
     papers = db.query_papers(keyword=keyword, search=search, sort=sort, days=days, limit=per_page + 1,
-                             offset=(page - 1) * per_page, source=source)
+                             offset=(page - 1) * per_page, source=source, instagram=instagram)
     has_more = len(papers) > per_page
     hf, _ = db.get_trending("hf_daily")
     surge, _ = db.get_trending("surge")
@@ -185,9 +190,10 @@ def index():
         keywords=db.list_keywords(),
         keyword_counts=db.keyword_counts(),
         counts=db.paper_counts(),
-        filters={"keyword": keyword, "sort": sort, "q": search or "", "days": days, "source": source},
+        filters={"keyword": keyword, "sort": sort, "q": search or "", "days": days, "source": source, "ig": instagram},
         filter_args={k: v for k, v in {"keyword": keyword, "sort": sort, "q": search, "days": days,
-                                       "source": source["id"] if source else None}.items() if v},
+                                       "source": source["id"] if source else None, "ig": instagram}.items() if v},
+        ig_counts=db.instagram_counts(),
         source_nav=_source_nav(("done",)),
         hf=(hf or [])[:6],
         surge=(surge or [])[:5],
@@ -537,6 +543,23 @@ def rerender(paper_id):
     except Exception as exc:
         flash(f"카드뉴스 생성 실패: {exc}", "error")
     return redirect(url_for("web.paper_detail", paper_id=paper_id) + "#cards")
+
+
+@bp.route("/paper/<int:paper_id>/instagram", methods=["POST"])
+@admin_required
+def toggle_instagram(paper_id):
+    """Mark the card news as posted on Instagram (or undo it)."""
+    p = db.get_paper(paper_id)
+    if not p or p["status"] != "done":
+        abort(404)
+    want = request.form.get("posted")
+    posted = (want == "1") if want in ("0", "1") else not p.get("instagram_posted_at")
+    when = db.set_instagram_posted(paper_id, posted)
+    if request.accept_mimetypes.best == "application/json":
+        return jsonify({"posted": bool(when), "posted_at": when, "label": to_local(when, "%m.%d") if when else None,
+                        "counts": db.instagram_counts()})
+    flash("인스타 업로드 완료로 표시했습니다." if posted else "인스타 업로드 표시를 지웠습니다.", "ok")
+    return redirect(request.referrer or url_for("web.paper_detail", paper_id=paper_id))
 
 
 # --- JSON API -----------------------------------------------------------------

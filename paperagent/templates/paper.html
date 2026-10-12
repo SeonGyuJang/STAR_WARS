@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import bar, csrf, src with context %}
+{% from "_macros.html" import bar, csrf, src, ig_toggle with context %}
 {% block title %}{{ r.title_ko or p.title }} · {{ site_name }}{% endblock %}
 {% block meta %}
 <meta property="og:title" content="{{ r.title_ko or p.title }}">
@@ -111,6 +111,8 @@
         <div class="cap-label">캡션</div>
         <textarea class="caption" readonly rows="8" id="caption">{{ caption }}</textarea>
       {% endif %}
+      {% if is_admin %}<div class="ig-row">{{ ig_toggle(p) }}</div>
+      {% elif p.instagram_posted_at %}<p class="small muted" style="margin-top: 10px">{{ p.instagram_posted_at | kst('%Y.%m.%d') }} 인스타에 게시했습니다.</p>{% endif %}
       <div class="row-actions">
         {% if caption %}<button class="btn sm" data-copy="#caption">캡션 복사</button>{% endif %}
         {% if is_admin %}<form method="post" action="{{ url_for('web.rerender', paper_id=p.id) }}">{{ csrf() }}<button class="btn ghost sm">카드 다시 만들기</button></form>{% endif %}

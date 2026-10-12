@@ -1,4 +1,4 @@
-{% from "_macros.html" import src with context %}
+{% from "_macros.html" import src, ig_toggle with context %}
 {% set r = p.review or {} %}
 <article class="prow">
   <div class="pscore">
@@ -20,6 +20,7 @@
       {% if p.pdf_url %}<a href="{{ p.pdf_url }}" target="_blank" rel="noopener">PDF</a>{% endif %}
       {% if p.card_paths %}<a href="{{ url_for('web.file_cards_zip', paper_id=p.id) }}">카드뉴스</a>{% endif %}
       {% if p.read_depth == 'abstract' %}<span class="warn">초록만 읽음</span>{% endif %}
+      {% if is_admin %}{{ ig_toggle(p) }}{% elif p.instagram_posted_at %}<span class="ig-badge">인스타 게시</span>{% endif %}
       <span class="chips">{% for kw in p.matched_keywords %}<a class="chip" href="{{ url_for('web.index', keyword=kw) }}">{{ kw }}</a>{% endfor %}</span>
     </div>
   </div>
