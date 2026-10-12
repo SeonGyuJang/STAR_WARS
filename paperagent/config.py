@@ -109,6 +109,10 @@ SITE_NAME = os.environ.get("SITE_NAME", "STAR WARS")
 # STAR WARS = Smart Topic Analysis & Rating : Worthwise Article Research System
 CARD_BRAND = os.environ.get("CARD_BRAND", "STAR WARS")
 CARD_HANDLE = os.environ.get("CARD_HANDLE", "@starwars.research")
+# Instagram allows 5 hashtags per post (since Dec 2025). The fixed, widely
+# searched ones come first; the AI adds tags for the paper's own field.
+CARD_HASHTAG_LIMIT = int(os.environ.get("CARD_HASHTAG_LIMIT", "5"))
+CARD_BASE_HASHTAGS = [t.strip() for t in os.environ.get("CARD_BASE_HASHTAGS", "#인공지능,#AI,#논문리뷰").split(",") if t.strip()]
 BRAND_TAGLINE = os.environ.get("BRAND_TAGLINE", "Smart Topic Analysis & Rating · Worthwise Article Research System")
 # (initial letter, rest of word) pairs spelled out on the closing slide
 BRAND_ACRONYM = [

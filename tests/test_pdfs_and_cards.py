@@ -57,3 +57,23 @@ def test_old_card_format_still_renders(sample_pdf, tmp_path):
     paths = cardnews.render(paper, review, figs, tmp_path / "cards")
     assert len(paths) == 7  # no steps / setup slides for the old format
     assert all(Image.open(p).size == (1080, 1350) for p in paths)
+
+
+def test_hashtags_follow_instagram_limit():
+    card = {"caption": "본문\n#AI #딥러닝 #머신러닝 #개발자 #공부", "hashtags": ["#LLM", "AI", "#컴퓨터 비전", "#추가"]}
+    tags = cardnews.hashtags(card)
+    assert tags == ["#인공지능", "#AI", "#논문리뷰", "#LLM", "#컴퓨터비전"]  # fixed tags first, no duplicates, max 5
+    # older reviews kept their tags inside the caption; they are moved to the end and capped too
+    old = {"caption": "본문입니다\n\n#AI #LLM #논문리뷰 #머신러닝 #딥러닝 #STARWARS"}
+    review = {"card": old, "overall_score": 7.8, "methodology_score": 7.5, "novelty_score": 8.0}
+    caption = cardnews.build_caption({"title": "T", "url": "https://x"}, review)
+    assert caption.startswith("본문입니다") and caption.count("#") == 5
+    assert caption.splitlines()[-1] == "#인공지능 #AI #논문리뷰 #LLM #머신러닝"
+
+
+def test_hard_words_are_explained_once(sample_pdf, tmp_path):
+    figs = pdfs.extract_figures(sample_pdf, tmp_path / "figs")
+    paper = {"uid": "arxiv:2610.01234", "title": "T", "authors": ["A"], "source_kind": "arxiv", "url": "https://x"}
+    html = cardnews.build_html(paper, copy.deepcopy(demo.SAMPLE_REVIEW), figs)
+    assert html.count('<b>MATH</b>') == 1  # used on several cards, explained on the first only
+    assert 'MATH<sup class="star">*</sup>' in html

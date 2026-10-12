@@ -387,15 +387,15 @@ JUDGE_SCHEMA = _obj({
     "read_confidence": {"type": "string", "enum": ["high", "medium", "low"]},
 })
 
-JUDGE_SYSTEM = """You are a senior AI/CS reviewer deciding how much a new paper is worth a busy researcher's time. You receive detailed notes taken by an assistant who read the full paper (or only the abstract when no PDF was available).
+JUDGE_SYSTEM = """You are a university professor in AI/CS giving a fair, constructive assessment of a new paper - the kind of feedback a supportive advisor gives on a solid submission. You receive detailed notes taken by an assistant who read the full paper (or only the abstract when no PDF was available).
 
-Judge only from the evidence given. Be calibrated - most papers land 5-7; reserve 8+ for clearly strong work.
+Judge only from the evidence given. Credit what the paper does well; a competent paper with clear contributions should score well even if it has the usual gaps. Typical published work lands around 6.5-8; use 9+ for excellent work; go below 5 only for serious, specific problems.
 - methodology_score - soundness and trustworthiness: appropriate baselines and ablations, statistical care, dataset/contamination issues, reproducibility, whether the evidence supports the claims.
-  9-10 rigorous and convincing; 7-8 solid with minor gaps; 5-6 typical, some missing controls; 3-4 notable flaws; 1-2 claims unsupported.
-- novelty_score - originality and contribution: new idea or insight vs. incremental tuning, size of the advance over prior work, likely influence.
-  9-10 likely field-shaping; 7-8 clearly new and useful; 5-6 solid incremental; 3-4 minor variation; 1-2 nothing new.
-read_confidence: high when full notes are available and consistent, low when only the abstract was read (then keep scores conservative).
-Write reasons, strengths, weaknesses and verdict in Korean."""
+  9-10 rigorous and convincing; 7.5-8.5 solid, minor gaps; 6-7 reasonable with some missing controls; 4-5 notable gaps that weaken the claims; 1-3 claims largely unsupported.
+- novelty_score - originality and contribution: new idea or insight vs. incremental tuning, size of the advance over prior work, likely usefulness to others.
+  9-10 likely to change how people work on this; 7.5-8.5 clearly new and useful; 6-7 a meaningful extension of known ideas; 4-5 a small variation; 1-3 nothing new.
+read_confidence: high when full notes are available and consistent, low when only the abstract was read (then stay moderate rather than harsh).
+Tone: write reasons, strengths, weaknesses and verdict in polite, constructive Korean. Phrase weaknesses as suggestions, e.g. "~에 대한 보완이 필요해 보입니다", "~는 다소 미흡할 수 있습니다", "~에 대한 추가 연구가 필요할 수 있습니다" - never blunt verdicts like "~가 없다", "~가 부족하다"."""
 
 
 def judge(paper, keywords, notes, depth, meter):
@@ -441,7 +441,7 @@ WRITE_SCHEMA = _obj({
                      source={**_str, "description": "Where it is reported, e.g. 'Table 2', 'Fig. 3'; empty if unknown"}),
     "analysis": {**_str_list, "description": "2-5 Korean findings from ablations/analysis, with numbers"},
     "contributions": _str_list,
-    "limitations": {**_str_list, "description": "3-5 Korean points: the paper's stated limitations and the reviewer's weaknesses"},
+    "limitations": {**_str_list, "description": "3-5 constructive Korean points (what could be improved or studied further)"},
     "prior_work": {**_str, "description": "2-3 Korean sentences: closest prior work and how this paper differs"},
     "why_it_matters": {**_str, "description": "2-3 Korean sentences"},
     "who_should_read": _str,
@@ -456,52 +456,66 @@ Goal: a reader who only reads your summary should understand the whole paper - w
 Accuracy rules:
 - Use only facts in the notes and the reviewer's verdict. Never invent or round numbers; copy them exactly with their metric, and give the source (Table/Figure) when the notes have it.
 - If the notes do not cover something, say so ("논문에 보고되지 않음") instead of guessing.
-- Limitations must reflect the paper's stated limitations and the reviewer's weaknesses.
+- Limitations must reflect the paper's stated limitations and the reviewer's weaknesses, written constructively as points to improve or study further ("~에 대한 보완이 필요해 보입니다", "~는 다소 미흡할 수 있습니다", "~에 대한 추가 연구가 필요할 수 있습니다"), not as blunt verdicts.
 
 Style: plain, natural Korean; keep technical terms in English where natural (e.g. "Transformer", "RLHF") and explain them in the glossary."""
 
 CARD_SCHEMA = _obj({
     "category": {**_str, "description": "Short field tag, e.g. 'LLM 에이전트'"},
     "cover_headline": {**_str, "description": "Korean hook, 2 lines separated by \\n, <= 16 chars per line"},
-    "cover_sub": {**_str, "description": "One Korean sentence under the headline (<= 60 chars)"},
-    "cover_points": {**_str_list, "description": "Exactly 3 Korean takeaways, each <= 38 chars, at least one with a number"},
+    "cover_sub": {**_str, "description": "One Korean sentence under the headline (<= 70 chars)"},
+    "cover_points": {**_str_list, "description": "Exactly 3 Korean takeaways, each <= 44 chars, at least one with a number"},
     "problem": _obj({
         "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
-        "points": {**_str_list, "description": "3 Korean sentences, each <= 60 chars: the situation, what goes wrong, why it matters"},
+        "points": {**_str_list, "description": "3 Korean sentences, each <= 75 chars: the situation, what goes wrong, why it matters"},
+        "context": {**_str, "description": "2-3 plain Korean sentences of background, <= 170 chars (shown when there is no figure)"},
         "figure_number": {"type": "integer", "description": "Figure to show, 0 for none"},
     }),
     "idea": _obj({
         "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
-        "body": {**_str, "description": "2-3 Korean sentences, <= 130 chars in total: the core idea"},
+        "body": {**_str, "description": "2-3 Korean sentences, <= 170 chars in total: the core idea"},
         "figure_number": {"type": "integer", "description": "The method overview figure, 0 for none"},
     }),
     "steps": _rows("3-4 method steps for the card",
-                   title={**_str, "description": "<= 16 chars"}, detail={**_str, "description": "<= 64 chars"}),
+                   title={**_str, "description": "<= 16 chars"}, detail={**_str, "description": "<= 85 chars"}),
     "setup": _rows("4 rows: 데이터셋 / 모델 / 비교 대상 / 평가 지표",
-                   label={**_str, "description": "<= 8 chars"}, value={**_str, "description": "<= 56 chars"}),
+                   label={**_str, "description": "<= 8 chars"}, value={**_str, "description": "<= 70 chars"}),
+    "findings": {**_str_list, "description": "2 plain Korean sentences on what the extra experiments showed, each <= 80 chars"},
     "results": _obj({
         "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
         "highlight": {**_str, "description": "The single most important number, e.g. '+12.4%p'"},
         "highlight_label": {**_str, "description": "What it measures, <= 30 chars"},
         "rows": _rows("3-4 results", item={**_str, "description": "<= 22 chars"}, value={**_str, "description": "<= 16 chars"},
-                      note={**_str, "description": "comparison or context, <= 34 chars"}),
+                      note={**_str, "description": "comparison or context in plain words, <= 40 chars"}),
         "figure_number": {"type": "integer", "description": "A results plot or table, 0 for none"},
     }),
     "verdict": _obj({
-        "strengths": {**_str_list, "description": "2 Korean points, each <= 44 chars"},
-        "weaknesses": {**_str_list, "description": "2 Korean points, each <= 44 chars"},
+        "strengths": {**_str_list, "description": "2 Korean points, each <= 60 chars"},
+        "weaknesses": {**_str_list, "description": "2 constructive Korean points (what could be improved or studied further), each <= 60 chars"},
         "who": {**_str, "description": "Who should read it, <= 60 chars"},
     }),
     "summary_rows": _rows("Exactly 5 rows: 문제 / 방법 / 데이터 / 결과 / 한계",
                           label=_str, sub={**_str, "description": "tiny sub-label"},
                           value={**_str, "description": "<= 24 chars"}, value_sub={**_str, "description": "<= 40 chars detail"}),
-    "caption": {**_str, "description": "Instagram caption in Korean, 8-14 lines: hook, the problem, the idea, 2-3 results with numbers, "
-                                      "the limitation, who should read; ends with 5-8 hashtags"},
+    "terms": _rows("0-4 hard words used in the card copy, each marked with * right after the word where it appears (e.g. 'MATH*')",
+                   term={**_str, "description": "The word exactly as written before the *"},
+                   meaning={**_str, "description": "Plain Korean explanation, <= 60 chars, no analogies"}),
+    "caption": {**_str, "description": "Instagram caption in Korean for a general audience, 8-14 lines: hook, the problem, the idea, "
+                                      "2-3 results with numbers, what could be improved, who it helps. No hashtags."},
+    "hashtags": {**_str_list, "description": "2 hashtags (with #) for this paper's field that people actually search on Instagram, "
+                                            "e.g. #LLM, #컴퓨터비전, #생성형AI, #자율주행 - only if the paper is really about it"},
 })
 
 CARD_SYSTEM = """You turn a Korean paper review into copy for an Instagram card-news post (cover, problem, key idea, how it works, setup, results, verdict, summary; a fixed closing slide follows).
 
-Use only facts from the review; keep numbers exactly as written there. Card copy is rendered large, so respect every length limit - shorten wording, never cut a number.
+Audience: people with no AI or engineering background. Write so they can follow every card:
+- Explain things as they actually are, in plain words and enough detail - do not explain by analogy or metaphor (no "마치 ~처럼", no comparing the method to everyday objects).
+- When a technical word is unavoidable (a benchmark, method or metric name), either explain it in the same sentence or put * right after it (e.g. "MATH*") and define it in `terms`. Use at most 4 terms.
+- Say what numbers mean ("정답률 41.2% → 53.6%, 100문제 중 약 12문제를 더 맞힘") rather than leaving bare figures, but never change or invent a number.
+- Short, clear sentences; natural Korean; no hype.
+- Weaknesses and limits are constructive: "~에 대한 보완이 필요해 보입니다", "~는 다소 미흡할 수 있습니다", "~에 대한 추가 연구가 필요할 수 있습니다".
+
+Use only facts from the review. Card copy is rendered large, so respect every length limit - shorten wording, never cut a number.
 
 For each card figure pick the most informative figure from the available list (by number) - the method overview for `idea`, a results plot or table for `results`, a motivating example for `problem`. Use 0 if none fits; never invent figure numbers or reuse one figure twice."""
 

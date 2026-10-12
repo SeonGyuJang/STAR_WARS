@@ -89,6 +89,8 @@ WRITER_MODEL=claude-haiku-5-5  # 한국어 문장이 약간 단조로워질 수 
 | `OPENALEX_MAILTO` | 권장 | | 본인 이메일. 저널 조회가 더 안정적 |
 | `SEMANTIC_SCHOLAR_API_KEY` | | | 인용 추적용. [신청 폼](https://www.semanticscholar.org/product/api)에서 발급 |
 | `CARD_HANDLE` | 권장 | `@starwars.research` | 카드뉴스에 찍히는 인스타 계정 |
+| `CARD_BASE_HASHTAGS` | | `#인공지능,#AI,#논문리뷰` | 캡션에 항상 붙는 해시태그 (쉼표로 구분). 나머지는 AI가 논문 분야에 맞게 고릅니다 |
+| `CARD_HASHTAG_LIMIT` | | `5` | 캡션 해시태그 최대 개수. 인스타그램은 2025년 12월부터 게시물당 5개까지만 허용합니다 |
 | `CARD_BRAND` | | `STAR WARS` | 카드뉴스 로고 글자 |
 | `SITE_NAME` | | `STAR WARS` | 대시보드 이름 |
 | `READER_MODEL` | | `claude-haiku-5-5` | PDF 정독 모델 |
