@@ -10,3 +10,11 @@
   {% if cats %}<optgroup label="arXiv 분야">{% for s in cats %}<option value="{{ s.id }}" {{ 'selected' if current and current.id == s.id }}>{{ s.name }} ({{ s.count }})</option>{% endfor %}</optgroup>{% endif %}
 </select>
 {% endmacro %}
+{% macro ig_toggle(p) %}{% set on = p.instagram_posted_at %}
+<form method="post" action="{{ url_for('web.toggle_instagram', paper_id=p.id) }}" class="ig-toggle {{ 'on' if on }}" data-ig>
+  <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="posted" value="{{ '0' if on else '1' }}">
+  <button type="submit" aria-pressed="{{ 'true' if on else 'false' }}" title="{{ '누르면 업로드 표시를 지웁니다' if on else '인스타에 올렸다면 눌러 표시하세요' }}">
+    <span class="box" aria-hidden="true"></span><span class="lbl">{% if on %}인스타 업로드 완료 · {{ on | kst('%m.%d') }}{% else %}인스타 업로드 완료{% endif %}</span>
+  </button>
+</form>
+{% endmacro %}

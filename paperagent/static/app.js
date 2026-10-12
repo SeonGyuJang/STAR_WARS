@@ -98,3 +98,25 @@ document.querySelectorAll("[data-pick-all]").forEach((box) => {
     });
   });
 });
+
+// Instagram "posted" mark: toggle in place without reloading the page
+document.querySelectorAll("form[data-ig]").forEach((form) => {
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    form.classList.add("busy");
+    try {
+      const r = await fetch(form.action, { method: "POST", body: new FormData(form), headers: { Accept: "application/json" } });
+      if (!r.ok) throw new Error(r.status);
+      const s = await r.json();
+      form.classList.toggle("on", s.posted);
+      form.querySelector("input[name=posted]").value = s.posted ? "0" : "1";
+      form.querySelector("button").setAttribute("aria-pressed", s.posted);
+      form.querySelector(".lbl").textContent = s.posted ? `인스타 업로드 완료 · ${s.label}` : "인스타 업로드 완료";
+      document.querySelectorAll("[data-ig-count]").forEach((el) => (el.textContent = s.counts[el.dataset.igCount]));
+    } catch {
+      form.submit(); // fall back to a normal post
+    } finally {
+      form.classList.remove("busy");
+    }
+  });
+});
