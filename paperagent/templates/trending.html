@@ -28,46 +28,55 @@
   {% else %}<p class="desc">논문이 쌓이면 표시됩니다.</p>{% endif %}
 </section>
 
+{# one trending paper: title, where it comes from, numbers, and a summary to unfold #}
+{% macro item(rank, t, href, external=True, sources=(), meta='') %}
+<div class="trow"><span class="rank">{{ rank }}</span>
+  <div>
+    <a class="t" href="{{ href }}" {% if external %}target="_blank" rel="noopener"{% endif %}>{{ t.title }}</a>
+    <div class="sub">{% for s in sources if s %}<span class="src-chip">{{ s }}</span>{% endfor %}{{ meta }}</div>
+    {% if t.summary %}<details class="abs"><summary>요약 보기</summary><p>{{ t.summary }}</p></details>{% endif %}
+    {{ caller() if caller }}
+  </div>
+</div>
+{% endmacro %}
+
 <div class="trend-grid">
   <section class="card panel" id="hf" data-more="5">
     <div class="panel-h"><h2>오늘 화제인 논문</h2>{{ updated(hf_at) }}</div>
-    <p class="desc">Hugging Face Daily Papers 추천 수 기준</p>
+    <p class="desc">Hugging Face Daily Papers에서 연구자들이 추천한 수 기준</p>
     {% for t in hf or [] %}
-      <div class="trow"><span class="rank">{{ loop.index }}</span>
-        <div><a class="t" href="{{ t.url }}" target="_blank" rel="noopener">{{ t.title }}</a>
-          <div class="sub">추천 {{ t.upvotes }} · 댓글 {{ t.comments }} · {{ t.authors | join(', ') }}</div>
-          {% if is_admin %}<form method="post" action="{{ url_for('web.add_paper') }}">{{ csrf() }}<input type="hidden" name="arxiv" value="{{ t.arxiv_id }}"><button class="link small">이 논문 리뷰하기</button></form>{% endif %}
-        </div></div>
+      {% call item(loop.index, t, t.hf_url or t.url, sources=['HF Daily', 'arXiv'],
+                   meta='추천 %s · 댓글 %s · %s' % (t.upvotes, t.comments, t.authors | join(', '))) %}
+        <div class="row-links"><a href="{{ t.url }}" target="_blank" rel="noopener">arXiv 원문</a>
+        {% if is_admin %}<form method="post" action="{{ url_for('web.add_paper') }}" class="inline">{{ csrf() }}<input type="hidden" name="arxiv" value="{{ t.arxiv_id }}"><button class="link small">이 논문 리뷰하기</button></form>{% endif %}</div>
+      {% endcall %}
     {% else %}<p class="desc">다음 실행 때 채워집니다.</p>{% endfor %}
   </section>
 
   <section class="card panel" id="surge" data-more="5">
     <div class="panel-h"><h2>인용이 빠르게 느는 논문</h2>{{ updated(surge_at) }}</div>
-    <p class="desc">최근 3년 논문 중 올해 인용 속도가 작년보다 빠른 순</p>
+    <p class="desc">최근 3년 논문 중 올해 인용 속도가 작년보다 빠른 순 (OpenAlex)</p>
     {% for t in surge or [] %}
-      <div class="trow"><span class="rank">{{ loop.index }}</span>
-        <div><a class="t" href="{{ t.url }}" target="_blank" rel="noopener">{{ t.title }}</a>
-          <div class="sub">올해 {{ t.this_year }}회 · 작년 {{ t.last_year }}회{% if t.growth_pct %} · 연환산 +{{ t.growth_pct }}%{% endif %} · {{ t.keyword }}</div></div></div>
+      {{ item(loop.index, t, t.url, sources=[t.source_name or 'OpenAlex'],
+              meta='올해 %s회 · 작년 %s회%s · %s' % (t.this_year, t.last_year, (' · 연환산 +%s%%' % t.growth_pct) if t.growth_pct else '', t.keyword)) }}
     {% else %}<p class="desc">다음 실행 때 채워집니다.</p>{% endfor %}
   </section>
 
   <section class="card panel" id="active" data-more="5">
     <div class="panel-h"><h2>많이 인용된 최근 논문</h2>{{ updated(active_at) }}</div>
-    <p class="desc">최근 1년, 관심 키워드별 누적 인용 순</p>
+    <p class="desc">최근 1년, 관심 키워드별 누적 인용 순 (OpenAlex)</p>
     {% for t in active or [] %}
-      <div class="trow"><span class="rank">{{ loop.index }}</span>
-        <div><a class="t" href="{{ t.url }}" target="_blank" rel="noopener">{{ t.title }}</a>
-          <div class="sub">인용 {{ t.citation_count }} · {{ t.published }}{% if t.source_name %} · {{ t.source_name }}{% endif %}</div></div></div>
+      {{ item(loop.index, t, t.url, sources=[t.source_name or 'OpenAlex'],
+              meta='인용 %s · %s%s' % (t.citation_count, t.published, (' · ' ~ t.keyword) if t.keyword else '')) }}
     {% else %}<p class="desc">다음 실행 때 채워집니다.</p>{% endfor %}
   </section>
 
   <section class="card panel" id="tracked" data-more="5">
     <div class="panel-h"><h2>리뷰한 논문의 인용 변화</h2>{{ updated(tracked_at) }}</div>
-    <p class="desc">지난 7일 동안 늘어난 인용 수</p>
+    <p class="desc">지난 7일 동안 늘어난 인용 수 (Semantic Scholar)</p>
     {% for t in tracked or [] %}
-      <div class="trow"><span class="rank">{{ loop.index }}</span>
-        <div><a class="t" href="{{ url_for('web.paper_detail', paper_id=t.id) }}">{{ t.title }}</a>
-          <div class="sub">+{{ t.growth_7d }} · 누적 {{ t.citation_count }}</div></div></div>
+      {{ item(loop.index, t, url_for('web.paper_detail', paper_id=t.id), external=False, sources=[t.source_name],
+              meta='+%s · 누적 %s' % (t.growth_7d, t.citation_count)) }}
     {% else %}<p class="desc">하루 이상 기록이 쌓이면 표시됩니다.</p>{% endfor %}
   </section>
 </div>

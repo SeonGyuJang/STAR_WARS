@@ -268,6 +268,8 @@ heroku pg:backups:download                                        # 내려받기
 | `card rendering failed: Could not launch Chromium` | 로컬: `python -m playwright install chromium`을 다시 실행. Heroku: `heroku buildpacks` 순서(chrome-for-testing → python)를 확인한 뒤 다시 배포. |
 | `arXiv ... failed: 503` | arXiv가 잠시 과부하 상태입니다. 다음 실행 때 다시 가져옵니다. |
 | 저널 논문이 모두 "초록만 읽음" | 오픈액세스 PDF가 없는 논문입니다. 정상 동작입니다. |
+| 학회(NeurIPS 등)를 검색해도 결과가 없음 | 잘 알려진 AI·CS 학회와 저널은 약칭(NeurIPS, ICML, ICLR, CVPR, ACL, EMNLP, AAAI, KDD, TPAMI 등)으로 바로 찾아집니다. 그 밖의 곳은 정식 이름으로 검색하거나, 결과가 없을 때 **이름으로 추가**를 누르면 다음 실행 때 OpenAlex에서 다시 찾습니다. |
+| 학회 논문이 안 모임 | 실행 기록에서 `NeurIPS: n matched (arXiv n, OpenAlex n)` 줄을 보세요. 학회는 arXiv에 채택 사실이 적힌 논문과 OpenAlex 목록에서 최근 400일치를 찾고, 관심 키워드에 맞는 논문만 가져옵니다. 이미 모은 논문은 "0 new"로 나옵니다. |
 | 같은 논문이 두 번 리뷰됨 | gunicorn 워커가 여러 개입니다. `Procfile`의 `-w 1`을 바꾸지 마세요. |
 | (Heroku) `R14 - Memory quota exceeded` | Scheduler 작업의 dyno 크기를 Standard-2X로 올리세요. |
 | (Heroku) 12시간이 지났는데 실행이 안 됨 | Scheduler 작업이 `python -m paperagent run --if-due`, Every hour로 등록됐는지 확인하세요. `heroku logs --tail`에서 `app[scheduler.…]`이 붙은 줄이 실행 로그입니다. |

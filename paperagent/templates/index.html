@@ -1,10 +1,11 @@
 {% extends "base.html" %}
-{% from "_macros.html" import csrf with context %}
+{% from "_macros.html" import csrf, source_select with context %}
 {% block content %}
 <section class="page-head">
   <div>
-    <h1>오늘의 논문</h1>
-    <p>관심 주제에 맞는 새 논문을 에이전트가 원문까지 읽고, 방법론과 참신성으로 평가했습니다.</p>
+    <h1>{% if filters.source %}{{ filters.source.name | replace('arXiv · ', 'arXiv ') }}{% else %}오늘의 논문{% endif %}</h1>
+    <p>{% if filters.source %}이 출처에서 모은 논문만 보고 있습니다. <a class="inline-link" href="{{ url_for('web.index', **(filter_args | dict_without('source'))) }}">모든 출처 보기</a>
+       {% else %}관심 주제에 맞는 새 논문을 에이전트가 원문까지 읽고, 방법론과 참신성으로 평가했습니다.{% endif %}</p>
   </div>
   <div class="page-meta">
     <span>24시간 <b>{{ counts.get('today', 0) }}편</b></span>
@@ -19,6 +20,7 @@
   <div>
     <form class="toolbar" method="get">
       <input type="search" name="q" value="{{ filters.q }}" placeholder="제목이나 요약으로 검색">
+      {{ source_select(source_nav, filters.source) }}
       <select name="keyword" onchange="this.form.submit()" aria-label="키워드">
         <option value="">모든 키워드</option>
         {% for k in keywords %}<option value="{{ k.term }}" {{ 'selected' if filters.keyword == k.term }}>{{ k.term }}</option>{% endfor %}
@@ -38,9 +40,17 @@
     {% for p in papers %}{% include "_paper_card.html" %}
     {% else %}
       <div class="empty">
+        {% if filters.source %}
+        <h3>이 출처에서 리뷰한 논문이 아직 없습니다</h3>
+        <p>모은 논문은 관련도 순으로 읽습니다. <a href="{{ url_for('web.queue', source=filters.source.id) }}">대기열에서 이 출처의 논문</a>을 확인해 보세요.</p>
+        {% elif filters.q or filters.keyword or filters.days %}
+        <h3>조건에 맞는 논문이 없습니다</h3>
+        <p>검색어나 필터를 바꿔 보세요.</p>
+        {% else %}
         <h3>아직 리뷰한 논문이 없습니다</h3>
         {% if is_admin %}<p>서버를 켜고 30초 뒤 첫 실행이 시작됩니다. <a href="{{ url_for('web.settings') }}">설정</a>에서 키워드를 확인하거나 arXiv 링크를 직접 넣어 보세요.</p>
         {% else %}<p>새 논문은 정해진 시간마다 자동으로 읽고 이곳에 올라옵니다.</p>{% endif %}
+        {% endif %}
       </div>
     {% endfor %}
     </div>
@@ -64,6 +74,16 @@
       {% for t in surge %}
         <a class="mini" href="{{ t.url }}" target="_blank" rel="noopener"><span class="n">+{{ t.this_year }}</span><span>{{ t.title }}</span></a>
       {% else %}<p class="small muted">다음 실행 때 채워집니다.</p>{% endfor %}
+    </section>
+    <section class="card">
+      <div class="side-h"><h3>출처별 논문</h3>{% if is_admin %}<a href="{{ url_for('web.settings') }}#sources">편집</a>{% endif %}</div>
+      <ul class="kw-vlist collapsed" data-kw-list>
+        {% for s in source_nav if s.count or s.enabled %}
+        <li><a href="{{ url_for('web.index', source=None if filters.source and filters.source.id == s.id else s.id) }}" class="{{ 'on' if filters.source and filters.source.id == s.id }}" title="{{ s.name }}">
+          <span class="t">{% if s.kind == 'arxiv' %}<span class="k">arXiv</span> {% endif %}{{ s.name }}</span><span class="n">{{ s.count }}편</span></a></li>
+        {% else %}<li class="small muted">등록된 출처가 없습니다.</li>{% endfor %}
+      </ul>
+      <button type="button" class="kw-more" data-kw-toggle hidden>전체 보기</button>
     </section>
     <section class="card">
       <div class="side-h"><h3>관심 키워드</h3>{% if is_admin %}<a href="{{ url_for('web.settings') }}#keywords">편집</a>{% endif %}</div>
