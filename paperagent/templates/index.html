@@ -18,14 +18,22 @@
 
 <div class="layout">
   <div>
+    <div class="tabbar">
     <nav class="tabs" aria-label="논문 보기">
       <a href="{{ url_for('web.index', **(filter_args | dict_without('ig', 'sort', 'page'))) }}" class="{{ 'on' if not filters.ig }}">전체 <span>{{ counts.get('done', 0) }}</span></a>
       <a href="{{ url_for('web.index', ig='posted', **(filter_args | dict_without('ig', 'sort', 'page'))) }}" class="{{ 'on' if filters.ig == 'posted' }}">인스타에 올린 논문 <span data-ig-count="posted">{{ ig_counts.posted }}</span></a>
       {% if is_admin %}<a href="{{ url_for('web.index', ig='pending', **(filter_args | dict_without('ig', 'sort', 'page'))) }}" class="{{ 'on' if filters.ig == 'pending' }}">아직 안 올림 <span data-ig-count="pending">{{ ig_counts.pending }}</span></a>{% endif %}
     </nav>
-    <form class="toolbar" method="get">
+    <select name="sort" form="filters" onchange="this.form.submit()" aria-label="정렬" class="sort-select">
+        {% if filters.ig == 'posted' %}<option value="posted" {{ 'selected' if filters.sort == 'posted' }}>최근 업로드순</option>{% endif %}
+        <option value="recent" {{ 'selected' if filters.sort == 'recent' }}>최근 분석순</option>
+        <option value="score" {{ 'selected' if filters.sort == 'score' }}>평점순</option>
+        <option value="relevance" {{ 'selected' if filters.sort == 'relevance' }}>관련도순</option>
+      </select>
+    </div>
+    <form class="toolbar" method="get" id="filters">
       {% if filters.ig %}<input type="hidden" name="ig" value="{{ filters.ig }}">{% endif %}
-      <input type="search" name="q" value="{{ filters.q }}" placeholder="제목이나 요약으로 검색  ( / )" aria-label="검색" data-search>
+      <input type="search" name="q" value="{{ filters.q }}" placeholder="검색 ( / )" aria-label="검색" data-search>
       {{ source_select(source_nav, filters.source) }}
       <select name="keyword" onchange="this.form.submit()" aria-label="키워드">
         <option value="">모든 키워드</option>
@@ -34,12 +42,6 @@
       <select name="days" onchange="this.form.submit()" aria-label="기간">
         <option value="">전체 기간</option>
         {% for d, label in [(1, '24시간'), (7, '7일'), (30, '30일')] %}<option value="{{ d }}" {{ 'selected' if filters.days == d }}>{{ label }}</option>{% endfor %}
-      </select>
-      <select name="sort" onchange="this.form.submit()" aria-label="정렬">
-        {% if filters.ig == 'posted' %}<option value="posted" {{ 'selected' if filters.sort == 'posted' }}>최근 업로드순</option>{% endif %}
-        <option value="recent" {{ 'selected' if filters.sort == 'recent' }}>최근 분석순</option>
-        <option value="score" {{ 'selected' if filters.sort == 'score' }}>평점순</option>
-        <option value="relevance" {{ 'selected' if filters.sort == 'relevance' }}>관련도순</option>
       </select>
     </form>
 

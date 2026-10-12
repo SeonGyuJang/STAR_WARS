@@ -752,6 +752,6 @@ def get_blob(key: str):
     return (bytes(row.data), row.content_type) if row else None
 
 
-def delete_blobs(prefix: str):
+def delete_blobs(prefix: str, exact: bool = False):
     with engine().begin() as conn:
-        conn.execute(delete(blobs).where(blobs.c.key.like(f"{prefix}%")))
+        conn.execute(delete(blobs).where(blobs.c.key == prefix if exact else blobs.c.key.like(f"{prefix}%")))
