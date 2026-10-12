@@ -65,9 +65,36 @@ document.querySelectorAll("[data-kw-list]").forEach((list) => {
   });
 });
 
+// Long lists (trend panels, queue sections): show the first N rows, then "전체 보기"
+document.querySelectorAll("[data-more]").forEach((panel) => {
+  const n = parseInt(panel.dataset.more, 10);
+  const rows = [...panel.querySelectorAll(".trow")];
+  if (rows.length <= n) return;
+  const extra = rows.slice(n);
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "more-btn";
+  const label = `전체 보기 (${rows.length}개)`;
+  const set = (open) => {
+    extra.forEach((r) => (r.hidden = !open));
+    btn.textContent = open ? "접기" : label;
+    btn.setAttribute("aria-expanded", open);
+  };
+  btn.addEventListener("click", () => {
+    const open = btn.getAttribute("aria-expanded") !== "true";
+    set(open);
+    if (!open) panel.scrollIntoView({ block: "nearest" });
+  });
+  rows[rows.length - 1].after(btn);
+  set(location.hash === `#${panel.id}`);
+});
+
 // Queue: select all in a section
 document.querySelectorAll("[data-pick-all]").forEach((box) => {
   box.addEventListener("change", () => {
-    box.closest("form").querySelectorAll("input[name=paper_id]").forEach((c) => (c.checked = box.checked));
+    // only the rows on screen, so folded rows are never picked by surprise
+    box.closest("form").querySelectorAll("input[name=paper_id]").forEach((c) => {
+      if (!c.closest(".trow").hidden) c.checked = box.checked;
+    });
   });
 });

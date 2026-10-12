@@ -362,6 +362,21 @@ def queue_papers(paper_ids, priority: int = 1):
         return result.rowcount
 
 
+def apply_threshold(min_relevance: float) -> dict:
+    """Keep the queue in line with the current minimum relevance. Papers rated
+    under it go to 'skipped' and ones at or above it come back to 'screened'.
+    Hand-picked papers (priority > 0) are never moved."""
+    auto = func.coalesce(papers.c.priority, 0) == 0
+    with engine().begin() as conn:
+        down = conn.execute(update(papers).where(papers.c.status == "screened", auto, papers.c.relevance.is_not(None),
+                                                 papers.c.relevance < min_relevance)
+                            .values(status="skipped", updated_at=now_iso())).rowcount
+        up = conn.execute(update(papers).where(papers.c.status == "skipped", auto,
+                                               papers.c.relevance >= min_relevance)
+                          .values(status="screened", updated_at=now_iso())).rowcount
+    return {"skipped": down, "screened": up}
+
+
 def keyword_counts():
     """Reviewed papers per keyword, for the sidebar."""
     with engine().connect() as conn:

@@ -18,7 +18,7 @@
 
 <div class="side">
 {% for status, title, desc, pickable in sections if lists[status] %}
-  <section class="card panel" id="{{ status }}">
+  <section class="card panel" id="{{ status }}" data-more="5">
     <div class="panel-h"><h2>{{ title }}</h2><span>{{ lists[status]|length }}편</span></div>
     <p class="desc">{{ desc }}</p>
     {% set can_pick = is_admin and pickable %}

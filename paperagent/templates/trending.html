@@ -29,7 +29,7 @@
 </section>
 
 <div class="trend-grid">
-  <section class="card panel" id="hf">
+  <section class="card panel" id="hf" data-more="5">
     <div class="panel-h"><h2>오늘 화제인 논문</h2>{{ updated(hf_at) }}</div>
     <p class="desc">Hugging Face Daily Papers 추천 수 기준</p>
     {% for t in hf or [] %}
@@ -41,7 +41,7 @@
     {% else %}<p class="desc">다음 실행 때 채워집니다.</p>{% endfor %}
   </section>
 
-  <section class="card panel" id="surge">
+  <section class="card panel" id="surge" data-more="5">
     <div class="panel-h"><h2>인용이 빠르게 느는 논문</h2>{{ updated(surge_at) }}</div>
     <p class="desc">최근 3년 논문 중 올해 인용 속도가 작년보다 빠른 순</p>
     {% for t in surge or [] %}
@@ -51,7 +51,7 @@
     {% else %}<p class="desc">다음 실행 때 채워집니다.</p>{% endfor %}
   </section>
 
-  <section class="card panel" id="active">
+  <section class="card panel" id="active" data-more="5">
     <div class="panel-h"><h2>많이 인용된 최근 논문</h2>{{ updated(active_at) }}</div>
     <p class="desc">최근 1년, 관심 키워드별 누적 인용 순</p>
     {% for t in active or [] %}
@@ -61,7 +61,7 @@
     {% else %}<p class="desc">다음 실행 때 채워집니다.</p>{% endfor %}
   </section>
 
-  <section class="card panel" id="tracked">
+  <section class="card panel" id="tracked" data-more="5">
     <div class="panel-h"><h2>리뷰한 논문의 인용 변화</h2>{{ updated(tracked_at) }}</div>
     <p class="desc">지난 7일 동안 늘어난 인용 수</p>
     {% for t in tracked or [] %}

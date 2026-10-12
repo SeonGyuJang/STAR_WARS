@@ -173,6 +173,70 @@ def test_skipped_papers_can_be_picked_for_reading(fresh_db):
     assert read == [low]
 
 
+def test_only_papers_at_or_above_threshold_are_read_automatically(fresh_db):
+    # leftovers from older runs: 'screened' under an earlier, lower threshold
+    rels = {"arxiv:2610.00011": 9.5, "arxiv:2610.00012": 8.0, "arxiv:2610.00013": 6.5,
+            "arxiv:2610.00014": 5.0, "arxiv:2610.00015": 7.0}
+    for uid, rel in rels.items():
+        fresh_db.insert_paper(_paper(uid))
+        fresh_db.update_paper(fresh_db.get_paper_by_uid(uid)["id"], status="screened", relevance=rel)
+    fresh_db.set_setting("min_relevance", 7.0)
+    fresh_db.set_setting("max_full_reads", 5)
+    read = []
+    with mock.patch.object(pipeline, "collect", return_value=0), mock.patch.object(pipeline, "resolve_journals"), \
+         mock.patch.object(pipeline, "screen_new", return_value=0), mock.patch.object(pipeline.trending, "refresh_all"), \
+         mock.patch.object(pipeline, "process_paper", side_effect=lambda p, *a: read.append(p["relevance"]) or 0.1):
+        pipeline.run("test")
+    assert read == [9.5, 8.0, 7.0]  # 5 slots, but only three papers reach 7
+    for uid, rel in rels.items():
+        if rel < 7:
+            assert fresh_db.get_paper_by_uid(uid)["status"] == "skipped"
+
+
+def test_max_full_reads_caps_automatic_reviews(fresh_db):
+    for i, rel in enumerate([9.0, 8.5, 8.0, 7.5]):
+        uid = f"arxiv:2610.0002{i}"
+        fresh_db.insert_paper(_paper(uid))
+        fresh_db.update_paper(fresh_db.get_paper_by_uid(uid)["id"], status="screened", relevance=rel)
+    fresh_db.set_setting("max_full_reads", 2)
+    read = []
+    with mock.patch.object(pipeline, "collect", return_value=0), mock.patch.object(pipeline, "resolve_journals"), \
+         mock.patch.object(pipeline, "screen_new", return_value=0), mock.patch.object(pipeline.trending, "refresh_all"), \
+         mock.patch.object(pipeline, "process_paper", side_effect=lambda p, *a: read.append(p["relevance"]) or 0.1):
+        pipeline.run("test")
+    assert read == [9.0, 8.5]
+
+
+def test_changing_threshold_moves_papers_between_queues(fresh_db):
+    for uid, status, rel in [("arxiv:2610.00031", "screened", 6.0), ("arxiv:2610.00032", "skipped", 6.0),
+                             ("arxiv:2610.00033", "screened", 4.0)]:
+        fresh_db.insert_paper(_paper(uid))
+        fresh_db.update_paper(fresh_db.get_paper_by_uid(uid)["id"], status=status, relevance=rel)
+    picked = fresh_db.get_paper_by_uid("arxiv:2610.00033")["id"]
+    fresh_db.queue_papers([picked])  # hand-picked papers stay put
+    c = _client()
+    c.post("/settings/pipeline", data={"_csrf": _csrf(c), "interval_hours": 12, "lookback_days": 3,
+                                       "max_per_source": 40, "max_full_reads": 3, "min_relevance": 5})
+    assert fresh_db.get_paper_by_uid("arxiv:2610.00032")["status"] == "screened"
+    c.post("/settings/pipeline", data={"_csrf": _csrf(c), "interval_hours": 12, "lookback_days": 3,
+                                       "max_per_source": 40, "max_full_reads": 3, "min_relevance": 8})
+    assert fresh_db.get_paper_by_uid("arxiv:2610.00031")["status"] == "skipped"
+    assert fresh_db.get_paper_by_uid("arxiv:2610.00032")["status"] == "skipped"
+    assert fresh_db.get_paper(picked)["status"] == "screened"
+
+
+def test_long_lists_are_collapsible(fresh_db):
+    fresh_db.save_trending("hf_daily", [{"title": f"Hot {i}", "url": "https://x", "upvotes": i, "comments": 0,
+                                         "authors": ["A"], "arxiv_id": "2610.00001"} for i in range(20)])
+    html = _client().get("/trending").get_data(as_text=True)
+    assert 'id="hf" data-more="5"' in html
+    for i in range(3):
+        uid = f"arxiv:2610.0004{i}"
+        fresh_db.insert_paper(_paper(uid))
+        fresh_db.update_paper(fresh_db.get_paper_by_uid(uid)["id"], status="screened", relevance=9.0)
+    assert 'id="screened" data-more="5"' in _client().get("/queue").get_data(as_text=True)
+
+
 def test_pick_now_starts_reading(fresh_db):
     fresh_db.insert_paper(_paper("arxiv:2610.00006"))
     pid = fresh_db.get_paper_by_uid("arxiv:2610.00006")["id"]

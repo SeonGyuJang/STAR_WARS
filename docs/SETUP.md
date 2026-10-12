@@ -97,7 +97,7 @@ WRITER_MODEL=claude-haiku-5-5  # 한국어 문장이 약간 단조로워질 수 
 | `SCREEN_MODEL` | | `claude-haiku-5-5` | 관련도 판단 모델 |
 | `JUDGE_EFFORT` / `READER_EFFORT` / `WRITER_EFFORT` | | `high` / `low` / `low` | 모델이 생각하는 양 (`low`·`medium`·`high`) |
 | `FETCH_INTERVAL_HOURS` | | `12` | 실행 간격 (처음 기본값. 이후엔 대시보드 설정이 우선) |
-| `MAX_FULL_READS` | | `3` | 한 번에 정독할 논문 수 (위와 같음) |
+| `MAX_FULL_READS` | | `3` | 한 번에 정독할 논문 수. 최소 관련도 이상인 논문 중 관련도 높은 순으로 최대 이만큼 읽습니다 (위와 같음) |
 | `MIN_RELEVANCE` | | `7` | 정독할 최소 관련도 (위와 같음) |
 | `LOOKBACK_DAYS` / `MAX_PER_SOURCE` | | `3` / `40` | 수집 기간, 소스당 최대 수집 수 |
 | `DATABASE_URL` | Heroku 자동 | (로컬 SQLite) | Postgres 주소. Heroku Postgres 애드온이 자동으로 넣음 |
