@@ -230,11 +230,12 @@ def test_long_lists_are_collapsible(fresh_db):
                                          "authors": ["A"], "arxiv_id": "2610.00001"} for i in range(20)])
     html = _client().get("/trending").get_data(as_text=True)
     assert 'id="hf" data-more="5"' in html
-    for i in range(3):
+    for i in range(6):  # 3 go into the reading plan (never folded), the rest wait below it
         uid = f"arxiv:2610.0004{i}"
         fresh_db.insert_paper(_paper(uid))
         fresh_db.update_paper(fresh_db.get_paper_by_uid(uid)["id"], status="screened", relevance=9.0)
-    assert 'id="screened" data-more="5"' in _client().get("/queue").get_data(as_text=True)
+    html = _client().get("/queue").get_data(as_text=True)
+    assert 'id="screened" data-more="5"' in html and 'id="plan" data-more' not in html
 
 
 def test_pick_now_starts_reading(fresh_db):

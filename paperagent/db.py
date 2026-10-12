@@ -73,7 +73,8 @@ papers = Table(
     Column("reviewed_at", String(32), index=True),
     # when the admin marked the card news as posted on Instagram (None = not yet)
     Column("instagram_posted_at", String(32)),
-    # > 0 when an admin picked the paper by hand (read first, even if below the relevance threshold)
+    # > 0 when an admin picked the paper by hand (read first, even if below the relevance threshold);
+    # -1 when an admin set it aside (stays under 관련도 미달 whatever its relevance)
     Column("priority", Integer, default=0),
     Column("card_paths", Text, nullable=False, default="[]"),
     Column("citation_count", Integer),
@@ -91,6 +92,8 @@ runs = Table(
     Column("finished_at", String(32)),
     Column("stats", Text, nullable=False, default="{}"),
     Column("log", Text, nullable=False, default=""),
+    # live progress for the dashboard console: phase, papers to read, current one, stage
+    Column("progress", Text),
 )
 
 settings_t = Table(
@@ -440,6 +443,15 @@ def source_filter(src: dict):
     return cond
 
 
+def ids_from_source(src: dict, paper_ids) -> set:
+    """Which of these papers come from the source."""
+    if not paper_ids:
+        return set()
+    with engine().connect() as conn:
+        rows = conn.execute(select(papers.c.id).where(papers.c.id.in_(list(paper_ids)), source_filter(src))).all()
+    return {r[0] for r in rows}
+
+
 def source_counts():
     """{source_id: {status: n}} for every configured source."""
     out = {}
@@ -515,6 +527,14 @@ def apply_threshold(min_relevance: float) -> dict:
                                                papers.c.relevance >= min_relevance)
                           .values(status="screened", updated_at=now_iso())).rowcount
     return {"skipped": down, "screened": up}
+
+
+def skip_papers(paper_ids) -> int:
+    """Take papers out of the reading plan (they stay pickable under 관련도 미달).
+    priority -1 marks them as set aside by hand, so apply_threshold leaves them there."""
+    with engine().begin() as conn:
+        return conn.execute(update(papers).where(papers.c.id.in_(list(paper_ids)), papers.c.status.in_(("screened", "new", "error")))
+                            .values(status="skipped", priority=-1, updated_at=now_iso())).rowcount
 
 
 def keyword_counts():
@@ -609,9 +629,48 @@ def append_run_log(run_id: int, line: str):
 
 
 def finish_run(run_id: int, status: str, stats: dict):
+    """Record the outcome. A run the admin stopped keeps its 'aborted' status;
+    only its stats are filled in."""
     with engine().begin() as conn:
-        conn.execute(update(runs).where(runs.c.id == run_id)
+        conn.execute(update(runs).where(runs.c.id == run_id, runs.c.status == "running")
                      .values(status=status, finished_at=now_iso(), stats=json.dumps(stats)))
+        conn.execute(update(runs).where(runs.c.id == run_id, runs.c.status != "running")
+                     .values(stats=json.dumps(stats)))
+
+
+def get_run(run_id: int):
+    with engine().connect() as conn:
+        row = conn.execute(select(runs).where(runs.c.id == run_id)).first()
+    if not row:
+        return None
+    d = dict(row._mapping)
+    d["stats"] = json.loads(d["stats"] or "{}")
+    d["progress"] = json.loads(d["progress"] or "{}")
+    return d
+
+
+def run_status(run_id: int):
+    with engine().connect() as conn:
+        return conn.execute(select(runs.c.status).where(runs.c.id == run_id)).scalar()
+
+
+def set_run_progress(run_id: int, progress: dict):
+    with engine().begin() as conn:
+        conn.execute(update(runs).where(runs.c.id == run_id).values(progress=json.dumps(progress, ensure_ascii=False)))
+
+
+def abort_run(run_id: int, reason: str) -> bool:
+    """Stop a run now, from the dashboard: it no longer counts as running, papers
+    it was reading go back to the queue, and its thread (if it is still alive
+    somewhere) stops at its next step. Returns False if it was not running."""
+    with engine().begin() as conn:
+        done = conn.execute(update(runs).where(runs.c.id == run_id, runs.c.status == "running")
+                            .values(status="aborted", finished_at=now_iso())).rowcount
+        if done:
+            conn.execute(update(papers).where(papers.c.status == "reading").values(status="screened"))
+    if done:
+        append_run_log(run_id, reason)
+    return bool(done)
 
 
 def recent_runs(limit=10):
@@ -621,6 +680,7 @@ def recent_runs(limit=10):
     for r in rows:
         d = dict(r._mapping)
         d["stats"] = json.loads(d["stats"] or "{}")
+        d["progress"] = json.loads(d.get("progress") or "{}")
         out.append(d)
     return out
 

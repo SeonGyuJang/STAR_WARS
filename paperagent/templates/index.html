@@ -25,7 +25,7 @@
     </nav>
     <form class="toolbar" method="get">
       {% if filters.ig %}<input type="hidden" name="ig" value="{{ filters.ig }}">{% endif %}
-      <input type="search" name="q" value="{{ filters.q }}" placeholder="제목이나 요약으로 검색">
+      <input type="search" name="q" value="{{ filters.q }}" placeholder="제목이나 요약으로 검색  ( / )" aria-label="검색" data-search>
       {{ source_select(source_nav, filters.source) }}
       <select name="keyword" onchange="this.form.submit()" aria-label="키워드">
         <option value="">모든 키워드</option>
@@ -43,10 +43,11 @@
       </select>
     </form>
 
-    <div class="card plist">
+    {% if is_admin and papers and filters.ig != 'posted' %}<p class="list-hint"><span class="hint-box" aria-hidden="true"></span><span>인스타에 올렸다면 왼쪽 칸을 체크하세요. 취소는 <a href="{{ url_for('web.index', ig='posted') }}">인스타에 올린 논문</a> 탭에서 할 수 있어요.</span></p>{% endif %}
+    <div class="plist {{ 'admin' if is_admin }}">
     {% for p in papers %}{% include "_paper_card.html" %}
     {% else %}
-      <div class="empty">
+      <div class="card empty">
         {% if filters.source %}
         <h3>이 출처에서 리뷰한 논문이 아직 없습니다</h3>
         <p>모은 논문은 관련도 순으로 읽습니다. <a href="{{ url_for('web.queue', source=filters.source.id) }}">대기열에서 이 출처의 논문</a>을 확인해 보세요.</p>
