@@ -578,3 +578,19 @@ body.console-open { overflow: hidden; }
 .upload-row { display: flex; gap: 8px; }
 .upload-row input { flex: 1; min-width: 0; }
 @media (max-width: 640px) { .upload-row { flex-direction: column; } }
+
+/* ---------- Instagram publishing ---------- */
+.ig-pub { margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.ig-pub form { margin: 0; }
+.ig-pub form[hidden] { display: none; }
+.ig-pub .ig-btn { background: linear-gradient(90deg, #d62976, #962fbf 60%, #4f5bd5); border-color: transparent; color: #fff; }
+.ig-pub.compact { margin: 0; }
+.ig-pub.compact .ig-btn { background: none; color: #c13584; border-color: color-mix(in srgb, #c13584 45%, var(--line)); height: 28px; padding: 0 10px; font-size: 12.5px; }
+.ig-pub-state { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--body); }
+.ig-pub-state a { color: var(--ok); font-weight: 600; }
+.ig-pub-state .err { color: var(--danger); }
+.spin { width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.ig-hint { margin-top: 12px; }
+.ig-link { color: var(--ok) !important; font-weight: 600 !important; }
+.ok-text { color: var(--ok); font-weight: 600; }

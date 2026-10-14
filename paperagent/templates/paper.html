@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import bar, csrf, src, ig_check with context %}
+{% from "_macros.html" import bar, csrf, src, ig_check, ig_publish with context %}
 {% block title %}{{ r.title_ko or p.title }} · {{ site_name }}{% endblock %}
 {% block meta %}
 <meta property="og:title" content="{{ r.title_ko or p.title }}">
@@ -115,10 +115,14 @@
         <div class="cap-label">캡션</div>
         <textarea class="caption" readonly rows="8" id="caption">{{ caption }}</textarea>
       {% endif %}
+      {% if is_admin and p.card_paths %}
+        {% if instagram_ready %}{{ ig_publish(p) }}
+        {% elif not p.instagram_posted_at %}<p class="small muted ig-hint">설정에서 인스타그램 계정을 연결하면 버튼 한 번으로 카드뉴스와 캡션을 바로 게시할 수 있어요.</p>{% endif %}
+      {% endif %}
       {% if is_admin %}<div class="ig-row {{ 'posted' if p.instagram_posted_at }}">
-        {% if p.instagram_posted_at %}<span class="tick" aria-hidden="true"></span><span><b>인스타 업로드 완료</b> · {{ p.instagram_posted_at | kst('%m.%d') }}<br>
+        {% if p.instagram_posted_at %}<span class="tick" aria-hidden="true"></span><span><b>인스타 업로드 완료</b> · {{ p.instagram_posted_at | kst('%m.%d') }}{% if p.instagram_permalink %} · <a href="{{ p.instagram_permalink }}" target="_blank" rel="noopener">게시물 보기</a>{% endif %}<br>
           <span class="small muted">취소는 <a href="{{ url_for('web.index', ig='posted') }}#p-{{ p.id }}">인스타에 올린 논문</a> 탭에서 할 수 있어요.</span></span>
-        {% else %}{{ ig_check(p) }}<span class="small">인스타에 올렸다면 체크하세요</span>{% endif %}
+        {% else %}{{ ig_check(p) }}<span class="small">{{ '직접 올렸다면 체크하세요' if instagram_ready else '인스타에 올렸다면 체크하세요' }}</span>{% endif %}
       </div>
       {% elif p.instagram_posted_at %}<p class="small muted" style="margin-top: 10px">{{ p.instagram_posted_at | kst('%Y.%m.%d') }} 인스타에 게시했습니다.</p>{% endif %}
       <div class="row-actions">

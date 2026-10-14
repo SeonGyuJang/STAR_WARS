@@ -109,6 +109,16 @@ SITE_NAME = os.environ.get("SITE_NAME", "STAR WARS")
 # STAR WARS = Smart Topic Analysis & Rating : Worthwise Article Research System
 CARD_BRAND = os.environ.get("CARD_BRAND", "STAR WARS")
 CARD_HANDLE = os.environ.get("CARD_HANDLE", "@starwars.research")
+# Posting card news straight to Instagram (Graph API content publishing).
+# Needs a professional account connected to a Meta app; see docs/SETUP.md.
+INSTAGRAM_USER_ID = os.environ.get("INSTAGRAM_USER_ID", "")
+INSTAGRAM_ACCESS_TOKEN = os.environ.get("INSTAGRAM_ACCESS_TOKEN", "")
+# graph.instagram.com for "Instagram API with Instagram Login" tokens,
+# graph.facebook.com for "Instagram API with Facebook Login" (Page) tokens
+INSTAGRAM_GRAPH_HOST = os.environ.get("INSTAGRAM_GRAPH_HOST", "graph.instagram.com")
+INSTAGRAM_API_VERSION = os.environ.get("INSTAGRAM_API_VERSION", "v26.0")
+# Public address of this dashboard; Instagram downloads the card images from it.
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "")
 # Instagram allows 5 hashtags per post (since Dec 2025). The fixed, widely
 # searched ones come first; the AI adds tags for the paper's own field.
 CARD_HASHTAG_LIMIT = int(os.environ.get("CARD_HASHTAG_LIMIT", "5"))
