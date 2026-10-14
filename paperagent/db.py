@@ -73,6 +73,11 @@ papers = Table(
     Column("reviewed_at", String(32), index=True),
     # when the admin marked the card news as posted on Instagram (None = not yet)
     Column("instagram_posted_at", String(32)),
+    # posting through the API: publishing / posted / error, and what Instagram returned
+    Column("instagram_status", String(20)),
+    Column("instagram_error", Text),
+    Column("instagram_media_id", String(64)),
+    Column("instagram_permalink", Text),
     # > 0 when an admin picked the paper by hand (read first, even if below the relevance threshold);
     # -1 when an admin set it aside (stays under 관련도 미달 whatever its relevance)
     Column("priority", Integer, default=0),

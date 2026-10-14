@@ -10,7 +10,7 @@ from functools import wraps
 from flask import (Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, session,
                    url_for)
 
-from . import agent, cardnews, config, db, pdfs, pipeline, scheduler, storage
+from . import agent, cardnews, config, db, instagram, pdfs, pipeline, scheduler, storage
 from .collectors import arxiv as arxiv_collector
 from .collectors import venues
 
@@ -171,14 +171,14 @@ def index():
     days = request.args.get("days", type=int)
     page = max(request.args.get("page", 1, type=int), 1)
     source = _source_from_args()
-    instagram = request.args.get("ig") if request.args.get("ig") in ("posted", "pending") else None
-    if instagram == "pending" and not is_admin():
-        instagram = None
-    if instagram == "posted" and "sort" not in request.args:
+    ig_tab = request.args.get("ig") if request.args.get("ig") in ("posted", "pending") else None
+    if ig_tab == "pending" and not is_admin():
+        ig_tab = None
+    if ig_tab == "posted" and "sort" not in request.args:
         sort = "posted"
     per_page = 24
     papers = db.query_papers(keyword=keyword, search=search, sort=sort, days=days, limit=per_page + 1,
-                             offset=(page - 1) * per_page, source=source, instagram=instagram)
+                             offset=(page - 1) * per_page, source=source, instagram=ig_tab)
     has_more = len(papers) > per_page
     hf, _ = db.get_trending("hf_daily")
     surge, _ = db.get_trending("surge")
@@ -190,10 +190,11 @@ def index():
         keywords=db.list_keywords(),
         keyword_counts=db.keyword_counts(),
         counts=db.paper_counts(),
-        filters={"keyword": keyword, "sort": sort, "q": search or "", "days": days, "source": source, "ig": instagram},
+        filters={"keyword": keyword, "sort": sort, "q": search or "", "days": days, "source": source, "ig": ig_tab},
         filter_args={k: v for k, v in {"keyword": keyword, "sort": sort, "q": search, "days": days,
-                                       "source": source["id"] if source else None, "ig": instagram}.items() if v},
+                                       "source": source["id"] if source else None, "ig": ig_tab}.items() if v},
         ig_counts=db.instagram_counts(),
+        instagram_ready=is_admin() and instagram.configured(),
         source_nav=_source_nav(("done",)),
         hf=(hf or [])[:6],
         surge=(surge or [])[:5],
@@ -212,7 +213,7 @@ def paper_detail(paper_id):
         caption = cardnews.build_caption(p, p["review"])
     figures = [f for f in (p.get("review") or {}).get("_figures", []) if f.get("key")]
     return render_template("paper.html", p=p, r=p.get("review") or {}, caption=caption, figures=figures,
-                           share_url=request.url)
+                           share_url=request.url, instagram_ready=is_admin() and instagram.configured())
 
 
 @bp.route("/trending")
@@ -320,6 +321,19 @@ def file_card(paper_id, n):
                         as_attachment=request.args.get("dl") == "1")
 
 
+@bp.route("/files/card/<int:paper_id>/<int:n>.jpg")
+def file_card_jpeg(paper_id, n):
+    """A card as JPEG - the format Instagram reliably accepts for publishing."""
+    item = storage.get(f"cards/{paper_id}/card_{n:02d}.png")
+    if item is None:
+        abort(404)
+    from PIL import Image
+
+    out = io.BytesIO()
+    Image.open(io.BytesIO(item[0])).convert("RGB").save(out, "JPEG", quality=92, optimize=True)
+    return send_file(io.BytesIO(out.getvalue()), mimetype="image/jpeg", max_age=86400)
+
+
 @bp.route("/files/cards/<int:paper_id>.zip")
 def file_cards_zip(paper_id):
     p = db.get_paper(paper_id)
@@ -360,6 +374,8 @@ def settings():
         on_heroku=config.ON_HEROKU,
         scheduler_enabled=config.SCHEDULER_ENABLED,
         timezone_name=str(config.TIMEZONE),
+        instagram_ready=instagram.configured(),
+        instagram_public=config.PUBLIC_BASE_URL,
     )
 
 
@@ -635,6 +651,63 @@ def rerender(paper_id):
     return redirect(url_for("web.paper_detail", paper_id=paper_id) + "#cards")
 
 
+@bp.route("/paper/<int:paper_id>/instagram/publish", methods=["POST"])
+@admin_required
+def instagram_publish(paper_id):
+    """Post the card news and caption to Instagram (in the background)."""
+    p = db.get_paper(paper_id)
+    if not p or p["status"] != "done":
+        abort(404)
+    want_json = request.accept_mimetypes.best == "application/json"
+    try:
+        if not instagram.configured():
+            raise instagram.InstagramError("인스타그램 계정이 연결되지 않았습니다. 설정의 '인스타그램 연결'을 확인해 주세요.")
+        instagram.public_base(request.host_url)
+        if not p.get("card_paths"):
+            raise instagram.InstagramError("카드뉴스가 없습니다. '카드 다시 만들기'를 먼저 해 주세요.")
+        started = instagram.publish_in_background(paper_id, request.host_url)
+    except instagram.InstagramError as exc:
+        if want_json:
+            return jsonify(ok=False, error=str(exc)), 400
+        flash(str(exc), "error")
+        return redirect(url_for("web.paper_detail", paper_id=paper_id) + "#cards")
+    msg = "인스타그램에 올리는 중입니다. 카드 9장을 처리하는 데 1분 정도 걸려요." if started else "이미 올리는 중입니다."
+    if want_json:
+        return jsonify(ok=True, message=msg)
+    flash(msg, "ok")
+    return redirect(url_for("web.paper_detail", paper_id=paper_id) + "#cards")
+
+
+@bp.route("/api/paper/<int:paper_id>/instagram")
+@admin_required
+def instagram_status(paper_id):
+    p = db.get_paper(paper_id) or abort(404)
+    return jsonify(status=p.get("instagram_status"), error=p.get("instagram_error"),
+                   permalink=p.get("instagram_permalink"), posted_at=p.get("instagram_posted_at"))
+
+
+@bp.route("/settings/instagram/check", methods=["POST"])
+@admin_required
+def instagram_check():
+    try:
+        acct = instagram.account()
+        flash(f"인스타그램 @{acct.get('username')} 계정에 연결되어 있습니다.", "ok")
+    except instagram.InstagramError as exc:
+        flash(f"인스타그램 연결 확인 실패: {exc}", "error")
+    return redirect(url_for("web.settings") + "#instagram")
+
+
+@bp.route("/settings/instagram/refresh", methods=["POST"])
+@admin_required
+def instagram_refresh():
+    try:
+        days = (instagram.refresh_token() or 0) // 86400
+        flash(f"인스타그램 토큰을 갱신했습니다{f' ({days}일 유효)' if days else ''}.", "ok")
+    except instagram.InstagramError as exc:
+        flash(f"토큰 갱신 실패: {exc}", "error")
+    return redirect(url_for("web.settings") + "#instagram")
+
+
 @bp.route("/paper/<int:paper_id>/instagram", methods=["POST"])
 @admin_required
 def toggle_instagram(paper_id):
@@ -645,6 +718,8 @@ def toggle_instagram(paper_id):
     want = request.form.get("posted")
     posted = (want == "1") if want in ("0", "1") else not p.get("instagram_posted_at")
     when = db.set_instagram_posted(paper_id, posted)
+    if not posted:
+        db.update_paper(paper_id, instagram_status=None, instagram_error=None)
     if request.accept_mimetypes.best == "application/json":
         return jsonify({"posted": bool(when), "posted_at": when, "label": to_local(when, "%m.%d") if when else None,
                         "counts": db.instagram_counts()})

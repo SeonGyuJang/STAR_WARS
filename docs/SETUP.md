@@ -90,6 +90,9 @@ WRITER_MODEL=claude-haiku-5-5  # 한국어 문장이 약간 단조로워질 수 
 | `SEMANTIC_SCHOLAR_API_KEY` | | | 인용 추적용. [신청 폼](https://www.semanticscholar.org/product/api)에서 발급 |
 | `CARD_HANDLE` | 권장 | `@starwars.research` | 카드뉴스에 찍히는 인스타 계정 |
 | `CARD_BASE_HASHTAGS` | | `#인공지능,#AI,#논문리뷰` | 캡션에 항상 붙는 해시태그 (쉼표로 구분). 나머지는 AI가 논문 분야에 맞게 고릅니다 |
+| `INSTAGRAM_USER_ID` | 자동 게시 시 | | 인스타그램 프로페셔널 계정 ID (5장 참고) |
+| `INSTAGRAM_ACCESS_TOKEN` | 자동 게시 시 | | 게시 권한이 있는 액세스 토큰 |
+| `PUBLIC_BASE_URL` | 자동 게시 시 | | 대시보드의 공개 주소. 인스타그램이 여기서 카드 이미지를 내려받습니다 |
 | `CARD_HASHTAG_LIMIT` | | `5` | 캡션 해시태그 최대 개수. 인스타그램은 2025년 12월부터 게시물당 5개까지만 허용합니다 |
 | `CARD_BRAND` | | `STAR WARS` | 카드뉴스 로고 글자 |
 | `SITE_NAME` | | `STAR WARS` | 대시보드 이름 |
@@ -247,12 +250,35 @@ heroku pg:backups:download                                        # 내려받기
 
 ## 5. 인스타그램 업로드
 
-지금은 **수동 업로드**입니다.
+두 가지 방법이 있습니다.
 
-1. 논문 상세 페이지에서 **전체 받기**를 눌러 카드 9장과 `caption.txt`가 든 ZIP을 받습니다.
-2. 인스타에 이미지 9장을 순서대로 올리고, **캡션 복사**로 복사한 캡션을 붙여 넣습니다.
+**A. 버튼 한 번으로 자동 게시 (인스타그램 연결 시)**
+논문 페이지나 오늘의 논문 목록에서 **인스타에 바로 올리기**를 누르면, 카드 9장이 한 게시물(캐러셀)로 올라가고 캡션(해시태그 5개 포함)이 함께 작성됩니다. 게시가 끝나면 카드가 초록색으로 바뀌고 **인스타에서 보기** 링크가 생깁니다.
 
-자동 게시는 Instagram Graph API로 만들 수 있습니다. 다만 비즈니스·크리에이터 계정, Facebook 페이지 연결, Meta 앱 심사가 필요해서 이번 범위에는 넣지 않았습니다.
+**B. 직접 올리기**
+**전체 받기**로 카드 9장과 `caption.txt`가 든 ZIP을 받아 인스타에 순서대로 올리고 **캡션 복사**로 캡션을 붙여 넣은 뒤, 목록에서 왼쪽 칸을 체크합니다.
+
+### 인스타그램 자동 게시 연결하기
+
+Meta의 Instagram API(콘텐츠 게시)를 씁니다. 처음 한 번만 설정하면 됩니다.
+
+1. **인스타 계정을 프로페셔널 계정으로 전환**: 인스타 앱 → 설정 → 계정 유형 및 도구 → 프로페셔널 계정(비즈니스 또는 크리에이터).
+2. **Meta 앱 만들기**: [developers.facebook.com](https://developers.facebook.com) → 내 앱 → 앱 만들기 → 사용 사례에서 **Instagram API**(Instagram 로그인 사용)를 고릅니다.
+3. **계정 연결과 토큰 발급**: 앱의 *Instagram 로그인으로 API 설정* 화면에서 인스타 계정을 추가하고 **액세스 토큰 생성**을 누릅니다. `instagram_business_basic`, `instagram_business_content_publish` 권한을 허용하세요. 화면에 나오는 **인스타그램 사용자 ID**와 **토큰**을 복사합니다. 내 계정에만 올리는 용도라면 보통 앱 검수 없이 개발 모드로 쓸 수 있습니다.
+4. **환경 변수 설정** (Heroku 예시)
+   ```bash
+   heroku config:set INSTAGRAM_USER_ID=1784xxxxxxxxxxx \
+                     INSTAGRAM_ACCESS_TOKEN=IGAA... \
+                     PUBLIC_BASE_URL=https://내앱이름.herokuapp.com
+   ```
+5. 대시보드 **설정 → 인스타그램 연결**에서 **연결 확인**을 누르면 연결된 계정 이름이 나옵니다.
+
+알아 둘 점
+- 인스타그램 서버가 카드 이미지를 **우리 서버 주소에서 직접 내려받습니다**. 그래서 `http://127.0.0.1`에서는 게시할 수 없고, Heroku처럼 외부에서 열리는 https 주소에서 눌러야 합니다.
+- 토큰은 60일 동안 유효합니다. 설정의 **토큰 갱신**을 누르면 60일 늘어납니다.
+- 캐러셀은 최대 10장, 하루 게시 한도가 있습니다(Meta 문서 기준 24시간 100개 수준).
+- API로 올린 게시물을 지우는 기능은 인스타그램이 제공하지 않으므로, 삭제는 인스타 앱에서 해 주세요. 대시보드의 **업로드 취소**는 표시만 지웁니다.
+- Facebook 페이지와 연결된 토큰(Instagram API with Facebook Login)을 쓰는 경우 `INSTAGRAM_GRAPH_HOST=graph.facebook.com`으로 바꿔 주세요.
 
 ---
 
