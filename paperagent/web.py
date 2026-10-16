@@ -285,6 +285,22 @@ def tech_run():
     return redirect(request.referrer or url_for("web.tech_index"))
 
 
+@bp.route("/tech/<int:item_id>/reprocess", methods=["POST"])
+@admin_required
+def tech_reprocess(item_id):
+    """Read the item again from scratch (source, original, pictures, clips) and rewrite its post and cards."""
+    if not db.get_tech(item_id):
+        abort(404)
+    if not _api_ready_or_flash():
+        return redirect(url_for("web.tech_detail", item_id=item_id))
+    if pipeline.run_in_background("manual", tech_only=True, tech_ids=[item_id]):
+        flash("이 소식을 원문부터 다시 읽고 있습니다. 1~2분 뒤 새로고침해 주세요.", "ok")
+    else:
+        db.queue_tech([item_id])
+        flash("다른 실행이 진행 중입니다. 대기열 맨 앞에 넣었습니다.", "warn")
+    return redirect(url_for("web.tech_detail", item_id=item_id))
+
+
 @bp.route("/tech/<int:item_id>/rerender", methods=["POST"])
 @admin_required
 def tech_rerender(item_id):

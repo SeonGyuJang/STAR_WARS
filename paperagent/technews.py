@@ -72,6 +72,7 @@ def _good_image(data: bytes):
 def fetch_media(item_id: int, context: dict, say=log.info) -> dict:
     """Store up to two pictures and one demo clip. Returns {"images": [keys], "video": key|None, ...urls}."""
     out = {"images": [], "image_urls": [], "video": None, "video_url": None}
+    storage.delete_prefix(f"tech/{item_id}/media/")  # read again: no leftovers from the last time
     for url in context.get("images", []):
         if len(out["images"]) >= 2:
             break

@@ -324,12 +324,27 @@ def _from_github(full: str):
     return readme[:CONTEXT_CHARS], images, videos, clip_notes(readme, base, videos)
 
 
+_GH_IN_TEXT = re.compile(r"https?://(?:www\.)?github\.com/[\w.-]+/[\w.-]+")
+
+
+def repo_links_text(text: str, skip=()) -> list[str]:
+    """GitHub repositories mentioned in Markdown or plain text ('owner/repo')."""
+    out = []
+    for m in _GH_IN_TEXT.finditer(text or ""):
+        full = github_repo(m.group(0).rstrip(".)"))
+        if full and full.lower() not in {x.lower() for x in [*skip, *out]}:
+            out.append(full)
+    return out
+
+
 def _from_hf(page_url: str, space: bool, rid: str):
+    """A model/Space card: text, pictures, clips, and the GitHub repositories it links to (code, demos)."""
     base = page_url.rstrip("/") + "/resolve/main/"
     card = http_get(page_url.rstrip("/") + "/raw/main/README.md", retries=1, timeout=30).text
     images, videos = media_candidates(card, base)
     images.append(f"https://cdn-thumbnails.huggingface.co/social-thumbnails/{'spaces/' if space else ''}{rid}.png")
-    return re.sub(r"^---.*?---\s*", "", card, flags=re.S)[:CONTEXT_CHARS], images, videos, clip_notes(card, base, videos)
+    body = re.sub(r"^---.*?---\s*", "", card, flags=re.S)[:CONTEXT_CHARS]
+    return body, images, videos, clip_notes(card, base, videos), repo_links_text(card)
 
 
 def repo_links(html: str, skip=()) -> list[str]:
@@ -368,7 +383,7 @@ def read_source(url: str):
         return (*_from_github(full), [])
     m = _HF_PAGE.match(url or "")
     if m and m.group(2).split("/")[0] not in ("docs", "blog", "papers", "datasets", "learn"):
-        return (*_from_hf(url.split("?")[0].split("#")[0], bool(m.group(1)), m.group(2)), [])
+        return _from_hf(url.split("?")[0].split("#")[0], bool(m.group(1)), m.group(2))
     return _from_article(url)
 
 
@@ -424,7 +439,13 @@ def fetch_context(item: dict) -> dict:
         if src == "github":
             add(f"GitHub 저장소 README ({item['title']})", _from_github(item["title"]))
         elif src == "hf":
-            add(f"Hugging Face 모델 카드 ({item['title']})", _from_hf(item["url"], meta.get("kind") == "space", item["title"]))
+            linked = add(f"Hugging Face 모델 카드 ({item['title']})", _from_hf(item["url"], meta.get("kind") == "space", item["title"]))
+            if linked:  # the model's code repository usually has the demos
+                try:
+                    add(f"모델 카드가 연결한 GitHub 저장소 README ({linked[0]})", _from_github(linked[0]))
+                    meta["repo"] = f"https://github.com/{linked[0]}"
+                except Exception as exc:
+                    log.warning("repository %s of %s failed: %s", linked[0], item["uid"], exc)
         else:
             name = SOURCES.get(src, {}).get("name", src)
             if item.get("summary"):

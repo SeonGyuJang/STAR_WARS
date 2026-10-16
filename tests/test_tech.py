@@ -379,3 +379,45 @@ def test_one_failing_original_keeps_the_rest():
     with mock.patch.object(tech, "http_get", side_effect=fake):
         ctx = tech.fetch_context(item)
     assert "요약" in ctx["text"] and "Does things." in ctx["text"]  # the article was down; the summary's repo still read
+
+
+def test_hugging_face_follows_the_code_repository():
+    card = "---\nlicense: mit\n---\n# Tiny Vision\nCode: https://github.com/acme/tiny-vision\n![sample](sample.png)"
+    readme = "# tiny-vision\nRun it in the browser.\n![demo](demo.gif)"
+
+    def fake(url, **kw):
+        pages = {"https://huggingface.co/acme/tiny-vision/raw/main/README.md": card,
+                 "https://raw.githubusercontent.com/acme/tiny-vision/HEAD/README.md": readme}
+        if url in pages:
+            return Resp(text=pages[url])
+        raise RuntimeError(f"unexpected {url}")
+
+    item = {"uid": "hf:model/acme/tiny-vision", "source": "hf", "title": "acme/tiny-vision",
+            "url": "https://huggingface.co/acme/tiny-vision", "summary": "", "meta": {"kind": "model"}}
+    with mock.patch.object(tech, "http_get", side_effect=fake):
+        ctx = tech.fetch_context(item)
+    assert "Tiny Vision" in ctx["text"] and "Run it in the browser" in ctx["text"]
+    assert ctx["images"][0] == "https://huggingface.co/acme/tiny-vision/resolve/main/sample.png"
+    assert ctx["videos"] == ["https://raw.githubusercontent.com/acme/tiny-vision/HEAD/demo.gif"]
+    assert item["meta"]["repo"] == "https://github.com/acme/tiny-vision"
+
+
+def test_tech_read_again(fresh_db):
+    from paperagent import create_app, db, pipeline
+
+    db.insert_tech({"uid": "hn:7", "source": "hn", "title": "A post", "url": "https://x", "meta": {}})
+    tid = db.get_tech_by_uid("hn:7")["id"]
+    db.update_tech(tid, status="done", review={"title_ko": "글", "one_liner": "한 줄", "summary": "요약", "caption": "c"})
+    app = create_app(start_scheduler=False)
+    c = app.test_client()
+    c.environ_base["REMOTE_ADDR"] = "127.0.0.1"
+    page = c.get(f"/tech/{tid}").get_data(as_text=True)
+    assert "다시 읽기" in page and f"/tech/{tid}/reprocess" in page
+    token = re.search(r'name="csrf-token" content="([^"]+)"', page).group(1)
+    with mock.patch.object(pipeline, "run_in_background", return_value=True) as bg, \
+            mock.patch("paperagent.agent.api_status", return_value={"ok": True}):
+        r = c.post(f"/tech/{tid}/reprocess", data={"_csrf": token})
+    assert r.status_code == 302 and bg.call_args.kwargs == {"tech_only": True, "tech_ids": [tid]}
+    visitor = app.test_client()
+    visitor.environ_base["REMOTE_ADDR"] = "10.0.0.9"
+    assert "다시 읽기" not in visitor.get(f"/tech/{tid}").get_data(as_text=True)

@@ -23,7 +23,9 @@
     {% if (t.meta or {}).repo and (t.meta or {}).repo != t.url %}<a class="btn ghost" href="{{ t.meta.repo }}" target="_blank" rel="noopener">GitHub 저장소</a>{% endif %}
     {% if (t.meta or {}).discussion and (t.meta or {}).discussion != t.url %}<a class="btn ghost" href="{{ t.meta.discussion }}" target="_blank" rel="noopener">{{ source.short }} 토론</a>{% endif %}
     <button class="btn ghost" data-share="{{ share_url }}" data-title="{{ r.title_ko or t.title }}">링크 공유</button>
-    {% if is_admin and t.status != 'done' %}<form method="post" action="{{ url_for('web.tech_run') }}">{{ csrf() }}<input type="hidden" name="item_id" value="{{ t.id }}"><button class="btn ghost">지금 카드뉴스 만들기</button></form>{% endif %}
+    {% if is_admin %}<form method="post" action="{{ url_for('web.tech_reprocess', item_id=t.id) }}"
+      {% if t.status == 'done' %}data-confirm="원문부터 다시 읽고 설명과 카드뉴스를 새로 씁니다. 지금 내용은 바뀝니다. 진행할까요?"{% endif %}>{{ csrf() }}
+      <button class="btn ghost">{{ '다시 읽기' if t.status == 'done' else '지금 카드뉴스 만들기' }}</button></form>{% endif %}
   </div>
 </header>
 
@@ -50,8 +52,8 @@
       {% if what.why_now %}<p class="callout">{{ what.why_now }}</p>{% endif %}</section>{% endif %}
     {% if r.how %}<section class="sec"><h2>어떻게 작동하나요</h2>
       <ol class="steps">{% for x in r.how %}<li><b>{{ x.title }}</b><span>{{ x.detail | replace('*', '') }}</span></li>{% endfor %}</ol></section>{% endif %}
-    {% if (r.so_what or {}).items %}<section class="sec"><h2>그래서 나랑 무슨 상관?</h2>
-      <div class="sowhat-list">{% for x in r.so_what['items'] %}<div><b>{{ x.title }}</b><p>{{ x.detail | replace('*', '') }}</p></div>{% endfor %}</div></section>{% endif %}
+    {% set so = r.so_what or {} %}{% if so.get('items') %}<section class="sec"><h2>그래서 나랑 무슨 상관?</h2>
+      <div class="sowhat-list">{% for x in so.get('items') %}<div><b>{{ x.title }}</b><p>{{ x.detail | replace('*', '') }}</p></div>{% endfor %}</div></section>{% endif %}
     {% if (r.try_it or {}).steps %}<section class="sec"><h2>직접 써보기</h2>
       <ol class="steps">{% for x in r.try_it.steps %}<li><b>{{ x.title }}</b><span>{{ x.detail }}</span>{% if x.code %}<pre class="cmd"><code>{{ x.code }}</code></pre>{% endif %}</li>{% endfor %}</ol>
       <p class="small muted">명령어는 원문(README 등)에 나온 그대로입니다. 실행 전에 원문에서 한 번 더 확인해 주세요.</p></section>{% endif %}
