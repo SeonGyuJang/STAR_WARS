@@ -161,3 +161,49 @@ def test_figures_never_touch_the_footnotes(sample_pdf, tmp_path):
     # nothing touches the line above the source/account, and the notes keep clear of what is above them
     assert all(r["toLine"] is None or r["toLine"] >= 28 for r in rows), rows
     assert all(r["aboveNotes"] is None or r["aboveNotes"] >= 28 for r in rows), rows
+
+
+def _cover_layout(html, tmp_path):
+    from playwright.sync_api import sync_playwright
+
+    path = tmp_path / "cover.html"
+    path.write_text(html, encoding="utf-8")
+    with sync_playwright() as p:
+        browser = cardnews._launch(p)
+        page = browser.new_page(viewport={"width": 1080, "height": 1350})
+        page.goto(path.as_uri())
+        page.wait_for_selector("body[data-ready='1']")
+        info = page.evaluate("""() => {
+            const s = document.querySelector('.slide.cover'), r = (e) => e.getBoundingClientRect();
+            const shown = (sel) => { const e = s.querySelector(sel); return !!e && r(e).height > 0; };
+            const stat = s.querySelector('.stat-card'), kids = [...s.querySelector('.main').children].filter((c) => r(c).height > 0);
+            const above = kids.filter((c) => !c.classList.contains('stat') && !c.classList.contains('foot')).pop();
+            return {figure: shown('.figure'), number: shown('.cover-num'), points: s.querySelectorAll('.cover-points li:not([hidden])').length,
+                    empty: stat ? r(stat).top - r(above).bottom : null, text: s.innerText};
+        }""")
+        browser.close()
+    return info
+
+
+def test_cover_is_filled_with_or_without_a_picture(sample_pdf, tmp_path):
+    """The first card never looks empty: a picture with key points, or - without one - the key number and the points."""
+    paper = {"uid": "arxiv:1", "title": "T", "url": "https://x"}
+    figs = pdfs.extract_figures(sample_pdf, tmp_path / "figs")
+    with_fig = _cover_layout(cardnews.build_html(paper, copy.deepcopy(demo.SAMPLE_REVIEW), figs), tmp_path)
+    assert with_fig["figure"] and not with_fig["number"] and with_fig["points"] >= 1
+    no_fig = _cover_layout(cardnews.build_html(paper, copy.deepcopy(demo.SAMPLE_REVIEW), []), tmp_path)
+    assert not no_fig["figure"] and no_fig["number"] and no_fig["points"] == 3 and "+12.4%p" in no_fig["text"]
+    assert no_fig["empty"] < 160  # no big hole above the score box
+
+
+def test_tech_cover_shows_interest_and_the_ai_take(tmp_path):
+    item = {**demo.SAMPLE_TECH, "id": 1, "interest": 8.5, "interest_reason": "관심 높음"}
+    html = cardnews.build_tech_html(item, copy.deepcopy(demo.SAMPLE_TECH_REVIEW), {"images": [], "video": None}, tmp_path)
+    cover = _cover_layout(html, tmp_path)
+    assert "흥미도" in cover["text"] and "8.5" in cover["text"] and "AI는 이렇게 봤어요" in cover["text"]
+    assert "써 보기 부담이 적은 도구예요" in cover["text"] and 'class="tiles-row"' not in html  # no more star/comment tiles
+    assert cover["points"] == 3 and cover["empty"] < 160
+    old = copy.deepcopy(demo.SAMPLE_TECH_REVIEW)
+    old.pop("ai_take")  # posts written before the AI take: the screening reason stands in
+    html = cardnews.build_tech_html(item, old, {"images": [], "video": None}, tmp_path)
+    assert "관심 높음" in html

@@ -109,6 +109,22 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
 .stat-card .big b span { font-size: 30px; color: var(--mute); letter-spacing: 0; font-weight: 500; margin-left: 6px; }
 .stat-card .parts { flex: 1; display: flex; flex-direction: column; gap: 18px; }
 .stat-card .track { background: #fff; }
+/* the cover's key number (when there is no picture) and its three takeaways */
+.cover-num { flex: none; margin-top: calc(40px * var(--k)); display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 24px; }
+.cover-num[hidden], .cover-points[hidden], .cover-points li[hidden] { display: none; }
+.cover-num b { font-size: calc(124px * var(--k)); font-weight: 700; line-height: 1; letter-spacing: -0.05em; color: var(--c); }
+.cover-num span { font-size: calc(32px * var(--k)); font-weight: 600; color: var(--body); }
+.cover-points { flex: none; list-style: none; margin-top: calc(34px * var(--k)); border-top: 2px solid var(--line); }
+.cover-points li { display: grid; grid-template-columns: calc(58px * var(--k)) minmax(0, 1fr); align-items: baseline; padding: calc(18px * var(--k)) 0;
+                   border-bottom: 1px solid var(--line); font-size: calc(32px * var(--k)); line-height: 1.45; font-weight: 500; letter-spacing: -0.015em; }
+.cover-points li b { font-family: "Mono", monospace; font-size: calc(24px * var(--k)); font-weight: 500; color: var(--c); }
+.figure + .cover-points { margin-top: calc(28px * var(--k)); }
+/* TECH cover: how interesting it is, and the AI's one-line take */
+.stat-card.take { align-items: stretch; }
+.ai-take { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+.take .big + .ai-take { border-left: 2px solid rgba(0,0,0,.08); padding-left: 40px; }
+.ai-take small { font-size: 21px; color: var(--mute); font-weight: 600; }
+.ai-take p { margin-top: 6px; font-size: calc(29px * var(--k)); line-height: 1.45; font-weight: 600; color: var(--ink); text-wrap: pretty; }
 .tiles-row { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
 .tiles-row > div { padding: 0 24px; border-left: 2px solid rgba(0,0,0,.08); }
 .tiles-row > div:first-child { padding-left: 0; border-left: 0; }
@@ -266,15 +282,21 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
       {% if cover.maker %}<span class="maker">{{ cover.maker.mark or '' }}<b>{{ cover.maker.name }}</b></span>{% endif %}</div>
     <h1>{{ cover.headline | t }}</h1>
     {% if cover.sub %}<p class="lead">{{ cover.sub | t }}</p>{% endif %}
+    {# with a picture the picture leads; without one, the key number does (the script shows one or the other) #}
+    {% if cover.number %}<div class="cover-num"><b>{{ cover.number.value }}</b>{% if cover.number.label %}<span>{{ cover.number.label | t }}</span>{% endif %}</div>{% endif %}
     {{ figure(cover.image) }}
+    {% if cover.points %}<ol class="cover-points">{% for x in cover.points[:3] %}<li><b>{{ '%02d' % loop.index }}</b><span>{{ x | t }}</span></li>{% endfor %}</ol>{% endif %}
     <div class="stat">
       {% if cover.stat.type == 'score' %}
       <div class="stat-card">
         <div class="big"><small>종합 평점</small><b>{{ cover.stat.overall }}<span>/ 10</span></b></div>
         <div class="parts">{{ bar('방법론', cover.stat.method) }}{{ bar('참신성', cover.stat.novelty, 'alt') }}</div>
       </div>
-      {% elif cover.stat.tiles %}
-      <div class="stat-card"><div class="tiles-row">{% for t in cover.stat.tiles[:3] %}<div><b>{{ t.value }}</b><span>{{ t.label }}</span></div>{% endfor %}</div></div>
+      {% elif cover.stat.type == 'take' %}
+      <div class="stat-card take">
+        {% if cover.stat.interest is not none %}<div class="big"><small>흥미도</small><b>{{ '%.1f' % cover.stat.interest }}<span>/ 10</span></b></div>{% endif %}
+        {% if cover.stat.take %}<div class="ai-take"><small>AI는 이렇게 봤어요</small><p>{{ cover.stat.take | t }}</p></div>{% endif %}
+      </div>
       {% endif %}
     </div>
     {{ foot(s.notes) }}
@@ -431,21 +453,35 @@ function fit(slide) {
   const bottom = () => Math.max(0, ...[...main.children].map((c) => c.offsetTop + c.offsetHeight));
   const pad = parseFloat(getComputedStyle(main).paddingBottom) || 0;
   const room = () => main.clientHeight - pad - bottom();
-  slide.classList.add("measuring");
-  let k = 1;
-  setK(k);
-  while (room() < -1 && k > 0.62) { k = +(k - 0.02).toFixed(2); setK(k); }
+  const shrink = (k, floor = 0.62) => { while (room() < -1 && k > floor) { k = +(k - 0.02).toFixed(2); setK(k); } return k; };
+  const cover = slide.classList.contains("cover");
   const f = slide.querySelector(".figure");
+  const num = slide.querySelector(".cover-num");
+  const points = [...slide.querySelectorAll(".cover-points li")];
+  slide.classList.add("measuring");
+  if (f && num) num.hidden = true;  // with a picture, the picture leads
+  let k = shrink(1);
+  setK(k);
   if (f) {
-    const kind = slide.classList.contains("media") ? "media" : slide.classList.contains("cover") ? "cover" : "other";
+    const kind = slide.classList.contains("media") ? "media" : cover ? "cover" : "other";
     const need = MIN_FIGURE[kind] || 280;
-    let kk = k;
-    const gap = () => 36 * kk;
-    while (room() - gap() < need && kk > Math.max(0.74, k - 0.16)) { kk = +(kk - 0.02).toFixed(2); setK(kk); }
-    // keep clear space between the figure and what follows it (the score
-    // box or the footnotes), so the two never touch or overlap
-    const avail = room() - gap();
-    if (avail >= need) {
+    const floor = cover ? 0.84 : 0.74;  // the cover's headline stays big
+    // room for the picture at a type scale no smaller than the floor? (gives up cover points from the bottom first)
+    const fits = () => {
+      let kk = k;
+      setK(kk);
+      while (room() - 36 * kk < need && kk > Math.max(floor, k - 0.16)) { kk = +(kk - 0.02).toFixed(2); setK(kk); }
+      return room() - 36 * kk >= need ? kk : null;
+    };
+    let kk = fits();
+    while (kk === null && points.some((li) => !li.hidden)) {
+      [...points].reverse().find((li) => !li.hidden).hidden = true;
+      if (!points.some((li) => !li.hidden)) slide.querySelector(".cover-points").hidden = true;
+      k = shrink(1);
+      kk = fits();
+    }
+    if (kk !== null) {
+      const avail = room() - 36 * kk;
       slide.classList.remove("measuring");
       const img = f.querySelector("img");
       const ar = (img.naturalWidth && img.naturalHeight) ? img.naturalWidth / img.naturalHeight : 1.6;
@@ -453,12 +489,27 @@ function fit(slide) {
       const cap = f.querySelector(".cap");
       const chrome = photo ? 0 : 40 + (cap ? cap.offsetHeight + 12 : 0);
       const natural = (f.clientWidth - (photo ? 0 : 40)) / ar + chrome;
-      const h = Math.min(avail, Math.max(need, natural));
-      f.style.height = Math.floor(h) + "px";
+      f.style.height = Math.floor(Math.min(avail, Math.max(need, natural))) + "px";
     } else {
-      setK(k);
+      // no room for the picture: drop it, bring back every point and the key number
       f.remove();
       slide.removeAttribute("data-video");
+      points.forEach((li) => { li.hidden = false; });
+      const list = slide.querySelector(".cover-points");
+      if (list) list.hidden = false;
+      if (num) num.hidden = false;
+      slide.classList.add("measuring");
+      k = shrink(1);
+    }
+  }
+  // a cover without a picture: the type grows into the space that is left, so it never looks empty
+  if (cover && !slide.querySelector(".figure")) {
+    slide.classList.add("measuring");
+    let g = +slide.style.getPropertyValue("--k") || 1;
+    while (room() > 12 && g < 1.2) {
+      g = +(g + 0.02).toFixed(2);
+      setK(g);
+      if (room() < 0) { g = +(g - 0.02).toFixed(2); setK(g); break; }
     }
   }
   slide.classList.remove("measuring");

@@ -657,6 +657,9 @@ TECH_SCHEMA = _obj({
     "cover_headline": {**_str, "description": "A question a curious non-expert would ask, ending with '?', 2 lines separated by \\n, "
                                              "<= 16 chars per line, no clickbait, e.g. '코드 리뷰를\\nAI한테 맡겨도 될까?'"},
     "cover_sub": _L(70),
+    "cover_points": {**_str_list, "description": "Exactly 3 Korean takeaways for the cover, each <= 40 chars: what it is, what is new, one fact with a number"},
+    "ai_take": {**_str, "description": "The AI's honest one-line view of this item for the cover, friendly spoken Korean ending in '-요', <= 60 chars - "
+                                     "why it is worth a look, or the catch. e.g. '설치 없이 바로 써볼 수 있어 입문자에게도 좋은 도구예요'"},
     "what": _obj({"headline": _H,
                   "points": {**_str_list, "description": "Exactly 3 Korean sentences, each <= 75 chars: what it is, what it does, what is new about it"},
                   "why_now": {**_str, "description": "2 Korean sentences on why people are talking about it now, with the numbers given (<= 160 chars)"}}),

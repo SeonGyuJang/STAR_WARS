@@ -199,10 +199,12 @@ def paper_slides(paper, review, figures):
         next((s["figure"] for s in slides if s["kind"] == "media" and s.get("figure")), None))
     cover = {
         "headline": card.get("cover_headline"), "sub": card.get("cover_sub"), "topic": card.get("category"),
-        "image": cover_image, "stat": {"type": "score", "overall": review.get("overall_score"),
+        "image": cover_image, "points": (card.get("cover_points") or [])[:3],
+        "number": {"value": res["highlight"], "label": res.get("highlight_label")} if res.get("highlight") else None, "stat": {"type": "score", "overall": review.get("overall_score"),
                                        "method": review.get("methodology_score"), "novelty": review.get("novelty_score")},
     }
-    _attach_notes(slides, card, {"cover": [card.get(k) for k in ("cover_headline", "cover_sub")]})
+    _attach_notes(slides, card, {"cover": [card.get(k) for k in ("cover_headline", "cover_sub", "cover_points")]
+                                 + [res.get("highlight_label")]})
     return slides, cover
 
 
@@ -487,8 +489,11 @@ def tech_slides(item, review, media, tmp: Path):
 
     cover = {"headline": review.get("cover_headline"), "sub": review.get("cover_sub"),
              "topic": f"{src_name} · {review.get('category')}" if review.get("category") else src_name,
-             "image": photo(images[0]) if images else None, "stat": {"tiles": tiles[:3]} if tiles else {}, "maker": maker}
-    _attach_notes(slides, review, {"cover": [review.get("cover_headline"), review.get("cover_sub")]})
+             "image": photo(images[0]) if images else None, "maker": maker,
+             "points": (review.get("cover_points") or what.get("points") or [])[:3],
+             "stat": {"type": "take", "interest": item.get("interest"), "take": review.get("ai_take") or item.get("interest_reason")}
+             if (item.get("interest") is not None or review.get("ai_take") or item.get("interest_reason")) else {}}
+    _attach_notes(slides, review, {"cover": [review.get(k) for k in ("cover_headline", "cover_sub", "cover_points")]})
     return slides, cover
 
 
