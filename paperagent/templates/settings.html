@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import csrf with context %}
+{% from "_macros.html" import csrf, sbadge with context %}
 {% block title %}설정 · {{ site_name }}{% endblock %}
 {% block content %}
 <section class="page-head"><div>
@@ -35,7 +35,7 @@
     <p class="desc">정기 실행 때 논문 다음에, 아래 출처에서 화제인 프로젝트와 소식을 모아 가장 흥미로운 것을 TECH 카드뉴스로 만듭니다.</p>
     <form method="post" action="{{ url_for('web.save_tech_settings') }}">{{ csrf() }}
       <div class="check-grid">{% for key, s in tech_source_list.items() %}
-        <label class="check"><input type="checkbox" name="src_{{ key }}" value="1" {{ 'checked' if key in settings.tech_sources }}><span class="sbadge s-{{ key }}">{{ s.short }}</span>{{ s.name }}</label>{% endfor %}</div>
+        <label class="check"><input type="checkbox" name="src_{{ key }}" value="1" {{ 'checked' if key in settings.tech_sources }}>{{ sbadge(key, s.short) }}{{ s.name }}</label>{% endfor %}</div>
       <div class="form-grid">
         <label>실행마다 만드는 수<input type="number" name="tech_per_run" min="0" max="10" value="{{ settings.tech_per_run }}"></label>
         <label>최소 관심도 (0-10)<input type="number" step="0.5" name="tech_min_interest" min="0" max="10" value="{{ settings.tech_min_interest }}"></label>

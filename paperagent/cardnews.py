@@ -31,11 +31,15 @@ log = logging.getLogger(__name__)
 PKG_DIR = Path(__file__).resolve().parent
 FONT_DIR = PKG_DIR / "static" / "fonts"
 
+# Colours follow a 60-30-10 split: neutral white/ink for most of a slide, a
+# light tint of the category colour for panels, and the category colour itself
+# only for small accents (labels, key numbers, bars). Every text/background
+# pair meets WCAG AA (4.5:1); the accents are muted, not neon.
 THEMES = {
-    "paper": {"key": "paper", "color": "#2346E0", "deep": "#1631B0", "soft": "#EBF0FF", "label": "PAPER",
+    "paper": {"key": "paper", "color": "#3A5A9F", "deep": "#1E2A47", "soft": "#EEF2F9", "tint": "#AEBFE8", "label": "PAPER",
               "name": "논문 리뷰", "kicker": "오늘의 논문",
               "claim": "읽을 가치가 있는 논문만 골라 읽고, 평가합니다."},
-    "tech": {"key": "tech", "color": "#F2541B", "deep": "#C43B0B", "soft": "#FFEFE7", "label": "TECH",
+    "tech": {"key": "tech", "color": "#A84B24", "deep": "#2A221D", "soft": "#FAF0E9", "tint": "#F0A983", "label": "TECH",
              "name": "테크 트렌드", "kicker": "오늘의 테크",
              "claim": "지금 개발자들이 주목하는 기술을 골라, 쉽게 풀어 드립니다."},
 }

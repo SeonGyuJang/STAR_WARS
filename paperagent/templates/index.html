@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import csrf, source_select with context %}
+{% from "_macros.html" import csrf, source_select, sbadge with context %}
 {% block content %}
 <section class="hero paper">
   <div class="hero-main">
@@ -71,7 +71,7 @@
     <section class="card side-tech">
       <div class="side-h"><h3><span class="sdot s-tech"></span>새 테크 소식</h3><a href="{{ url_for('web.tech_index') }}">더 보기</a></div>
       {% for t in tech_latest %}
-        <a class="mini" href="{{ url_for('web.tech_detail', item_id=t.id) }}"><span class="n"><span class="sbadge s-{{ t.source }}">{{ tech_source_names.get(t.source) }}</span></span><span>{{ (t.review or {}).title_ko or t.title }}</span></a>
+        <a class="mini" href="{{ url_for('web.tech_detail', item_id=t.id) }}"><span class="n">{{ sbadge(t.source, tech_source_names.get(t.source)) }}</span><span>{{ (t.review or {}).title_ko or t.title }}</span></a>
       {% endfor %}
     </section>
     {% endif %}

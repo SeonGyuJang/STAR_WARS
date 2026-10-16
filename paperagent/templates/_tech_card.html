@@ -1,3 +1,4 @@
+{% from "_macros.html" import sbadge with context %}
 {% set r = t.review or {} %}
 {% set tiles = tech_tiles(t) %}
 <article class="prow card tech" id="t-{{ t.id }}">
@@ -7,7 +8,7 @@
   </div>
   <div>
     <div class="pmeta meta"><div>
-      <span class="mi"><span class="sbadge s-{{ t.source }}">{{ tech_source_names.get(t.source, t.source) }}</span></span>
+      <span class="mi">{{ sbadge(t.source, tech_source_names.get(t.source, t.source)) }}</span>
       {% if r.category %}<span class="mi cat">{{ r.category }}</span>{% endif %}
       {% if t.reviewed_at %}<span class="mi" title="카드뉴스를 만든 시각">{{ t.reviewed_at | kst('%m.%d %H:%M') }}</span>{% endif %}
     </div></div>

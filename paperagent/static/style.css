@@ -1,5 +1,7 @@
-/* STAR WARS dashboard. One typeface (Pretendard). Each category has its own colour block:
-   PAPER = blue, TECH = orange - the same colours as the card news. */
+/* STAR WARS dashboard. One typeface (Pretendard). Colours follow 60-30-10: neutral
+   surfaces and ink for most of the page, a light tint of the category colour for
+   panels, the category colour itself only for small accents. PAPER = indigo,
+   TECH = terracotta (same as the card news); every text pair meets WCAG AA. */
 @font-face { font-family: "Pretendard"; font-weight: 400; font-display: swap; src: url("fonts/Pretendard-Regular.woff2") format("woff2"); }
 @font-face { font-family: "Pretendard"; font-weight: 500; font-display: swap; src: url("fonts/Pretendard-Medium.woff2") format("woff2"); }
 @font-face { font-family: "Pretendard"; font-weight: 600; font-display: swap; src: url("fonts/Pretendard-SemiBold.woff2") format("woff2"); }
@@ -10,7 +12,7 @@
   --bg: #fafafa; --surface: #ffffff; --well: #f4f4f2;
   --ink: #171717; --body: #4d4d4d; --mute: #8f8f8f;
   --line: #ebebeb; --line-2: #dcdcdc;
-  --paper: #2346e0; --paper-soft: #ebf0ff; --tech: #f2541b; --tech-soft: #ffefe7;
+  --paper: #3a5a9f; --paper-soft: #eef2f9; --paper-deep: #1e2a47; --tech: #a84b24; --tech-soft: #faf0e9; --tech-deep: #2a221d;
   --accent: var(--paper); --accent-soft: var(--paper-soft);
   --ok: #1a7f4b; --warn: #a15c07; --danger: #c4321b;
   --shadow: 0 1px 1px rgba(0,0,0,.02), 0 2px 4px rgba(0,0,0,.04);
@@ -22,7 +24,7 @@
     --bg: #0b0b0b; --surface: #141414; --well: #1c1c1c;
     --ink: #ededed; --body: #b4b4b4; --mute: #7a7a7a;
     --line: #242424; --line-2: #303030;
-    --paper: #8aa2ff; --paper-soft: #18203f; --tech: #ff8a5c; --tech-soft: #3a1d12;
+    --paper: #8aa2e6; --paper-soft: #1a2032; --paper-deep: #c9d5f2; --tech: #e8936b; --tech-soft: #2b201b; --tech-deep: #f3d2c2;
     --accent: var(--paper); --accent-soft: var(--paper-soft);
     --ok: #4cc38a; --warn: #e2a14a; --danger: #ff7a5c;
     --shadow: none;
@@ -53,7 +55,7 @@ code { background: var(--well); padding: 1px 6px; border-radius: 4px; }
 .site-head .wrap { display: flex; align-items: center; gap: 28px; height: 60px; }
 .logo { display: inline-flex; align-items: center; gap: 9px; font-weight: 700; font-size: 16px; letter-spacing: 0.06em; white-space: nowrap; }
 .logo .mark { display: inline-grid; grid-template-columns: 9px 9px; gap: 2px; }
-.logo .mark i { height: 18px; border-radius: 3px; background: var(--paper); }
+.logo .mark i { height: 18px; border-radius: 3px; background: var(--paper-deep); }
 .logo .mark i + i { background: var(--tech); }
 .logo:hover { color: var(--ink); }
 .nav { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
@@ -572,42 +574,46 @@ body.console-open { overflow: hidden; }
 /* ---------- colour blocks ---------- */
 .sdot { display: inline-block; width: 9px; height: 9px; border-radius: 3px; flex: none; background: var(--mute); vertical-align: 1px; }
 .sdot.s-paper { background: var(--paper); } .sdot.s-tech { background: var(--tech); }
-.sdot.s-github { background: #24292f; } .sdot.s-hn { background: #ff6600; } .sdot.s-geeknews { background: #2b6cb0; } .sdot.s-hf { background: #ffb000; }
+.sdot.s-github { background: #59636e; } .sdot.s-hn { background: #ff6600; } .sdot.s-geeknews { background: #3b6fb6; } .sdot.s-hf { background: #ffd21e; }
 .nav a.on .sdot { box-shadow: 0 0 0 2px var(--ink); }
-/* where a tech post came from */
-.sbadge { display: inline-block; font-size: 11.5px; font-weight: 700; line-height: 1.5; padding: 1px 8px; border-radius: 6px; color: #fff; background: #555; white-space: nowrap; }
-.sbadge.s-github { background: #24292f; } .sbadge.s-hn { background: #ff6600; } .sbadge.s-geeknews { background: #2b6cb0; }
-.sbadge.s-hf { background: #ffcc33; color: #3b2a00; }
-@media (prefers-color-scheme: dark) { .sbadge.s-github, .sdot.s-github { background: #57606a; } }
-
-/* page hero: a block in the category colour */
-.hero { margin-top: 32px; margin-bottom: 28px; padding: 32px 36px; border-radius: 22px; color: #fff; background: var(--paper);
-        display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px 40px; align-items: end; }
-.hero.tech { background: var(--tech); }
-.hero-tag { display: inline-block; font-size: 12.5px; font-weight: 700; letter-spacing: .14em; padding: 4px 10px; border-radius: 7px; background: #fff; color: var(--paper); }
-.hero.tech .hero-tag { color: var(--tech); }
-.hero h1 { margin-top: 14px; font-size: clamp(30px, 4vw, 42px); font-weight: 700; letter-spacing: -0.045em; line-height: 1.15; }
-.hero p { margin-top: 10px; max-width: 620px; font-size: 15.5px; color: rgba(255,255,255,.88); }
-.hero a.inline-link { color: #fff; text-decoration: underline; }
+/* where a tech post came from: a neutral pill with the source's own small mark,
+   styled like GitHub's labels (subtle canvas, hairline border, default text) */
+.sbadge { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; vertical-align: 1px;
+          font-size: 12px; font-weight: 600; line-height: 1; white-space: nowrap; color: #1f2328; background: #f6f8fa; border: 1px solid #d0d7de; }
+.sbadge svg, .sbadge .ico { width: 14px; height: 14px; flex: none; }
+.sbadge svg { fill: currentColor; }
+.sbadge .ico { display: inline-flex; align-items: center; justify-content: center; border-radius: 3px; font: 700 9.5px/1 "Pretendard", sans-serif; color: #fff; }
+.sbadge .ico.hn { background: #ff6600; }
+.sbadge .ico.geeknews { background: #3b6fb6; }
+.sbadge .ico.hf { background: #ffd21e; color: #3b2a00; border-radius: 50%; }
+@media (prefers-color-scheme: dark) { .sbadge { color: #e6edf3; background: #161b22; border-color: #30363d; } }
+/* page hero: a tinted panel with an accent line - the category colour stays an accent */
+.hero { margin-top: 32px; margin-bottom: 28px; padding: 30px 34px; border-radius: 18px; color: var(--ink); background: var(--paper-soft);
+        border-top: 5px solid var(--paper); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px 40px; align-items: end; }
+.hero.tech { background: var(--tech-soft); border-top-color: var(--tech); }
+.hero-tag { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .14em; padding: 4px 10px; border-radius: 6px; background: var(--paper); color: #fff; }
+.hero.tech .hero-tag { background: var(--tech); }
+.hero h1 { margin-top: 14px; font-size: clamp(28px, 3.6vw, 38px); font-weight: 700; letter-spacing: -0.04em; line-height: 1.18; color: var(--paper-deep); }
+.hero.tech h1 { color: var(--tech-deep); }
+.hero p { margin-top: 10px; max-width: 620px; font-size: 15.5px; color: var(--body); }
+.hero a.inline-link { color: var(--paper); text-decoration: underline; }
 .hero-stats { display: flex; align-items: flex-end; gap: 28px; flex-wrap: wrap; }
-.hero-stats > div b { display: block; font-size: 30px; font-weight: 700; letter-spacing: -0.04em; line-height: 1.1; }
-.hero-stats > div span { display: block; margin-top: 2px; font-size: 12.5px; color: rgba(255,255,255,.8); white-space: nowrap; }
+.hero-stats > div b { display: block; font-size: 28px; font-weight: 700; letter-spacing: -0.04em; line-height: 1.1; color: var(--paper); }
+.hero.tech .hero-stats > div b { color: var(--tech); }
+.hero-stats > div span { display: block; margin-top: 2px; font-size: 12.5px; color: var(--body); white-space: nowrap; }
 .hero-stats form { margin: 0; }
-.btn.invert { background: #fff; color: var(--paper); border-color: #fff; }
-.hero.tech .btn.invert { color: var(--tech); }
-.btn.invert:hover { color: var(--paper); opacity: .92; }
-@media (prefers-color-scheme: dark) {
-  .hero { background: #1a2a7a; } .hero.tech { background: #8a2c0a; }
-  .hero-tag, .btn.invert { color: #1a2a7a; } .hero.tech .hero-tag, .hero.tech .btn.invert { color: #8a2c0a; }
-}
+.btn.invert { background: var(--paper); color: #fff; border-color: var(--paper); }
+.hero.tech .btn.invert { background: var(--tech); border-color: var(--tech); }
+.btn.invert:hover { color: #fff; opacity: .9; }
+@media (prefers-color-scheme: dark) { .btn.invert, .hero-tag { color: #111; } }
 @media (max-width: 820px) {
-  .hero { grid-template-columns: minmax(0, 1fr); padding: 24px 20px; margin-top: 20px; border-radius: 18px; }
+  .hero { grid-template-columns: minmax(0, 1fr); padding: 22px 20px; margin-top: 20px; border-radius: 16px; }
   .hero-stats { gap: 18px 24px; }
-  .hero-stats > div b { font-size: 24px; }
+  .hero-stats > div b { font-size: 23px; }
 }
 /* other pages: a small colour block before the title */
-.page-head h1::before { content: ""; display: inline-block; width: 12px; height: 26px; margin-right: 12px; border-radius: 4px;
-                        background: linear-gradient(var(--paper) 50%, var(--tech) 50%); vertical-align: -3px; }
+.page-head h1::before { content: ""; display: inline-block; width: 6px; height: 24px; margin-right: 12px; border-radius: 3px;
+                        background: linear-gradient(var(--paper) 50%, var(--tech) 50%); vertical-align: -2px; }
 .list-title { flex: 1; padding-bottom: 10px; font-size: 16px; font-weight: 700; }
 .list-title span { margin-left: 4px; font-size: 13px; color: var(--mute); font-weight: 500; }
 .tabs a { display: inline-flex; align-items: center; gap: 6px; }

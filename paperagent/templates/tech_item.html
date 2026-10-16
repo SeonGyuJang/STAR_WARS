@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import csrf, cards_panel with context %}
+{% from "_macros.html" import csrf, cards_panel, sbadge with context %}
 {% block title %}{{ r.title_ko or t.title }} · {{ site_name }}{% endblock %}
 {% block meta %}
 <meta property="og:title" content="{{ r.title_ko or t.title }}">
@@ -11,7 +11,7 @@
 <a class="back" href="{{ url_for('web.tech_index') }}">← 테크 소식</a>
 <header class="dhead tech">
   <div class="pmeta meta"><div>
-    <span class="mi"><span class="sbadge s-{{ t.source }}">{{ source.short or t.source }}</span></span>
+    <span class="mi">{{ sbadge(t.source, source.short or t.source) }}</span>
     {% if r.category %}<span class="mi cat">{{ r.category }}</span>{% endif %}
     {% if t.reviewed_at %}<span class="mi">{{ t.reviewed_at | kst('%Y.%m.%d') }}</span>{% endif %}
   </div></div>

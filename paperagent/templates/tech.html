@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import csrf with context %}
+{% from "_macros.html" import csrf, sbadge with context %}
 {% block title %}테크 소식 · {{ site_name }}{% endblock %}
 {% block content %}
 <section class="hero tech">
@@ -54,7 +54,7 @@
         {% for t in upcoming %}
         <div class="mini tech-mini">
           {% if is_admin %}<input type="checkbox" name="item_id" value="{{ t.id }}" aria-label="{{ t.title }} 선택">{% endif %}
-          <div><span class="sbadge s-{{ t.source }}">{{ tech_source_names.get(t.source) }}</span> <a href="{{ t.url }}" target="_blank" rel="noopener">{{ t.title }}</a>
+          <div>{{ sbadge(t.source, tech_source_names.get(t.source)) }} <a href="{{ t.url }}" target="_blank" rel="noopener">{{ t.title }}</a>
             <div class="why">관심도 {{ t.interest }} · {{ t.interest_reason }}</div></div>
         </div>
         {% endfor %}
@@ -65,7 +65,7 @@
     <section class="card">
       <div class="side-h"><h3>어디서 가져오나요</h3>{% if is_admin %}<a href="{{ url_for('web.settings') }}#tech">설정</a>{% endif %}</div>
       <ul class="src-list">
-        {% for key, s in sources.items() %}<li class="{{ 'off' if key not in settings.tech_sources }}"><span class="sbadge s-{{ key }}">{{ s.short }}</span>
+        {% for key, s in sources.items() %}<li class="{{ 'off' if key not in settings.tech_sources }}">{{ sbadge(key, s.short) }}
           <a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.name }}</a>{% if key not in settings.tech_sources %} <span class="small muted">(꺼짐)</span>{% endif %}</li>{% endfor %}
       </ul>
     </section>
@@ -75,7 +75,7 @@
       <form method="post" action="{{ url_for('web.tech_run') }}">{{ csrf() }}
         <div class="kw-vlist collapsed" data-kw-list>
         {% for t in skipped %}<div class="mini tech-mini"><input type="checkbox" name="item_id" value="{{ t.id }}" aria-label="{{ t.title }} 선택">
-          <div><span class="sbadge s-{{ t.source }}">{{ tech_source_names.get(t.source) }}</span> <a href="{{ t.url }}" target="_blank" rel="noopener">{{ t.title }}</a>
+          <div>{{ sbadge(t.source, tech_source_names.get(t.source)) }} <a href="{{ t.url }}" target="_blank" rel="noopener">{{ t.title }}</a>
             <div class="why">관심도 {{ t.interest }} · {{ t.interest_reason }}</div></div></div>{% endfor %}
         </div>
         <button type="button" class="kw-more" data-kw-toggle hidden>전체 보기</button>

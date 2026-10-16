@@ -10,12 +10,15 @@
 @font-face { font-family: "Mono"; font-weight: 400; src: url("{{ fonts }}/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
 @font-face { font-family: "Mono"; font-weight: 500; src: url("{{ fonts }}/jetbrains-mono-latin-500-normal.woff2") format("woff2"); }
 
-/* One frame for every post. The category (paper = blue, tech = orange) is the
-   colour of the band on top of each slide and of the whole cover. */
+/* One frame for every post. 60-30-10: white and ink carry the text, a light
+   tint of the category colour (paper = indigo, tech = terracotta) marks the
+   header and panels, and the category colour itself is kept for small accents.
+   Every text colour meets WCAG AA contrast on its background. */
 :root {
   --c: {{ theme.color }};
   --deep: {{ theme.deep }};
   --soft: {{ theme.soft }};
+  --tint: {{ theme.tint }};
   --ink: #111214;
   --body: #3b3d42;
   --mute: #8b8d93;
@@ -35,12 +38,14 @@ p, li, span, b { text-wrap: pretty; }
 .slide { --k: 1; width: 1080px; height: 1350px; position: relative; overflow: hidden; background: #fff; display: flex; flex-direction: column; }
 
 /* the colour block on top of every content slide */
-.band { flex: none; height: 108px; padding: 0 72px; background: var(--c); color: #fff; display: flex; align-items: center; justify-content: space-between; }
+/* the header: a light tint of the category colour with a thin accent line on top */
+.band { flex: none; height: 108px; padding: 0 72px; background: var(--soft); color: var(--ink); display: flex; align-items: center;
+        justify-content: space-between; border-top: 8px solid var(--c); }
 .brand { display: flex; align-items: center; gap: 18px; }
-.brand b { font-size: 27px; font-weight: 700; letter-spacing: .06em; }
-.brand span { font-size: 21px; font-weight: 600; letter-spacing: .14em; padding: 7px 14px; border-radius: 8px; background: rgba(255,255,255,.18); }
-.pg { font-family: "Mono", monospace; font-size: 25px; font-weight: 500; }
-.pg i { font-style: normal; opacity: .6; }
+.brand b { font-size: 27px; font-weight: 700; letter-spacing: .06em; color: var(--deep); }
+.brand span { font-size: 20px; font-weight: 700; letter-spacing: .14em; padding: 6px 13px; border-radius: 8px; background: var(--c); color: #fff; }
+.pg { font-family: "Mono", monospace; font-size: 25px; font-weight: 500; color: var(--deep); }
+.pg i { font-style: normal; color: var(--mute); }
 
 .main { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding: calc(60px * var(--k)) 72px 0; }
 .bottom { flex: none; height: 84px; margin: 0 72px; border-top: 2px solid var(--line); display: flex; align-items: center; justify-content: space-between;
@@ -83,14 +88,17 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
 .dots li::before { content: ""; position: absolute; left: .15em; top: calc(.5lh - 5px); width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
 
 /* ---------- cover: the whole slide in the category colour ---------- */
-.cover { background: var(--c); color: #fff; }
-.cover .band { background: transparent; }
+.cover { background: var(--deep); color: #fff; }
+.cover .band { background: transparent; border-top-color: var(--tint); }
+.cover .brand b, .cover .pg { color: #fff; }
+.cover .pg i { color: rgba(255,255,255,.55); }
 .cover .main { padding-top: calc(28px * var(--k)); }
 .chips { flex: none; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-.chip { font-size: calc(25px * var(--k)); font-weight: 700; padding: 9px 18px; border-radius: 10px; background: #fff; color: var(--c); letter-spacing: .02em; }
-.chip.ghost { background: rgba(255,255,255,.16); color: #fff; font-weight: 600; letter-spacing: 0; }
+.chip { font-size: calc(25px * var(--k)); font-weight: 700; padding: 9px 18px; border-radius: 10px; background: var(--tint); color: var(--deep); letter-spacing: .02em; }
+.chip.ghost { background: rgba(255,255,255,.1); color: rgba(255,255,255,.9); font-weight: 600; letter-spacing: 0; border: 1.5px solid rgba(255,255,255,.22); }
+.cover h1 em { font-style: normal; color: var(--tint); }
 .cover h1 { flex: none; margin-top: calc(34px * var(--k)); font-size: calc(102px * var(--k)); line-height: 1.12; font-weight: 700; letter-spacing: -0.05em; }
-.cover .lead { color: rgba(255,255,255,.88); font-size: calc(35px * var(--k)); margin-top: calc(26px * var(--k)); }
+.cover .lead { color: rgba(255,255,255,.82); font-size: calc(35px * var(--k)); margin-top: calc(26px * var(--k)); }
 .cover .figure { border: 0; }
 .stat { flex: none; margin-top: auto; padding-top: calc(36px * var(--k)); }
 .stat-card { background: #fff; color: var(--ink); border-radius: 28px; padding: calc(28px * var(--k)) 36px; display: flex; align-items: center; gap: 44px; }
@@ -117,7 +125,7 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
 .bar b { text-align: right; font-weight: 700; }
 .bar .track { height: 14px; background: var(--well); border-radius: 7px; overflow: hidden; }
 .bar .fill { height: 100%; background: var(--c); border-radius: 7px; }
-.bar.alt .fill { background: var(--ink); }
+.bar.alt .fill { background: var(--tint); }
 
 /* ---------- steps ---------- */
 .steps { flex: none; list-style: none; margin-top: calc(42px * var(--k)); display: flex; flex-direction: column; }
@@ -148,7 +156,7 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
 .hbar .top span { color: var(--body); font-weight: 500; }
 .hbar .top b { font-weight: 700; }
 .hbar .track { height: calc(34px * var(--k)); border-radius: 10px; background: var(--well); overflow: hidden; }
-.hbar .fill { height: 100%; border-radius: 10px; background: #c9cbd1; }
+.hbar .fill { height: 100%; border-radius: 10px; background: #d5d7dc; }
 .hbar.on .top span, .hbar.on .top b { color: var(--c); font-weight: 700; }
 .hbar.on .fill { background: var(--c); }
 .rtable { flex: none; margin-top: calc(36px * var(--k)); }
@@ -192,9 +200,9 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
 .pc li { font-size: calc(29px * var(--k)); line-height: 1.5; }
 .pc .good .dots li::before { background: var(--good); }
 .pc .bad .dots li::before { background: var(--bad); }
-.who { flex: none; margin-top: calc(22px * var(--k)); padding: calc(22px * var(--k)) 28px; border-radius: 20px; background: var(--ink); color: #fff;
+.who { flex: none; margin-top: calc(22px * var(--k)); padding: calc(22px * var(--k)) 28px; border-radius: 20px; background: var(--deep); color: #fff;
        display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 18px; font-size: calc(28px * var(--k)); line-height: 1.5; }
-.who b { color: #fff; background: var(--c); padding: 0 10px; border-radius: 6px; align-self: start; }
+.who b { color: var(--deep); background: var(--tint); padding: 0 10px; border-radius: 6px; align-self: start; }
 
 /* explained words: a raised * in the text, the meaning at the bottom of the slide */
 .star { font-size: .6em; vertical-align: .6em; line-height: 0; margin-left: 1px; color: var(--c); font-weight: 700; }
@@ -204,15 +212,18 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
 .foot b::before { content: "* "; color: var(--c); }
 
 /* ---------- outro ---------- */
-.outro { background: #0f1013; color: #fff; }
+.outro { background: var(--deep); color: #fff; }
+.outro .band { background: transparent; border-top-color: var(--tint); }
+.outro .brand b, .outro .pg { color: #fff; }
+.outro .acro b { color: var(--tint); }
 .acro { margin: 96px 72px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 40px; }
-.acro div { font-size: 62px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.26; color: #5a5c63; white-space: nowrap; }
+.acro div { font-size: 62px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.26; color: rgba(255,255,255,.4); white-space: nowrap; }
 .acro b { color: #fff; font-weight: 700; }
 .outro .claim { margin: 88px 72px 0; font-size: 54px; line-height: 1.32; font-weight: 700; letter-spacing: -0.035em; }
-.outro .cta { margin: 30px 72px 0; font-size: 31px; line-height: 1.6; color: #a7a9ae; }
+.outro .cta { margin: 30px 72px 0; font-size: 31px; line-height: 1.6; color: rgba(255,255,255,.72); }
 .outro .cta b { color: #fff; font-weight: 600; }
-.outro .cta em { font-style: normal; color: #fff; background: var(--c); padding: 1px 10px; border-radius: 6px; font-weight: 600; }
-.outro .bottom { border-top-color: #26272c; color: #6d6f75; }
+.outro .cta em { font-style: normal; color: var(--deep); background: var(--tint); padding: 1px 10px; border-radius: 6px; font-weight: 700; }
+.outro .bottom { border-top-color: rgba(255,255,255,.14); color: rgba(255,255,255,.55); }
 .outro .bottom b { color: #fff; }
 
 /* while measuring, figures are out and the notes sit right under the text */
