@@ -23,7 +23,7 @@
       <div class="dots"></div>
     </div>
     <div class="dl">한 장씩 받기 {% for s in slides %}<a href="{{ (s.mp4 or s.png) ~ '?dl=1' }}" class="{{ 'vid' if s.mp4 }}" title="{{ '영상 (MP4)' if s.mp4 else '이미지 (PNG)' }}">{{ s.n }}{% if s.mp4 %}▶{% endif %}</a>{% endfor %}</div>
-    <p class="small muted post-tip">ZIP 안의 파일 번호 순서대로 인스타에 올리고, 아래 캡션을 붙여 넣으세요. ▶ 표시는 영상(MP4) 카드입니다.</p>
+    <p class="small muted post-tip">ZIP 안의 파일 번호 순서대로 인스타에 올리고, 아래 캡션을 붙여 넣으세요. 마지막 장(▶)은 영상(MP4)입니다.</p>
   {% else %}<p class="small muted" style="margin-top: 8px">카드뉴스가 아직 없습니다.</p>{% endif %}
   {% if caption %}
     <div class="cap-label">캡션</div>

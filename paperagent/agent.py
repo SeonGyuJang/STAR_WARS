@@ -481,17 +481,17 @@ Style: plain, natural Korean; keep technical terms in English where natural (e.g
 
 CARD_SCHEMA = _obj({
     "category": {**_str, "description": "Short field tag, e.g. 'LLM 에이전트'"},
-    "cover_headline": {**_str, "description": "A question a curious non-expert would ask, answered by this paper, ending with '?' - e.g. '작은 AI도 스스로 검산하면 더 똑똑해질까?'. <= 30 Korean chars, no line breaks, no clickbait"},
+    "cover_headline": {**_str, "description": "A question a curious non-expert would ask, answered by this paper, ending with '?', 2 lines separated by \\n, <= 16 chars per line - e.g. '작은 AI도 스스로\\n검산하면 더 똑똑해질까?'. No clickbait"},
     "cover_sub": {**_str, "description": "One Korean sentence that hints at the answer, with the key number if there is one (<= 70 chars)"},
     "cover_points": {**_str_list, "description": "Exactly 3 Korean takeaways, each <= 44 chars, at least one with a number"},
     "problem": _obj({
-        "headline": {**_str, "description": "One flowing phrase, <= 24 Korean chars, no line breaks"},
+        "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
         "points": {**_str_list, "description": "3 Korean sentences, each <= 75 chars: the situation, what goes wrong, why it matters"},
         "context": {**_str, "description": "2-3 plain Korean sentences of background, <= 170 chars (shown when there is no figure)"},
         "figure_number": {"type": "integer", "description": "Figure to show, 0 for none"},
     }),
     "idea": _obj({
-        "headline": {**_str, "description": "One flowing phrase, <= 24 Korean chars, no line breaks"},
+        "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
         "body": {**_str, "description": "2-3 Korean sentences, <= 170 chars in total: the core idea"},
         "figure_number": {"type": "integer", "description": "The method overview figure, 0 for none"},
     }),
@@ -501,7 +501,7 @@ CARD_SCHEMA = _obj({
                    label={**_str, "description": "<= 8 chars"}, value={**_str, "description": "<= 70 chars"}),
     "findings": {**_str_list, "description": "2 plain Korean sentences on what the extra experiments showed, each <= 80 chars"},
     "results": _obj({
-        "headline": {**_str, "description": "One flowing phrase, <= 24 Korean chars, no line breaks"},
+        "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
         "highlight": {**_str, "description": "The single most important number, e.g. '+12.4%p'"},
         "highlight_label": {**_str, "description": "What it measures, <= 30 chars"},
         "rows": _rows("3-4 results", item={**_str, "description": "<= 22 chars"}, value={**_str, "description": "<= 16 chars"},
@@ -544,7 +544,7 @@ Audience: people with no AI or engineering background. Write so they can follow 
 - When a technical word is unavoidable (a benchmark, method or metric name), either explain it in the same sentence or put * right after it (e.g. "MATH*") and define it in `terms`. Use at most 4 terms.
 - Say what numbers mean ("정답률 41.2% → 53.6%, 100문제 중 약 12문제를 더 맞힘") rather than leaving bare figures, but never change or invent a number.
 - Short, clear sentences; natural Korean; no hype.
-- The cover is a question the reader wants answered; the slides answer it. Never insert line breaks: the layout breaks a heading where it has a comma, so put a comma where a reader would naturally pause (e.g. "기술을 골라, 쉽게 풀어 드립니다").
+- The cover is a question the reader wants answered; the slides answer it.
 - Weaknesses and limits are constructive: "~에 대한 보완이 필요해 보입니다", "~는 다소 미흡할 수 있습니다", "~에 대한 추가 연구가 필요할 수 있습니다".
 
 Use only facts from the review. Card copy is rendered large, so respect every length limit - shorten wording, never cut a number.
@@ -644,7 +644,8 @@ def screen_tech(items, batch_size: int = 30, meter: CostMeter | None = None):
     return out
 
 
-_L = lambda n: {**_str, "description": f"<= {n} Korean chars, no line breaks"}  # noqa: E731
+_L = lambda n: {**_str, "description": f"<= {n} Korean chars"}  # noqa: E731
+_H = {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"}
 
 TECH_SCHEMA = _obj({
     "title_ko": {**_str, "description": "What it is, as a natural Korean title (<= 40 chars)"},
@@ -653,22 +654,22 @@ TECH_SCHEMA = _obj({
                                       "what to be careful about. Only facts from the material."},
     "category": {**_str, "description": "Short field tag, e.g. 'AI 에이전트', '개발 도구', '오픈소스 모델', '보안'"},
     "kind": {"type": "string", "enum": ["project", "model", "research", "news", "product"]},
-    "cover_headline": {**_str, "description": "A question a curious non-expert would ask, ending with '?' (<= 30 chars, no clickbait), "
-                                             "e.g. '코드 리뷰를 AI한테 맡겨도 될까?'"},
+    "cover_headline": {**_str, "description": "A question a curious non-expert would ask, ending with '?', 2 lines separated by \\n, "
+                                             "<= 16 chars per line, no clickbait, e.g. '코드 리뷰를\\nAI한테 맡겨도 될까?'"},
     "cover_sub": _L(70),
-    "what": _obj({"headline": _L(24),
+    "what": _obj({"headline": _H,
                   "points": {**_str_list, "description": "Exactly 3 Korean sentences, each <= 75 chars: what it is, what it does, what is new about it"},
                   "why_now": {**_str, "description": "2 Korean sentences on why people are talking about it now, with the numbers given (<= 160 chars)"}}),
-    "demo": _obj({"headline": _L(24), "body": {**_str, "description": "1-2 Korean sentences describing what the picture/clip shows or what using it looks like (<= 110 chars)"}}),
+    "demo": _obj({"headline": _H, "body": {**_str, "description": "1-2 Korean sentences describing what the picture/clip shows or what using it looks like (<= 110 chars)"}}),
     "how": _rows("3-4 steps: how it works or how it is used", title=_L(16), detail=_L(85)),
-    "numbers_headline": _L(24),
+    "numbers_headline": _H,
     "so_what": _obj({
-        "headline": _L(26),
+        "headline": _H,
         "items": _rows("Exactly 3 honest answers to '그래서 나랑 무슨 상관?': who benefits and how, what changes, what it costs or risks. No hype.",
                        title=_L(18), detail=_L(75)),
     }),
     "try_it": _obj({
-        "headline": _L(24),
+        "headline": _H,
         "steps": _rows("1-3 steps to try it. Use a command only if it appears in the material, copied exactly; otherwise describe the step and leave code empty",
                        title=_L(18), detail=_L(70), code={**_str, "description": "One short shell command from the material, or empty"}),
     }),
@@ -690,8 +691,7 @@ Audience: people with no engineering background who are curious about technology
 - Use only facts in the material and the numbers given. Never invent features, benchmarks, prices, dates or commands. If something is unknown, leave it out.
 - Say what numbers mean (e.g. "하루 만에 GitHub 스타 2,300개 - 그만큼 많은 개발자가 관심을 표시했다는 뜻").
 - Caveats are constructive ("~는 아직 초기 단계라 보완이 필요해 보입니다").
-- Short, clear sentences; natural Korean; no hype. Respect every length limit; never insert line breaks - headings break where
-  they have a comma, so put a comma where a reader would naturally pause."""
+- Short, clear sentences; natural Korean; no hype. Respect every length limit."""
 
 
 def write_tech(item: dict, context: dict, meter: CostMeter | None = None) -> dict:

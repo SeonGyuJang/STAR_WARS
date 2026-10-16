@@ -1,4 +1,5 @@
 import copy
+import re
 from pathlib import Path
 
 from PIL import Image
@@ -80,23 +81,20 @@ def test_hard_words_are_explained_once(sample_pdf, tmp_path):
     assert 'MATH<sup class="star">*</sup>' in html
 
 
-def test_card_copy_flows_without_forced_line_breaks(sample_pdf, tmp_path):
+def test_card_text_and_figure_captions(sample_pdf, tmp_path):
     figs = pdfs.extract_figures(sample_pdf, tmp_path / "figs")
     review = copy.deepcopy(demo.SAMPLE_REVIEW)
-    review["card"]["problem"]["headline"] = "작은 AI는 왜\\n수학 풀이에\n약할까요?"
     html = cardnews.build_html({"uid": "arxiv:1", "title": "T", "url": "https://x"}, review, figs)
-    assert "<br>" not in html.split('class="slide outro"')[0]
-    # a heading breaks between phrases (where the writer broke it, or after a comma), never inside one
-    assert '<span class="ph">작은 AI는 왜</span> <span class="ph">수학 풀이에</span> <span class="ph">약할까요?</span>' in html
-    assert [str(x) for x in cardnews.phrases("지금 개발자들이 주목하는 기술을 골라, 쉽게 풀어 드립니다.")] == \
-        ["지금 개발자들이 주목하는 기술을 골라,", "쉽게 풀어 드립니다."]
-    assert cardnews.phrases("정답률 41.2%에서 53.6%로") == ["정답률 41.2%에서 53.6%로"]  # no break inside numbers
+    assert "작은 AI는 왜<br>수학 풀이에 약할까요?" in html  # the writer's line break is kept
+    assert '<div class="cap">Figure 1. Overview' in html  # "Figure 1." stays together on one line
     assert "그래서 나랑 무슨 상관?" in html and 'class="hbar on"' in html  # so-what card, bars to scale
-    assert 'class="slide cover"' in html and "page1" not in html  # no first-page screenshot as a picture
+    assert "page1" not in html  # no first-page screenshot as a picture
+    outro = html[html.index('class="slide outro"'):]
+    assert re.search(r"읽고,</i></span><br><span", outro) and "<b>@starwars.research</b></p>" in outro
 
 
-def test_video_slide(sample_pdf, tmp_path):
-    """The key-idea slide is also written as an MP4: still frame, moving figure window."""
+def test_closing_slide_video(sample_pdf, tmp_path):
+    """Only the closing slide is a video: its words rise into place; every other slide is an image."""
     import subprocess
 
     import pytest
@@ -108,16 +106,18 @@ def test_video_slide(sample_pdf, tmp_path):
     figs = pdfs.extract_figures(sample_pdf, tmp_path / "figs")
     paper = {"uid": "arxiv:1", "title": "T", "url": "https://x"}
     paths, clips = cardnews.capture(cardnews.build_html(paper, copy.deepcopy(demo.SAMPLE_REVIEW), figs), tmp_path / "out")
-    assert list(clips) == [3] and Path(clips[3]).stat().st_size > 10_000
-    info = subprocess.run([video.ffmpeg_exe(), "-i", clips[3]], capture_output=True, text=True).stderr
-    assert "h264" in info and "1080x1350" in info and "yuv420p" in info and "Duration: 00:00:09" in info
-    # the frame around the window does not move; the window does
+    assert list(clips) == [len(paths)] == [10]
+    info = subprocess.run([video.ffmpeg_exe(), "-i", clips[10]], capture_output=True, text=True).stderr
+    assert "h264" in info and "1080x1350" in info and "yuv420p" in info and "Duration: 00:00:06" in info
     frames = []
-    for t in ("1", "5"):
+    for t in ("0.1", "5.5"):
         out = tmp_path / f"f{t}.png"
-        subprocess.run([video.ffmpeg_exe(), "-v", "error", "-ss", t, "-i", clips[3], "-frames:v", "1", "-y", str(out)], check=True)
+        subprocess.run([video.ffmpeg_exe(), "-v", "error", "-ss", t, "-i", clips[10], "-frames:v", "1", "-y", str(out)], check=True)
         frames.append(Image.open(out).convert("L"))
-    band = [f.crop((0, 0, 1080, 300)).tobytes() for f in frames]
-    diff = sum(abs(a - b) for a, b in zip(band[0], band[1])) / len(band[0])
-    assert diff < 2
-    assert frames[0].tobytes() != frames[1].tobytes()
+    claim = [f.crop((60, 600, 1020, 900)) for f in frames]
+    assert claim[0].getextrema()[1] < 80  # the text is not there yet
+    # the last frame is the still card
+    still = Image.open(paths[-1]).convert("L")
+    from PIL import ImageChops, ImageStat
+
+    assert ImageStat.Stat(ImageChops.difference(frames[1], still)).mean[0] < 3

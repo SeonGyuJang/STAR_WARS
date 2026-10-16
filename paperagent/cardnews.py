@@ -1,16 +1,17 @@
-"""Card news: 1080x1350 (4:5) carousels rendered to PNG, plus one MP4 slide.
+"""Card news: 1080x1350 (4:5) carousels rendered to PNG; the closing slide also as MP4.
 
 Two categories share one frame and differ by colour and label, so a scroll
 through the feed shows at a glance what kind of post it is:
 
-  paper - a reviewed paper (blue)      cards/<id>/card_NN.png
-  tech  - a trending project or news   tech/<id>/card_NN.png
-          (orange; GitHub Trending, Hacker News, GeekNews, Hugging Face)
+  paper - a reviewed paper (indigo)    cards/<id>/card_NN.png
+  tech  - a trending project or news   tech/<id>/cards/card_NN.png
+          (terracotta; GitHub Trending, Hacker News, GeekNews, Hugging Face)
 
 The slides are laid out in HTML/CSS (templates/cards/cards.html) and captured
 with headless Chromium through Playwright, so Korean typography (the bundled
-Pretendard font) stays crisp. One slide per carousel can also be written as a
-video (video.py): the frame stays still and only its image window moves.
+Pretendard font) stays crisp. Every slide is a still image except the closing
+one, which is also written as a short MP4 with the same animation on every post:
+its words rise into place one after another (video.py encodes the frames).
 """
 import io
 import json
@@ -36,9 +37,9 @@ FONT_DIR = PKG_DIR / "static" / "fonts"
 # WCAG AA contrast.
 THEMES = {
     "paper": {"key": "paper", "color": "#3A5A9F", "deep": "#1E2A47", "soft": "#EEF2F9", "tint": "#AEBFE8", "label": "PAPER",
-              "name": "논문 리뷰", "claim": "읽을 가치가 있는 논문만 골라 읽고, 평가합니다."},
+              "name": "논문 리뷰", "claim": "읽을 가치가 있는 논문만 골라 읽고,\n평가합니다."},
     "tech": {"key": "tech", "color": "#A84B24", "deep": "#2A221D", "soft": "#FAF0E9", "tint": "#F0A983", "label": "TECH",
-             "name": "테크 트렌드", "claim": "지금 개발자들이 주목하는 기술을 골라, 쉽게 풀어 드립니다."},
+             "name": "테크 트렌드", "claim": "지금 개발자들이 주목하는 기술을 골라,\n쉽게 풀어 드립니다."},
 }
 
 TECH_BASE_HASHTAGS = config.CARD_TECH_BASE_HASHTAGS
@@ -46,40 +47,16 @@ TECH_BASE_HASHTAGS = config.CARD_TECH_BASE_HASHTAGS
 _env = Environment(loader=FileSystemLoader(PKG_DIR / "templates" / "cards"), autoescape=select_autoescape(["html"]))
 
 
-def _one_line(s) -> str:
-    """Card copy flows on its own: line breaks the writer put in (often in odd
-    places once the type scale changes) are turned into spaces."""
-    return re.sub(r"\s*(?:\\n|\n)+\s*", " ", str(s or "")).strip()
-
-
-def _star(html: str) -> str:
-    return re.sub(r"(?<=\S)\*", '<sup class="star">*</sup>', html)
+_env.filters["nl2br"] = lambda s: Markup("<br>".join(escape(line) for line in str(s or "").replace("\\n", "\n").split("\n")))
 
 
 def _text(s):
-    """Card text: escaped, on one flowing line, and the * after an explained word raised."""
-    return Markup(_star(str(escape(_one_line(s)))))
-
-
-# Where a heading may break: after a comma or other clause mark, or where the
-# writer put a line break. Each phrase is kept together when it fits, so
-# "기술을 골라, 쉽게 풀어 드립니다" breaks after "골라," and not inside a phrase.
-_PHRASE_END = re.compile(r"(?<=[,·:;?!…])\s+|(?<=[가-힣a-zA-Z)][.])\s+|\s*(?:\\n|\n)+\s*")
-
-
-def phrases(s) -> list[str]:
-    return [p for p in _PHRASE_END.split(str(s or "").strip()) if p.strip()]
-
-
-def _heading(s):
-    parts = phrases(s)
-    if len(parts) < 2:
-        return _text(s)
-    return Markup(" ".join(f'<span class="ph">{_star(str(escape(p)))}</span>' for p in parts))
+    """Card text: escaped, line breaks kept, and the * after an explained word raised."""
+    html = _env.filters["nl2br"](s)
+    return Markup(re.sub(r"(?<=\S)\*", '<sup class="star">*</sup>', str(html)))
 
 
 _env.filters["t"] = _text
-_env.filters["th"] = _heading
 
 
 def _source_ref(paper):
@@ -207,8 +184,7 @@ def paper_slides(paper, review, figures):
     slides.append({"kind": "summary", "headline": "한눈에 정리", "rows": card.get("summary_rows") or []})
     slides.append({"kind": "outro"})
 
-    # The key-idea slide moves (video) when it has a figure; otherwise the
-    # first unused figure goes there, so the idea is never just text.
+    # The key-idea slide always gets a picture: its own figure, else the first unused one.
     used = {s["figure"]["number"] for s in slides if s.get("figure")}
     for s in slides:
         if s["kind"] == "media" and not s.get("figure"):
@@ -216,8 +192,6 @@ def paper_slides(paper, review, figures):
             if spare:
                 s["figure"] = spare
                 used.add(spare["number"])
-        if s["kind"] == "media" and s.get("figure"):
-            s["video"] = {"src": s["figure"]["path"], "pad": "white"}
 
     cover_image = next((f for n, f in figs.items() if n not in used), None) or (
         next((s["figure"] for s in slides if s["kind"] == "media" and s.get("figure")), None))
@@ -294,45 +268,40 @@ def capture(html: str, out_dir: Path, videos=True):
                 path = out_dir / f"card_{i:02d}.png"
                 el.screenshot(path=str(path))
                 paths.append(str(path))
-            if videos and video.available():
-                for i, el in enumerate(slides, start=1):
-                    src = el.get_attribute("data-video")
-                    if not src:
-                        continue
-                    try:
-                        clips[i] = str(_video_slide(page, el, i, src, el.get_attribute("data-video-pad") or "white", out_dir))
-                    except Exception as exc:  # the still card is still there
-                        log.warning("video slide %s failed: %s", i, exc)
+            last = slides[-1] if slides else None
+            if videos and last is not None and last.get_attribute("data-video") == "outro" and video.available():
+                try:
+                    clips[len(slides)] = str(_outro_video(page, last, len(slides), out_dir))
+                except Exception as exc:  # the still card is still there
+                    log.warning("closing video failed: %s", exc)
         finally:
             browser.close()
     return paths, clips
 
 
-def _video_slide(page, el, n, src, pad, out_dir: Path):
-    """Frame = the card as rendered; mask = white where the window is."""
-    box = el.evaluate("""(slide) => {
-        const w = slide.querySelector('[data-window]'); if (!w) return null;
-        const a = slide.getBoundingClientRect(), b = w.getBoundingClientRect();
-        return [b.left - a.left, b.top - a.top, b.width, b.height];
-    }""")
-    if not box or box[2] < 200 or box[3] < 150:
-        raise RuntimeError("no room for a video window")
-    frame = out_dir / f"frame_{n:02d}.png"
-    mask = out_dir / f"mask_{n:02d}.png"
-    el.screenshot(path=str(frame))
-    el.evaluate("(slide) => slide.classList.add('mask-mode')")
-    el.screenshot(path=str(mask))
-    el.evaluate("(slide) => slide.classList.remove('mask-mode')")
-    out = out_dir / f"card_{n:02d}.mp4"
-    video.compose(frame, mask, src, box, out, pad_color=pad)
-    frame.unlink(missing_ok=True)
-    mask.unlink(missing_ok=True)
+def _outro_video(page, el, n, out_dir: Path):
+    """The closing slide as an MP4: start its CSS animations (.play), step them
+    frame by frame with the Web Animations API, screenshot each frame and encode."""
+    frames = out_dir / f"frames_{n:02d}"
+    shutil.rmtree(frames, ignore_errors=True)
+    frames.mkdir()
+    el.scroll_into_view_if_needed()
+    box = el.bounding_box()
+    el.evaluate("(s) => { s.classList.add('play'); s.getAnimations({ subtree: true }).forEach((a) => a.pause()); }")
+    try:
+        for i in range(round(video.OUTRO_SECONDS * video.FPS)):
+            el.evaluate("(s, t) => s.getAnimations({ subtree: true }).forEach((a) => { a.currentTime = t; })", i * 1000 / video.FPS)
+            page.screenshot(path=str(frames / f"{i:04d}.jpg"), type="jpeg", quality=94, clip=box)
+    finally:
+        el.evaluate("(s) => s.classList.remove('play')")
+    out = video.encode(frames, out_dir / f"card_{n:02d}.mp4")
+    shutil.rmtree(frames, ignore_errors=True)
     return out
 
 
 def render(paper: dict, review: dict, figures, out_dir: Path, page1=None, videos=False):
     """Render a paper's slides to out_dir/card_XX.png; returns the list of paths.
-    With videos=True the key-idea slide is also written as card_XX.mp4."""
+    With videos=True the closing slide is also written as card_XX.mp4."""
     paths, _ = capture(build_html(paper, review, figures), out_dir, videos=videos)
     (out_dir / "caption.txt").write_text(build_caption(paper, review), encoding="utf-8")
     return paths
@@ -438,10 +407,12 @@ def _tech_ref(item) -> str:
 
 
 def _poster(clip: str, out: Path):
-    """First frame of a clip, for the still card and the dashboard."""
+    """A still from the middle of a demo clip (its first frame is often still empty)."""
     import subprocess
 
-    subprocess.run([video.ffmpeg_exe(), "-v", "error", "-y", "-i", clip, "-frames:v", "1", str(out)], check=True, timeout=60)
+    at = min((video.media_seconds(clip) or 0) * 0.6, 8.0)
+    subprocess.run([video.ffmpeg_exe(), "-v", "error", "-y", "-ss", f"{at:.2f}", "-i", clip, "-frames:v", "1", str(out)],
+                   check=True, timeout=60)
     return out if out.exists() else None
 
 
@@ -454,7 +425,12 @@ def tech_slides(item, review, media, tmp: Path):
 
     images = list(media.get("images") or [])
     clip = media.get("video")
-    poster = _poster(clip, tmp / "poster.png") if clip and video.available() else None
+    poster = None
+    if clip and video.ffmpeg_exe():
+        try:
+            poster = _poster(clip, tmp / "poster.png")
+        except Exception as exc:
+            log.warning("demo still failed: %s", exc)
     tiles = tech_tiles(item)
     src_name = SOURCES.get(item["source"], {}).get("short", item["source"])
 
@@ -466,10 +442,8 @@ def tech_slides(item, review, media, tmp: Path):
     demo = review.get("demo") or {}
     show = photo(poster, "") if poster else photo(images[1] if len(images) > 1 else (images[0] if images else None))
     if show:
-        s = {"kind": "media", "label": "직접 보기 · 데모 영상" if poster else "직접 보기",
-             "headline": demo.get("headline") or review.get("title_ko"), "body": demo.get("body"), "figure": show}
-        s["video"] = {"src": clip if poster else show["path"], "pad": "#16171b"}
-        slides.append(s)
+        slides.append({"kind": "media", "label": "직접 보기", "headline": demo.get("headline") or review.get("title_ko"),
+                       "body": demo.get("body"), "figure": show})
     if review.get("how"):
         slides.append({"kind": "steps", "label": "어떻게 작동하나요", "headline": "핵심만 짚어 보면", "steps": review["how"][:4]})
     if tiles:

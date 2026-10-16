@@ -19,7 +19,6 @@
       <a href="{{ url_for('web.tech_detail', item_id=t.id) }}">자세히 보기</a>
       {% if t.url %}<a href="{{ t.url }}" target="_blank" rel="noopener">원문</a>{% endif %}
       {% if t.card_paths %}<a href="{{ url_for('web.file_tech_zip', item_id=t.id) }}">카드뉴스</a>{% endif %}
-      {% if t.card_videos %}<span class="vid-badge">▶ 영상 카드</span>{% endif %}
     </div>
   </div>
   <a class="thumb" href="{{ url_for('web.tech_detail', item_id=t.id) }}" aria-label="카드뉴스 미리보기">{% if t.card_paths %}<img loading="lazy" src="{{ url_for('web.file_tech_card', item_id=t.id, n=1) }}" alt="">{% endif %}</a>

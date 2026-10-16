@@ -167,7 +167,7 @@ def test_tech_stage_end_to_end(fresh_db):
     from paperagent import video
 
     if video.available():
-        assert list(done["card_videos"]) == ["3"]
+        assert list(done["card_videos"]) == ["9"]  # the closing slide
 
     app = create_app(start_scheduler=False)
     c = app.test_client()
@@ -181,8 +181,8 @@ def test_tech_stage_end_to_end(fresh_db):
     names = z.namelist()
     assert "caption.txt" in names and len([n for n in names if n.startswith("card_")]) == 9
     if video.available():
-        assert "card_03.mp4" in names and "card_03.png" not in names
-        assert c.get(f"/files/tech/{done['id']}/card/3.mp4").mimetype == "video/mp4"
+        assert "card_09.mp4" in names and "card_09.png" not in names and "card_03.png" in names
+        assert c.get(f"/files/tech/{done['id']}/card/9.mp4").mimetype == "video/mp4"
         assert "<video" in page
     # the home page points to the new TECH post
     assert "새 테크 소식" in c.get("/").get_data(as_text=True)
