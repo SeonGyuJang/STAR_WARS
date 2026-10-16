@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf with context %}
+{% block title %}테크 소식 · {{ site_name }}{% endblock %}
+{% block content %}
+<section class="hero tech">
+  <div class="hero-main">
+    <span class="hero-tag">TECH</span>
+    <h1>테크 소식</h1>
+    <p>GitHub Trending, Hacker News, GeekNews, Hugging Face에서 지금 화제인 프로젝트와 소식을 골라 쉽게 풀어 쓰고, 카드뉴스로 만듭니다.</p>
+  </div>
+  <div class="hero-stats">
+    <div><b>{{ counts.status.get('done', 0) }}</b><span>만든 카드뉴스</span></div>
+    <div><b>{{ counts.status.get('screened', 0) }}</b><span>만들 차례</span></div>
+    <div><b>{{ settings.tech_per_run }}</b><span>실행마다 만드는 수</span></div>
+    {% if is_admin %}<form method="post" action="{{ url_for('web.tech_run') }}">{{ csrf() }}<button class="btn invert" {{ 'disabled' if running }}>{{ '실행 중' if running else '지금 만들기' }}</button></form>{% endif %}
+  </div>
+</section>
+
+<div class="layout">
+  <div>
+    <div class="tabbar">
+      <nav class="tabs" aria-label="출처">
+        <a href="{{ url_for('web.tech_index', **(filter_args | dict_without('source', 'page'))) }}" class="{{ 'on' if not filters.source }}">전체 <span>{{ counts.status.get('done', 0) }}</span></a>
+        {% for key, s in sources.items() %}<a href="{{ url_for('web.tech_index', source=key, **(filter_args | dict_without('source', 'page'))) }}" class="{{ 'on' if filters.source == key }}"><span class="sdot s-{{ key }}"></span>{{ s.short }} <span>{{ counts.done_by_source.get(key, 0) }}</span></a>{% endfor %}
+      </nav>
+    </div>
+    <form class="toolbar" method="get">
+      {% if filters.source %}<input type="hidden" name="source" value="{{ filters.source }}">{% endif %}
+      <input type="search" name="q" value="{{ filters.q }}" placeholder="검색 ( / )" aria-label="검색" data-search>
+    </form>
+    <div class="plist">
+    {% for t in items %}{% include "_tech_card.html" %}
+    {% else %}
+      <div class="card empty">
+        {% if filters.q or filters.source %}<h3>조건에 맞는 테크 소식이 없습니다</h3><p>검색어나 출처를 바꿔 보세요.</p>
+        {% else %}<h3>아직 만든 테크 카드뉴스가 없습니다</h3>
+        <p>{% if is_admin %}<b>지금 만들기</b>를 누르면 네 곳에서 소식을 모아 가장 흥미로운 {{ settings.tech_per_run }}개를 카드뉴스로 만듭니다. 정기 실행 때도 논문 다음에 자동으로 만듭니다.{% else %}정기 실행 때마다 화제인 프로젝트와 소식이 이곳에 올라옵니다.{% endif %}</p>{% endif %}
+      </div>
+    {% endfor %}
+    </div>
+    {% if page > 1 or has_more %}
+    <div class="pager">
+      {% if page > 1 %}<a class="btn ghost sm" href="{{ url_for('web.tech_index', page=page-1, **filter_args) }}">이전</a>{% endif %}
+      {% if has_more %}<a class="btn ghost sm" href="{{ url_for('web.tech_index', page=page+1, **filter_args) }}">다음</a>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <aside class="side">
+    <section class="card">
+      <div class="side-h"><h3>다음에 만들 소식</h3><span class="small muted">관심도 {{ settings.tech_min_interest }} 이상</span></div>
+      {% if upcoming %}
+      <form method="post" action="{{ url_for('web.tech_run') }}">{{ csrf() }}
+        {% for t in upcoming %}
+        <div class="mini tech-mini">
+          {% if is_admin %}<input type="checkbox" name="item_id" value="{{ t.id }}" aria-label="{{ t.title }} 선택">{% endif %}
+          <div><span class="sbadge s-{{ t.source }}">{{ tech_source_names.get(t.source) }}</span> <a href="{{ t.url }}" target="_blank" rel="noopener">{{ t.title }}</a>
+            <div class="why">관심도 {{ t.interest }} · {{ t.interest_reason }}</div></div>
+        </div>
+        {% endfor %}
+        {% if is_admin %}<button class="btn sm" style="margin-top: 10px">고른 것 지금 만들기</button>{% endif %}
+      </form>
+      {% else %}<p class="small muted">다음 실행 때 새 소식을 모아 고릅니다.</p>{% endif %}
+    </section>
+    <section class="card">
+      <div class="side-h"><h3>어디서 가져오나요</h3>{% if is_admin %}<a href="{{ url_for('web.settings') }}#tech">설정</a>{% endif %}</div>
+      <ul class="src-list">
+        {% for key, s in sources.items() %}<li class="{{ 'off' if key not in settings.tech_sources }}"><span class="sbadge s-{{ key }}">{{ s.short }}</span>
+          <a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.name }}</a>{% if key not in settings.tech_sources %} <span class="small muted">(꺼짐)</span>{% endif %}</li>{% endfor %}
+      </ul>
+    </section>
+    {% if is_admin and skipped %}
+    <section class="card">
+      <div class="side-h"><h3>관심도 미달</h3><span class="small muted">{{ skipped | length }}개</span></div>
+      <form method="post" action="{{ url_for('web.tech_run') }}">{{ csrf() }}
+        <div class="kw-vlist collapsed" data-kw-list>
+        {% for t in skipped %}<div class="mini tech-mini"><input type="checkbox" name="item_id" value="{{ t.id }}" aria-label="{{ t.title }} 선택">
+          <div><span class="sbadge s-{{ t.source }}">{{ tech_source_names.get(t.source) }}</span> <a href="{{ t.url }}" target="_blank" rel="noopener">{{ t.title }}</a>
+            <div class="why">관심도 {{ t.interest }} · {{ t.interest_reason }}</div></div></div>{% endfor %}
+        </div>
+        <button type="button" class="kw-more" data-kw-toggle hidden>전체 보기</button>
+        <button class="btn ghost sm" style="margin-top: 10px">고른 것 그래도 만들기</button>
+      </form>
+    </section>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

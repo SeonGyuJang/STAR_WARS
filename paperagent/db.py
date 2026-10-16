@@ -348,6 +348,9 @@ def pipeline_settings() -> dict:
         "max_per_source": get_setting("max_per_source", config.DEFAULT_MAX_PER_SOURCE),
         "max_full_reads": get_setting("max_full_reads", config.DEFAULT_MAX_FULL_READS),
         "min_relevance": get_setting("min_relevance", config.DEFAULT_MIN_RELEVANCE),
+        "tech_per_run": get_setting("tech_per_run", config.DEFAULT_TECH_PER_RUN),
+        "tech_min_interest": get_setting("tech_min_interest", config.DEFAULT_TECH_MIN_INTEREST),
+        "tech_sources": get_setting("tech_sources", config.DEFAULT_TECH_SOURCES),
     }
 
 

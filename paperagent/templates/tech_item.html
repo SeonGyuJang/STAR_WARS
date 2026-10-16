@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, cards_panel with context %}
+{% block title %}{{ r.title_ko or t.title }} · {{ site_name }}{% endblock %}
+{% block meta %}
+<meta property="og:title" content="{{ r.title_ko or t.title }}">
+<meta property="og:description" content="{{ r.one_liner or (t.summary or '')[:150] }}">
+<meta property="og:site_name" content="{{ site_name }}">
+{% if t.card_paths %}<meta property="og:image" content="{{ url_for('web.file_tech_card', item_id=t.id, n=1, _external=True) }}">{% endif %}
+{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('web.tech_index') }}">← 테크 소식</a>
+<header class="dhead tech">
+  <div class="pmeta meta"><div>
+    <span class="mi"><span class="sbadge s-{{ t.source }}">{{ source.short or t.source }}</span></span>
+    {% if r.category %}<span class="mi cat">{{ r.category }}</span>{% endif %}
+    {% if t.reviewed_at %}<span class="mi">{{ t.reviewed_at | kst('%Y.%m.%d') }}</span>{% endif %}
+  </div></div>
+  <h1>{{ r.title_ko or t.title }}</h1>
+  {% if r.title_ko %}<p class="en">{{ t.title }}</p>{% endif %}
+  <div class="actions">
+    {% if t.url %}<a class="btn" href="{{ t.url }}" target="_blank" rel="noopener">원문 보기</a>{% endif %}
+    {% if (t.meta or {}).discussion and (t.meta or {}).discussion != t.url %}<a class="btn ghost" href="{{ t.meta.discussion }}" target="_blank" rel="noopener">{{ source.short }} 토론</a>{% endif %}
+    <button class="btn ghost" data-share="{{ share_url }}" data-title="{{ r.title_ko or t.title }}">링크 공유</button>
+    {% if is_admin and t.status != 'done' %}<form method="post" action="{{ url_for('web.tech_run') }}">{{ csrf() }}<input type="hidden" name="item_id" value="{{ t.id }}"><button class="btn ghost">지금 카드뉴스 만들기</button></form>{% endif %}
+  </div>
+</header>
+
+{% if t.status != 'done' %}
+  <div class="dgrid"><div class="article">
+    <div class="summary-box">
+      {% if t.status == 'error' %}<div class="label">카드뉴스를 만들다 오류가 났습니다</div><pre class="log">{{ t.error }}</pre>
+      {% elif t.status == 'skipped' %}<div class="label">관심도가 낮아 건너뛴 소식입니다</div><p>관심도 {{ t.interest }} · {{ t.interest_reason }}</p>
+      {% elif t.status == 'screened' %}<div class="label">다음 실행 때 카드뉴스로 만듭니다</div><p>관심도 {{ t.interest }} · {{ t.interest_reason }}</p>
+      {% else %}<div class="label">아직 살펴보지 않은 소식입니다</div>{% endif %}
+    </div>
+    {% if t.summary %}<section class="sec"><h2>소개</h2><p>{{ t.summary }}</p></section>{% endif %}
+  </div></div>
+{% else %}
+<div class="dgrid">
+  <div class="article">
+    <div class="summary-box tech">
+      <div class="label">요약</div>
+      <p class="lead">{{ r.one_liner }}</p>
+      <p>{{ r.summary }}</p>
+    </div>
+    {% set what = r.what or {} %}
+    {% if what.points %}<section class="sec"><h2>무엇인가요</h2><ul>{% for x in what.points %}<li>{{ x | replace('*', '') }}</li>{% endfor %}</ul>
+      {% if what.why_now %}<p class="callout">{{ what.why_now }}</p>{% endif %}</section>{% endif %}
+    {% if r.how %}<section class="sec"><h2>어떻게 작동하나요</h2>
+      <ol class="steps">{% for x in r.how %}<li><b>{{ x.title }}</b><span>{{ x.detail | replace('*', '') }}</span></li>{% endfor %}</ol></section>{% endif %}
+    {% if (r.so_what or {}).items %}<section class="sec"><h2>그래서 나랑 무슨 상관?</h2>
+      <div class="sowhat-list">{% for x in r.so_what['items'] %}<div><b>{{ x.title }}</b><p>{{ x.detail | replace('*', '') }}</p></div>{% endfor %}</div></section>{% endif %}
+    {% if (r.try_it or {}).steps %}<section class="sec"><h2>직접 써보기</h2>
+      <ol class="steps">{% for x in r.try_it.steps %}<li><b>{{ x.title }}</b><span>{{ x.detail }}</span>{% if x.code %}<pre class="cmd"><code>{{ x.code }}</code></pre>{% endif %}</li>{% endfor %}</ol>
+      <p class="small muted">명령어는 원문(README 등)에 나온 그대로입니다. 실행 전에 원문에서 한 번 더 확인해 주세요.</p></section>{% endif %}
+    {% if r.caveats %}<section class="sec"><h2>알아 둘 점</h2><ul>{% for x in r.caveats %}<li>{{ x }}</li>{% endfor %}</ul></section>{% endif %}
+    {% if r.terms %}<section class="sec"><h2>용어 정리</h2>
+      <dl class="kv glossary">{% for x in r.terms %}<dt>{{ x.term }}</dt><dd>{{ x.meaning }}</dd>{% endfor %}</dl></section>{% endif %}
+  </div>
+
+  <aside>
+    <section class="card numbers-card tech">
+      <div class="score-top"><h3>숫자로 보기</h3><span class="small muted">{{ source.name }} 기준</span></div>
+      {% if tiles %}<div class="ntiles">{% for x in tiles %}<div><b>{{ x.value }}</b><span>{{ x.label }}</span></div>{% endfor %}</div>
+      {% else %}<p class="small muted">출처에서 공개한 수치가 없습니다.</p>{% endif %}
+      <div class="relevance">관심도 {{ t.interest }} · {{ t.interest_reason }}{% if t.cost_usd is not none %}<br>작성 비용 ${{ '%.3f' % t.cost_usd }}{% endif %}</div>
+    </section>
+    {{ cards_panel(slides, url_for('web.file_tech_zip', item_id=t.id), caption, url_for('web.tech_rerender', item_id=t.id), 'tech') }}
+  </aside>
+</div>
+{% endif %}
+{% endblock %}

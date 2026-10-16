@@ -8,7 +8,7 @@ from pathlib import Path
 
 import anthropic
 
-from . import agent, cardnews, config, db, pdfs, storage
+from . import agent, cardnews, config, db, pdfs, storage, technews
 from .collectors import arxiv, match_keywords, openalex, trending, venues
 
 log = logging.getLogger(__name__)
@@ -20,6 +20,10 @@ STAGE_LABELS = {"screen": "관련도 판단", "read": "원문 읽는 중", "judg
 
 class RunCancelled(Exception):
     """The admin stopped the run from the dashboard."""
+
+
+class _SkipPapers(Exception):
+    """A TECH-only run: go straight to the TECH stage."""
 
 
 def is_running() -> bool:
@@ -331,14 +335,17 @@ def add_uploaded_pdf(data: bytes, filename: str = "", title: str = "") -> tuple[
     return pid, True
 
 
-def run(trigger: str = "schedule", paper_ids=None):
+def run(trigger: str = "schedule", paper_ids=None, tech_only=False, tech_ids=None):
     """One full cycle. Returns the run id, or None if a run is already in progress.
 
     Collecting papers and refreshing the trend panels need no Claude API, so
     they always run. If the API is unusable (no key, bad key, no credit...),
     only the AI steps stop; the run is marked 'partial' and the dashboard shows
     a notice asking the admin to check the API. The admin can stop a run at any
-    time from the dashboard (강제 종료)."""
+    time from the dashboard (강제 종료).
+
+    After the papers, the run also makes TECH posts from trending projects and
+    tech news (technews.py). tech_only=True runs just that part."""
     with _start_lock:
         if db.active_run() is not None:  # running here or in another dyno/process
             return None
@@ -355,6 +362,8 @@ def run(trigger: str = "schedule", paper_ids=None):
         keywords = [k["term"] for k in db.list_keywords()]
         if not keywords:
             say("no keywords registered - add some on the settings page")
+        if tech_only:
+            raise _SkipPapers()
         if not paper_ids:
             say.update(phase="collect", stage="논문 수집 중")
             resolve_journals(say)
@@ -396,6 +405,8 @@ def run(trigger: str = "schedule", paper_ids=None):
             status = "partial"
             stats["api_error"] = exc.message
             say(f"AI 단계 중단: {exc.message} API 키와 결제 상태를 확인하세요. 수집과 트렌드는 계속 진행합니다.")
+    except _SkipPapers:
+        pass
     except RunCancelled:
         cancelled = True
     except Exception as exc:
@@ -405,8 +416,7 @@ def run(trigger: str = "schedule", paper_ids=None):
         except RunCancelled:
             cancelled = True
     finally:
-        agent.set_call_listener(None)
-        if not paper_ids and not cancelled:
+        if not paper_ids and not tech_only and not cancelled:
             try:
                 say.update(phase="trending", stage="트렌드 갱신 중", current=None)
                 trending.refresh_all(keywords, logger=say)
@@ -414,6 +424,28 @@ def run(trigger: str = "schedule", paper_ids=None):
                 cancelled = True
             except Exception as exc:  # never let trends break the run record
                 log.warning("trending failed: %s", exc)
+        settings = db.pipeline_settings()
+        if not paper_ids and not cancelled and status != "error" and "api_error" not in stats \
+                and (tech_only or (settings["tech_sources"] and settings["tech_per_run"] > 0)):
+            try:
+                say.update(phase="tech", stage="테크 소식 모으는 중", current=None)
+                agent.ensure_api()
+                tech = technews.run_stage(settings, say, meter, item_ids=tech_ids)
+                stats["tech_done"], stats["tech_failed"] = tech["tech_done"], tech["tech_failed"]
+                stats["cost_usd"] += tech["tech_cost_usd"]
+            except RunCancelled:
+                cancelled = True
+            except agent.ApiUnavailable as exc:
+                status = "partial"
+                stats["api_error"] = exc.message
+                say(f"테크 소식 단계 중단: {exc.message}")
+            except Exception as exc:  # the papers of this run are already saved
+                log.warning("tech stage failed: %s", exc)
+                try:
+                    say(f"tech stage failed: {exc}")
+                except RunCancelled:
+                    cancelled = True
+        agent.set_call_listener(None)
         stats["cost_usd"] = round(stats["cost_usd"] + meter.total_usd, 4)
         if not cancelled:
             try:
@@ -439,8 +471,9 @@ def refresh_trending_only(say=log.info):
     trending.refresh_all(keywords, logger=say)
 
 
-def run_in_background(trigger="manual", paper_ids=None) -> bool:
+def run_in_background(trigger="manual", paper_ids=None, tech_only=False, tech_ids=None) -> bool:
     if is_running():
         return False
-    threading.Thread(target=run, kwargs={"trigger": trigger, "paper_ids": paper_ids}, daemon=True).start()
+    threading.Thread(target=run, kwargs={"trigger": trigger, "paper_ids": paper_ids, "tech_only": tech_only,
+                                         "tech_ids": tech_ids}, daemon=True).start()
     return True

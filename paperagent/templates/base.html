@@ -13,9 +13,10 @@
 <body>
 <header class="site-head">
   <div class="wrap">
-    <a class="logo" href="{{ url_for('web.index') }}">{{ site_name }}</a>
+    <a class="logo" href="{{ url_for('web.index') }}"><span class="mark" aria-hidden="true"><i></i><i></i></span>{{ site_name }}</a>
     <nav class="nav">
-      <a href="{{ url_for('web.index') }}" class="{{ 'on' if request.endpoint == 'web.index' }}">오늘의 논문</a>
+      <a href="{{ url_for('web.index') }}" class="{{ 'on' if request.endpoint in ('web.index', 'web.paper_detail') }}"><span class="sdot s-paper"></span>오늘의 논문</a>
+      <a href="{{ url_for('web.tech_index') }}" class="{{ 'on' if request.endpoint in ('web.tech_index', 'web.tech_detail') }}"><span class="sdot s-tech"></span>테크 소식</a>
       <a href="{{ url_for('web.trending_view') }}" class="{{ 'on' if request.endpoint == 'web.trending_view' }}">트렌드</a>
       <a href="{{ url_for('web.queue') }}" class="{{ 'on' if request.endpoint == 'web.queue' }}">대기열</a>
       {% if is_admin %}<a href="{{ url_for('web.settings') }}" class="{{ 'on' if request.endpoint == 'web.settings' }}">설정</a>{% endif %}
@@ -67,7 +68,7 @@
   </header>
   <ol class="stepper" data-c-steps>
     <li data-step="collect">수집</li><li data-step="screen">관련도 판단</li><li data-step="read">정독·리뷰</li>
-    <li data-step="trending">트렌드</li><li data-step="done">완료</li>
+    <li data-step="trending">트렌드</li><li data-step="tech">테크 소식</li><li data-step="done">완료</li>
   </ol>
   <section class="console-now" data-c-now hidden>
     <div class="now-label">지금 하는 일</div>

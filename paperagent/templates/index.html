@@ -1,18 +1,19 @@
 {% extends "base.html" %}
 {% from "_macros.html" import csrf, source_select with context %}
 {% block content %}
-<section class="page-head">
-  <div>
+<section class="hero paper">
+  <div class="hero-main">
+    <span class="hero-tag">PAPER</span>
     <h1>{% if filters.source %}{{ filters.source.name | replace('arXiv · ', 'arXiv ') }}{% else %}오늘의 논문{% endif %}</h1>
     <p>{% if filters.source %}이 출처에서 모은 논문만 보고 있습니다. <a class="inline-link" href="{{ url_for('web.index', **(filter_args | dict_without('source'))) }}">모든 출처 보기</a>
        {% else %}관심 주제에 맞는 새 논문을 에이전트가 원문까지 읽고, 방법론과 참신성으로 평가했습니다.{% endif %}</p>
   </div>
-  <div class="page-meta">
-    <span>24시간 <b>{{ counts.get('today', 0) }}편</b></span>
-    <span>누적 <b>{{ counts.get('done', 0) }}편</b></span>
-    <span>대기 <b>{{ counts.get('screened', 0) }}편</b></span>
-    {% if next_run %}<span>다음 실행 {{ next_run | kst('%m.%d %H:%M') }}</span>{% endif %}
-    {% if is_admin %}<form method="post" action="{{ url_for('web.run_now') }}">{{ csrf() }}<button class="btn ghost sm" {{ 'disabled' if running }}>{{ '실행 중' if running else '지금 실행' }}</button></form>{% endif %}
+  <div class="hero-stats">
+    <div><b>{{ counts.get('today', 0) }}</b><span>24시간 새 리뷰</span></div>
+    <div><b>{{ counts.get('done', 0) }}</b><span>누적 리뷰</span></div>
+    <div><b>{{ counts.get('screened', 0) }}</b><span>읽을 차례</span></div>
+    {% if next_run %}<div><b>{{ next_run | kst('%H:%M') }}</b><span>다음 실행 · {{ next_run | kst('%m.%d') }}</span></div>{% endif %}
+    {% if is_admin %}<form method="post" action="{{ url_for('web.run_now') }}">{{ csrf() }}<button class="btn invert" {{ 'disabled' if running }}>{{ '실행 중' if running else '지금 실행' }}</button></form>{% endif %}
   </div>
 </section>
 
@@ -66,6 +67,14 @@
   </div>
 
   <aside class="side">
+    {% if tech_latest %}
+    <section class="card side-tech">
+      <div class="side-h"><h3><span class="sdot s-tech"></span>새 테크 소식</h3><a href="{{ url_for('web.tech_index') }}">더 보기</a></div>
+      {% for t in tech_latest %}
+        <a class="mini" href="{{ url_for('web.tech_detail', item_id=t.id) }}"><span class="n"><span class="sbadge s-{{ t.source }}">{{ tech_source_names.get(t.source) }}</span></span><span>{{ (t.review or {}).title_ko or t.title }}</span></a>
+      {% endfor %}
+    </section>
+    {% endif %}
     <section class="card">
       <div class="side-h"><h3>오늘 화제인 논문</h3><a href="{{ url_for('web.trending_view') }}#hf">더 보기</a></div>
       {% for t in hf %}

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import bar, csrf, src with context %}
+{% from "_macros.html" import bar, csrf, src, cards_panel with context %}
 {% block title %}{{ r.title_ko or p.title }} · {{ site_name }}{% endblock %}
 {% block meta %}
 <meta property="og:title" content="{{ r.title_ko or p.title }}">
@@ -101,25 +101,7 @@
       <div class="relevance">관심 주제 관련도 {{ p.relevance }} · {{ p.relevance_reason }}{% if p.cost_usd is not none %}<br>리뷰 비용 ${{ '%.3f' % p.cost_usd }}{% endif %}</div>
     </section>
 
-    <section class="card" id="cards">
-      <div class="score-top"><h3>인스타 카드뉴스</h3>{% if p.card_paths %}<a class="small" href="{{ url_for('web.file_cards_zip', paper_id=p.id) }}">전체 받기</a>{% endif %}</div>
-      {% if p.card_paths %}
-        <div class="carousel" data-carousel>
-          <div class="slides">{% for path in p.card_paths %}<img src="{{ url_for('web.file_card', paper_id=p.id, n=loop.index) }}" alt="카드 {{ loop.index }}">{% endfor %}</div>
-          <button class="nav-btn prev" data-prev aria-label="이전">‹</button><button class="nav-btn next" data-next aria-label="다음">›</button>
-          <div class="dots"></div>
-        </div>
-        <div class="dl">한 장씩 받기 {% for path in p.card_paths %}<a href="{{ url_for('web.file_card', paper_id=p.id, n=loop.index, dl=1) }}">{{ loop.index }}</a>{% endfor %}</div>
-      {% else %}<p class="small muted" style="margin-top: 8px">카드뉴스가 아직 없습니다.</p>{% endif %}
-      {% if caption %}
-        <div class="cap-label">캡션</div>
-        <textarea class="caption" readonly rows="8" id="caption">{{ caption }}</textarea>
-      {% endif %}
-      <div class="row-actions">
-        {% if caption %}<button class="btn sm" data-copy="#caption">캡션 복사</button>{% endif %}
-        {% if is_admin %}<form method="post" action="{{ url_for('web.rerender', paper_id=p.id) }}">{{ csrf() }}<button class="btn ghost sm">카드 다시 만들기</button></form>{% endif %}
-      </div>
-    </section>
+    {{ cards_panel(slides, url_for('web.file_cards_zip', paper_id=p.id), caption, url_for('web.rerender', paper_id=p.id)) }}
   </aside>
 </div>
 {% endif %}

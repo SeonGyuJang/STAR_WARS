@@ -10,8 +10,9 @@ from functools import wraps
 from flask import (Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, session,
                    url_for)
 
-from . import agent, cardnews, config, db, pdfs, pipeline, scheduler, storage
+from . import agent, cardnews, config, db, pdfs, pipeline, scheduler, storage, technews
 from .collectors import arxiv as arxiv_collector
+from .collectors import tech as tech_sources
 from .collectors import venues
 
 bp = Blueprint("web", __name__)
@@ -70,6 +71,8 @@ def inject_globals():
         "admin_enabled": bool(config.ADMIN_PASSWORD),
         "running": pipeline.is_running(),
         "api": agent.api_status(),
+        "tech_tiles": cardnews.tech_tiles,
+        "tech_source_names": {k: v["short"] for k, v in tech_sources.SOURCES.items()},
     }
 
 
@@ -191,6 +194,7 @@ def index():
         source_nav=_source_nav(("done",)),
         hf=(hf or [])[:6],
         surge=(surge or [])[:5],
+        tech_latest=db.query_tech(limit=4),
         runs=db.recent_runs(1),
         next_run=scheduler.next_run(),
     )
@@ -206,7 +210,99 @@ def paper_detail(paper_id):
         caption = cardnews.build_caption(p, p["review"])
     figures = [f for f in (p.get("review") or {}).get("_figures", []) if f.get("key")]
     return render_template("paper.html", p=p, r=p.get("review") or {}, caption=caption, figures=figures,
-                           share_url=request.url)
+                           share_url=request.url, slides=_slides("paper", p))
+
+
+def _slides(kind, item):
+    """[{png, mp4, n}] for the card carousel (mp4 for the video slide)."""
+    videos = item.get("card_videos") or {}
+    out = []
+    for n in range(1, len(item.get("card_paths") or []) + 1):
+        if kind == "paper":
+            png = url_for("web.file_card", paper_id=item["id"], n=n)
+            mp4 = url_for("web.file_card_video", paper_id=item["id"], n=n) if str(n) in videos else None
+        else:
+            png = url_for("web.file_tech_card", item_id=item["id"], n=n)
+            mp4 = url_for("web.file_tech_video", item_id=item["id"], n=n) if str(n) in videos else None
+        out.append({"n": n, "png": png, "mp4": mp4})
+    return out
+
+
+# --- TECH posts -----------------------------------------------------------------
+
+@bp.route("/tech")
+def tech_index():
+    source = request.args.get("source") if request.args.get("source") in tech_sources.SOURCES else None
+    search = request.args.get("q") or None
+    page = max(request.args.get("page", 1, type=int), 1)
+    per_page = 24
+    items = db.query_tech(source=source, search=search, limit=per_page + 1, offset=(page - 1) * per_page)
+    counts = db.tech_counts()
+    return render_template(
+        "tech.html", items=items[:per_page], has_more=len(items) > per_page, page=page,
+        filters={"source": source, "q": search or ""},
+        filter_args={k: v for k, v in {"source": source, "q": search}.items() if v},
+        counts=counts, sources=tech_sources.SOURCES, settings=db.pipeline_settings(),
+        upcoming=db.tech_by_status("screened", limit=8),
+        skipped=db.tech_by_status("skipped", limit=30) if is_admin() else [],
+        next_run=scheduler.next_run(),
+    )
+
+
+@bp.route("/tech/<int:item_id>")
+def tech_detail(item_id):
+    t = db.get_tech(item_id) or abort(404)
+    r = t.get("review") or {}
+    caption = technews.build_caption(t, r) if t["status"] == "done" and r.get("caption") else None
+    return render_template("tech_item.html", t=t, r=r, caption=caption, slides=_slides("tech", t), share_url=request.url,
+                           tiles=cardnews.tech_tiles(t), source=tech_sources.SOURCES.get(t["source"], {}))
+
+
+@bp.route("/tech/run", methods=["POST"])
+@admin_required
+def tech_run():
+    ids = [i for i in request.form.getlist("item_id", type=int) if db.get_tech(i)]
+    if not _api_ready_or_flash():
+        return redirect(request.referrer or url_for("web.tech_index"))
+    if pipeline.run_in_background("manual", tech_only=True, tech_ids=ids or None):
+        flash(f"선택한 {len(ids)}개로 테크 카드뉴스를 만드는 중입니다." if ids else
+              "테크 소식을 모아 카드뉴스를 만드는 중입니다. 오른쪽 위 진행 상황에서 볼 수 있어요.", "ok")
+    else:
+        flash("다른 실행이 진행 중입니다. 끝난 뒤 다시 눌러 주세요.", "warn")
+    return redirect(request.referrer or url_for("web.tech_index"))
+
+
+@bp.route("/tech/<int:item_id>/rerender", methods=["POST"])
+@admin_required
+def tech_rerender(item_id):
+    try:
+        technews.rerender(item_id)
+        flash("카드뉴스를 다시 만들었습니다.", "ok")
+    except Exception as exc:
+        flash(f"카드뉴스 생성 실패: {exc}", "error")
+    return redirect(url_for("web.tech_detail", item_id=item_id) + "#cards")
+
+
+@bp.route("/files/tech/<int:item_id>/card/<int:n>")
+def file_tech_card(item_id, n):
+    return _send_stored(f"tech/{item_id}/cards/card_{n:02d}.png", f"tech{item_id}_card_{n:02d}.png",
+                        as_attachment=request.args.get("dl") == "1")
+
+
+@bp.route("/files/tech/<int:item_id>/card/<int:n>.mp4")
+def file_tech_video(item_id, n):
+    key = ((db.get_tech(item_id) or {}).get("card_videos") or {}).get(str(n)) or abort(404)
+    return _send_stored(key, f"tech{item_id}_card_{n:02d}.mp4", as_attachment=request.args.get("dl") == "1")
+
+
+@bp.route("/files/tech/<int:item_id>/cards.zip")
+def file_tech_zip(item_id):
+    t = db.get_tech(item_id)
+    if not t or not t.get("card_paths"):
+        abort(404)
+    data = cardnews.zip_cards(f"tech/{item_id}/cards/", t["card_paths"], t.get("card_videos"))
+    return send_file(io.BytesIO(data), mimetype="application/zip", as_attachment=True,
+                     download_name=f"technews-{cardnews.slug(t['title'])}.zip")
 
 
 @bp.route("/trending")
@@ -353,6 +449,8 @@ def settings():
         source_counts=db.source_counts(),
         arxiv_categories=arxiv_collector.CATEGORY_NAMES,
         type_label=venues.TYPE_LABEL,
+        tech_source_list=tech_sources.SOURCES,
+        tech_counts=db.tech_counts(),
         settings=db.pipeline_settings(),
         runs=db.recent_runs(8),
         next_run=scheduler.next_run(),
@@ -516,6 +614,23 @@ def save_pipeline():
     db.apply_threshold(values["min_relevance"])
     flash("파이프라인 설정을 저장했습니다.", "ok")
     return redirect(url_for("web.settings") + "#pipeline")
+
+
+@bp.route("/settings/tech", methods=["POST"])
+@admin_required
+def save_tech_settings():
+    f = request.form
+    try:
+        per_run = min(max(int(f["tech_per_run"]), 0), 10)
+        min_interest = min(max(float(f["tech_min_interest"]), 0.0), 10.0)
+    except (KeyError, ValueError):
+        flash("숫자를 확인해 주세요.", "error")
+        return redirect(url_for("web.settings") + "#tech")
+    db.set_setting("tech_per_run", per_run)
+    db.set_setting("tech_min_interest", min_interest)
+    db.set_setting("tech_sources", [k for k in tech_sources.SOURCES if f.get(f"src_{k}")])
+    flash("테크 소식 설정을 저장했습니다." + (" 실행마다 만드는 수가 0이라 정기 실행에서는 만들지 않습니다." if per_run == 0 else ""), "ok")
+    return redirect(url_for("web.settings") + "#tech")
 
 
 @bp.route("/run", methods=["POST"])

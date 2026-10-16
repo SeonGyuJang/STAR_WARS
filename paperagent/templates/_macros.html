@@ -11,3 +11,27 @@
   {% if cats %}<optgroup label="arXiv 분야">{% for s in cats %}<option value="{{ s.id }}" {{ 'selected' if current and current.id == s.id }}>{{ s.name }} ({{ s.count }})</option>{% endfor %}</optgroup>{% endif %}
 </select>
 {% endmacro %}
+{# the card news of a post: carousel (a video slide plays in place), downloads, caption #}
+{% macro cards_panel(slides, zip_url, caption, rerender_url=None, theme='paper') %}
+<section class="card cards-panel {{ theme }}" id="cards">
+  <div class="score-top"><h3>카드뉴스 {% if slides %}<span class="count">{{ slides | length }}장{% if slides | selectattr('mp4') | list %} · 영상 포함{% endif %}</span>{% endif %}</h3>
+    {% if slides %}<a class="small strong" href="{{ zip_url }}">전체 받기 (ZIP)</a>{% endif %}</div>
+  {% if slides %}
+    <div class="carousel" data-carousel>
+      <div class="slides">{% for s in slides %}{% if s.mp4 %}<video src="{{ s.mp4 }}" poster="{{ s.png }}" muted loop playsinline preload="metadata" aria-label="카드 {{ s.n }} (영상)"></video>{% else %}<img src="{{ s.png }}" alt="카드 {{ s.n }}" loading="lazy">{% endif %}{% endfor %}</div>
+      <button class="nav-btn prev" data-prev aria-label="이전">‹</button><button class="nav-btn next" data-next aria-label="다음">›</button>
+      <div class="dots"></div>
+    </div>
+    <div class="dl">한 장씩 받기 {% for s in slides %}<a href="{{ (s.mp4 or s.png) ~ '?dl=1' }}" class="{{ 'vid' if s.mp4 }}" title="{{ '영상 (MP4)' if s.mp4 else '이미지 (PNG)' }}">{{ s.n }}{% if s.mp4 %}▶{% endif %}</a>{% endfor %}</div>
+    <p class="small muted post-tip">ZIP 안의 파일 번호 순서대로 인스타에 올리고, 아래 캡션을 붙여 넣으세요. ▶ 표시는 영상(MP4) 카드입니다.</p>
+  {% else %}<p class="small muted" style="margin-top: 8px">카드뉴스가 아직 없습니다.</p>{% endif %}
+  {% if caption %}
+    <div class="cap-label">캡션</div>
+    <textarea class="caption" readonly rows="8" id="caption">{{ caption }}</textarea>
+  {% endif %}
+  <div class="row-actions">
+    {% if caption %}<button class="btn sm" data-copy="#caption">캡션 복사</button>{% endif %}
+    {% if is_admin and rerender_url %}<form method="post" action="{{ rerender_url }}"><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="btn ghost sm">카드 다시 만들기</button></form>{% endif %}
+  </div>
+</section>
+{% endmacro %}

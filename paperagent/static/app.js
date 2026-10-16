@@ -1,12 +1,18 @@
 // Carousel for card-news previews
 document.querySelectorAll("[data-carousel]").forEach((root) => {
   const track = root.querySelector(".slides");
-  const imgs = track.querySelectorAll("img");
+  const items = [...track.children];
   const dots = root.querySelector(".dots");
-  imgs.forEach(() => dots.appendChild(document.createElement("i")));
+  items.forEach((el) => {
+    const d = document.createElement("i");
+    if (el.tagName === "VIDEO") d.className = "vid";
+    dots.appendChild(d);
+  });
   const update = () => {
     const i = Math.round(track.scrollLeft / track.clientWidth);
     dots.querySelectorAll("i").forEach((d, j) => d.classList.toggle("on", i === j));
+    // a video card plays while it is on screen
+    items.forEach((el, j) => { if (el.tagName === "VIDEO") { if (i === j) el.play().catch(() => {}); else el.pause(); } });
   };
   const go = (dir) => track.scrollBy({ left: dir * track.clientWidth, behavior: "smooth" });
   root.querySelector("[data-prev]").addEventListener("click", () => go(-1));
@@ -50,7 +56,7 @@ document.querySelectorAll("form[data-confirm]").forEach((f) => {
   const pill = document.querySelector(".live");
   const admin = drawer.dataset.admin === "1";
   const csrf = document.querySelector('meta[name="csrf-token"]').content;
-  const PHASES = ["collect", "screen", "read", "trending", "done"];
+  const PHASES = ["collect", "screen", "read", "trending", "tech", "done"];
   let timer = null, wasRunning = pill && !pill.hidden, followLog = true, selfScroll = false;
 
   const fmt = (s) => (s >= 3600 ? `${Math.floor(s / 3600)}시간 ` : "") + `${Math.floor((s % 3600) / 60)}분 ${s % 60}초`;
@@ -66,7 +72,7 @@ document.querySelectorAll("form[data-confirm]").forEach((f) => {
     drawer.dataset.status = run.status;
 
     // stepper
-    const at = running ? PHASES.indexOf(p.phase) : (run.status === "ok" || run.status === "partial" ? 4 : PHASES.indexOf(p.phase));
+    const at = running ? PHASES.indexOf(p.phase) : (run.status === "ok" || run.status === "partial" ? PHASES.length - 1 : PHASES.indexOf(p.phase));
     drawer.querySelectorAll("[data-step]").forEach((li) => {
       const i = PHASES.indexOf(li.dataset.step);
       li.className = i < at || (!running && i === at && run.status !== "aborted") ? "done" : i === at ? (running ? "now" : "stopped") : "";
@@ -80,10 +86,10 @@ document.querySelectorAll("form[data-confirm]").forEach((f) => {
     now.hidden = !running;
     if (running) {
       const cur = targets.find((t) => t.id === p.current);
-      $("[data-c-title]").textContent = cur ? cur.title : ({ collect: "새 논문 모으기", screen: "관련도 판단", trending: "트렌드 갱신" }[p.phase] || "준비 중");
+      $("[data-c-title]").textContent = cur ? cur.title : ({ collect: "새 논문 모으기", screen: "관련도 판단", trending: "트렌드 갱신", tech: "테크 소식 만들기" }[p.phase] || "준비 중");
       $("[data-c-stage]").textContent = p.stage ? `${p.stage}${p.model ? ` · ${p.model}` : ""}` : "";
       const pct = p.phase === "read" && targets.length ? Math.round(((finished + (cur ? 0.5 : 0)) / targets.length) * 100)
-        : { collect: 5, screen: 12, trending: 96, done: 100 }[p.phase] || 3;
+        : { collect: 5, screen: 12, trending: 90, tech: 95, done: 100 }[p.phase] || 3;
       $("[data-c-bar]").style.width = `${pct}%`;
       $("[data-c-count]").textContent = p.phase === "read" && targets.length ? `논문 ${finished}/${targets.length}편 완료` : "";
     }
@@ -192,7 +198,7 @@ document.querySelectorAll("[data-kw-list]").forEach((list) => {
   const btn = list.parentElement.querySelector("[data-kw-toggle]");
   if (!btn) return;
   const label = btn.textContent;
-  const items = list.querySelectorAll("li");
+  const items = list.children;
   const truncated = [...list.querySelectorAll(".t")].some((t) => t.scrollWidth > t.clientWidth + 1);
   if (items.length > 6 || truncated) btn.hidden = false;
   btn.addEventListener("click", () => {

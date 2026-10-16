@@ -40,6 +40,8 @@ THEMES = {
              "claim": "지금 개발자들이 주목하는 기술을 골라, 쉽게 풀어 드립니다."},
 }
 
+TECH_BASE_HASHTAGS = config.CARD_TECH_BASE_HASHTAGS
+
 _env = Environment(loader=FileSystemLoader(PKG_DIR / "templates" / "cards"), autoescape=select_autoescape(["html"]))
 
 
@@ -363,6 +365,126 @@ def render_and_store(paper: dict, review: dict):
                 figures.append({**f, "path": str(local)})
         paths, clips = capture(build_html(paper, review, figures), tmp / "out")
         return store(f"cards/{pid}/", paths, clips, build_caption(paper, review))
+
+
+# --- TECH posts ------------------------------------------------------------------
+
+def tech_tiles(item) -> list:
+    """The source's own numbers, for the cover and the numbers slide (never AI-written)."""
+    from .collectors.tech import compact
+
+    m = item.get("meta") or {}
+    src = item["source"]
+    tiles = []
+    if src == "github":
+        if m.get("stars") is not None:
+            tiles.append({"value": compact(m["stars"]), "label": "GitHub 스타"})
+        if m.get("stars_today"):
+            tiles.append({"value": "+" + compact(m["stars_today"]), "label": "오늘 받은 스타"})
+        elif m.get("new_this_week"):
+            tiles.append({"value": "NEW", "label": "이번 주 공개"})
+        if m.get("forks"):
+            tiles.append({"value": compact(m["forks"]), "label": "포크(복사해 간 수)"})
+        if m.get("language"):
+            tiles.append({"value": m["language"], "label": "주 언어"})
+    elif src == "hn":
+        if m.get("points") is not None:
+            tiles.append({"value": compact(m["points"]), "label": "Hacker News 추천"})
+        if m.get("comments") is not None:
+            tiles.append({"value": compact(m["comments"]), "label": "댓글"})
+    elif src == "hf":
+        if m.get("likes") is not None:
+            tiles.append({"value": compact(m["likes"]), "label": "좋아요"})
+        if m.get("downloads"):
+            tiles.append({"value": compact(m["downloads"]), "label": "최근 다운로드"})
+        if m.get("task") or m.get("sdk"):
+            tiles.append({"value": m.get("task") or m.get("sdk"), "label": "분야" if m.get("task") else "형태"})
+    return tiles
+
+
+def _tech_ref(item) -> str:
+    from urllib.parse import urlparse
+
+    if item["source"] == "github":
+        return f"github.com/{item['title']}"
+    if item["source"] == "hn":
+        return f"news.ycombinator.com · {item['uid'][3:]}"
+    if item["source"] == "geeknews":
+        return f"news.hada.io · {item['uid'].split(':')[1]}"
+    url = urlparse(item.get("url") or "")
+    return (url.netloc + url.path).rstrip("/")[:48] or item["source"]
+
+
+def _poster(clip: str, out: Path):
+    """First frame of a clip, for the still card and the dashboard."""
+    import subprocess
+
+    subprocess.run([video.ffmpeg_exe(), "-v", "error", "-y", "-i", clip, "-frames:v", "1", str(out)], check=True, timeout=60)
+    return out if out.exists() else None
+
+
+def tech_slides(item, review, media, tmp: Path):
+    """Slides for a TECH post. media: {"images": [local paths], "video": local path|None}."""
+    from .collectors.tech import SOURCES
+
+    def photo(path, caption=""):
+        return {"uri": Path(path).resolve().as_uri(), "path": str(path), "photo": True, "caption": caption, "number": 0} if path else None
+
+    images = list(media.get("images") or [])
+    clip = media.get("video")
+    poster = _poster(clip, tmp / "poster.png") if clip and video.available() else None
+    tiles = tech_tiles(item)
+    src_name = SOURCES.get(item["source"], {}).get("short", item["source"])
+
+    slides = [{"kind": "cover"}]
+    what = review.get("what") or {}
+    if what.get("points"):
+        slides.append({"kind": "points", "label": "무엇인가요", "headline": what.get("headline"), "points": what["points"],
+                       "note_title": "왜 지금 화제일까", "note": what.get("why_now")})
+    demo = review.get("demo") or {}
+    show = photo(poster, "") if poster else photo(images[1] if len(images) > 1 else (images[0] if images else None))
+    if show:
+        s = {"kind": "media", "label": "직접 보기 · 데모 영상" if poster else "직접 보기",
+             "headline": demo.get("headline") or review.get("title_ko"), "body": demo.get("body"), "figure": show}
+        s["video"] = {"src": clip if poster else show["path"], "pad": "#0f1013"}
+        slides.append(s)
+    if review.get("how"):
+        slides.append({"kind": "steps", "label": "어떻게 작동하나요", "headline": "핵심만 짚어 보면", "steps": review["how"][:4]})
+    if tiles:
+        slides.append({"kind": "numbers", "label": "숫자로 보기", "headline": review.get("numbers_headline") or "얼마나 주목받고 있나요",
+                       "highlight": tiles[0]["value"], "highlight_label": tiles[0]["label"], "tiles": tiles[1:5]})
+    so = review.get("so_what") or {}
+    if so.get("items"):
+        slides.append({"kind": "sowhat", "label": "그래서 나랑 무슨 상관?", "headline": so.get("headline"), "items": so["items"][:3]})
+    try_it = review.get("try_it") or {}
+    if try_it.get("steps"):
+        slides.append({"kind": "steps", "label": "직접 써보기", "headline": try_it.get("headline") or "이렇게 시작해 보세요",
+                       "steps": try_it["steps"][:3], "link": item.get("url")})
+    slides.append({"kind": "summary", "headline": "한눈에 정리", "rows": review.get("summary_rows") or []})
+    slides.append({"kind": "outro"})
+
+    cover = {"headline": review.get("cover_headline"), "sub": review.get("cover_sub"),
+             "topic": f"{src_name} · {review.get('category')}" if review.get("category") else src_name,
+             "image": photo(images[0]) if images else None, "stat": {"tiles": tiles[:3]} if tiles else {}}
+    _attach_notes(slides, review, {"cover": [review.get("cover_headline"), review.get("cover_sub")]})
+    return slides, cover
+
+
+def build_tech_html(item, review, media, tmp: Path) -> str:
+    slides, cover = tech_slides(item, review, media, tmp)
+    return render_html(THEMES["tech"], slides, cover, source_ref=_tech_ref(item), review=review)
+
+
+def render_tech_and_store(item: dict, review: dict):
+    """Render a TECH post and save it under tech/<id>/. Returns (card keys, video keys)."""
+    from . import technews
+
+    with tempfile.TemporaryDirectory(prefix="tech-") as tmp:
+        tmp = Path(tmp)
+        media = technews.materialize_media(item, tmp)
+        paths, clips = capture(build_tech_html(item, review, media, tmp), tmp / "out")
+        prefix = f"tech/{item['id']}/cards/"
+        return store(prefix, paths, clips, technews.build_caption(item, review))
 
 
 def zip_cards(prefix: str, card_keys, video_keys=None) -> bytes:

@@ -30,6 +30,20 @@
     <p class="note">PDF는 서버 임시 폴더에 받아 읽은 뒤 바로 지웁니다. 사용자에게는 원문 PDF 링크를 보여 줍니다.
       {% if not scheduler_enabled %}<br>이 서버는 자체 타이머를 쓰지 않습니다. 실행은 {{ 'Heroku Scheduler' if on_heroku else '외부 스케줄러' }}가 <code>python -m paperagent run --if-due</code>로 시작합니다.{% endif %}</p>
   </section>
+  <section class="card panel tech-panel" id="tech">
+    <div class="panel-h"><h2><span class="sdot s-tech"></span>테크 소식</h2><span>만든 카드뉴스 {{ tech_counts.status.get('done', 0) }}개</span></div>
+    <p class="desc">정기 실행 때 논문 다음에, 아래 출처에서 화제인 프로젝트와 소식을 모아 가장 흥미로운 것을 TECH 카드뉴스로 만듭니다.</p>
+    <form method="post" action="{{ url_for('web.save_tech_settings') }}">{{ csrf() }}
+      <div class="check-grid">{% for key, s in tech_source_list.items() %}
+        <label class="check"><input type="checkbox" name="src_{{ key }}" value="1" {{ 'checked' if key in settings.tech_sources }}><span class="sbadge s-{{ key }}">{{ s.short }}</span>{{ s.name }}</label>{% endfor %}</div>
+      <div class="form-grid">
+        <label>실행마다 만드는 수<input type="number" name="tech_per_run" min="0" max="10" value="{{ settings.tech_per_run }}"></label>
+        <label>최소 관심도 (0-10)<input type="number" step="0.5" name="tech_min_interest" min="0" max="10" value="{{ settings.tech_min_interest }}"></label>
+        <div><button class="btn ghost">저장</button></div>
+      </div>
+    </form>
+    <p class="note">한 개를 만드는 데 Sonnet 한 번(약 $0.05~0.15)과 관심도 판단(Haiku, 몇 센트)이 듭니다. GitHub Trending 페이지를 읽지 못하면 GitHub 검색 API로 대신 가져옵니다(<code>GITHUB_TOKEN</code>을 넣으면 제한이 넉넉해집니다).</p>
+  </section>
   <section class="card panel" id="upload">
     <div class="panel-h"><h2>PDF로 논문 추가</h2><span>파일당 60MB까지</span></div>
     <p class="desc">가지고 있는 논문 PDF를 올리면 관련도를 판단한 뒤, 점수와 상관없이 원문을 끝까지 읽고 평가해 리뷰와 카드뉴스를 만듭니다. PDF는 리뷰가 끝나면 서버에서 지웁니다.</p>

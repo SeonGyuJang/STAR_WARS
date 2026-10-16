@@ -85,7 +85,8 @@ def main(argv=None):
             print(f"removed {demo.clear()} demo papers")
         else:
             pid = demo.seed()
-            print(f"demo paper #{pid} added - open /paper/{pid} on the dashboard")
+            tid = demo.seed_tech()
+            print(f"demo paper #{pid} and TECH post #{tid} added - open /paper/{pid} and /tech/{tid} on the dashboard")
 
 
 if __name__ == "__main__":

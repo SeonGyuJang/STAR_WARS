@@ -87,6 +87,10 @@ DEFAULT_LOOKBACK_DAYS = _env_int("LOOKBACK_DAYS", 3)
 DEFAULT_MAX_PER_SOURCE = _env_int("MAX_PER_SOURCE", 40)
 DEFAULT_MAX_FULL_READS = _env_int("MAX_FULL_READS", 3)
 DEFAULT_MIN_RELEVANCE = _env_float("MIN_RELEVANCE", 7.0)
+# TECH card news: how many posts per run, and how interesting an item must be (0-10)
+DEFAULT_TECH_PER_RUN = _env_int("TECH_PER_RUN", 2)
+DEFAULT_TECH_MIN_INTEREST = _env_float("TECH_MIN_INTEREST", 7.0)
+DEFAULT_TECH_SOURCES = [s.strip() for s in os.environ.get("TECH_SOURCES", "github,hn,geeknews,hf").split(",") if s.strip()]
 # In-process scheduler. Off by default on Heroku, where the Heroku Scheduler
 # add-on runs `python -m paperagent run --if-due` instead.
 SCHEDULER_ENABLED = os.environ.get("SCHEDULER_ENABLED", "0" if ON_HEROKU else "1") == "1"
@@ -113,6 +117,7 @@ CARD_HANDLE = os.environ.get("CARD_HANDLE", "@starwars.research")
 # searched ones come first; the AI adds tags for the paper's own field.
 CARD_HASHTAG_LIMIT = int(os.environ.get("CARD_HASHTAG_LIMIT", "5"))
 CARD_BASE_HASHTAGS = [t.strip() for t in os.environ.get("CARD_BASE_HASHTAGS", "#인공지능,#AI,#논문리뷰").split(",") if t.strip()]
+CARD_TECH_BASE_HASHTAGS = [t.strip() for t in os.environ.get("CARD_TECH_BASE_HASHTAGS", "#IT,#테크,#개발자").split(",") if t.strip()]
 BRAND_TAGLINE = os.environ.get("BRAND_TAGLINE", "Smart Topic Analysis & Rating · Worthwise Article Research System")
 # (initial letter, rest of word) pairs spelled out on the closing slide
 BRAND_ACRONYM = [
@@ -120,6 +125,8 @@ BRAND_ACRONYM = [
     ("W", "orthwise"), ("A", "rticle"), ("R", "esearch"), ("S", "ystem"),
 ]
 CHROMIUM_EXECUTABLE = os.environ.get("CHROMIUM_EXECUTABLE", "")
+# Optional: raises the GitHub API limit used as the GitHub Trending fallback
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 # Video card slides (MP4) need ffmpeg: the system one, else imageio-ffmpeg's bundled binary.
 VIDEO_CARDS = os.environ.get("VIDEO_CARDS", "1").lower() not in ("0", "false", "no", "off")
 FFMPEG_EXECUTABLE = os.environ.get("FFMPEG_EXECUTABLE", "")

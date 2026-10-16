@@ -602,3 +602,111 @@ def review(paper: dict, keywords, pdf_path=None, figures=()):
                        "write": config.WRITER_MODEL}
     data["_cost"] = meter.summary()
     return data, depth
+
+
+# ---------------------------------------------------------------------------
+# TECH card news: trending projects and tech news
+# ---------------------------------------------------------------------------
+
+TECH_SCREEN_SCHEMA = _obj({
+    "results": {"type": "array", "items": _obj({
+        "index": {"type": "integer"},
+        "interest": {"type": "number", "description": "0-10"},
+        "reason": _str,
+    })},
+})
+
+TECH_SCREEN_SYSTEM = """You pick items for a Korean Instagram account that explains new technology to curious people - students, office workers and developers - with a focus on AI and software.
+Rate each item 0-10 for how good a post it would make:
+10 = a genuinely new tool, model, research result or event many people would want to know about or try, from a credible source;
+7 = clearly interesting and explainable in a few cards; 4 = niche, incremental or hard to make interesting; 0 = not suitable.
+Score 0-2 for: politics, crime, celebrity or company gossip, crypto/financial speculation, job posts, plain self-promotion,
+paywalled or opinion pieces without new facts, and anything adult or harmful. Prefer things with something to see or try.
+Write `reason` as one short Korean sentence."""
+
+
+def screen_tech(items, batch_size: int = 30, meter: CostMeter | None = None):
+    """Returns {item_id: (interest, reason)}."""
+    out = {}
+    for i in range(0, len(items), batch_size):
+        batch = items[i: i + batch_size]
+        listing = "\n\n".join(
+            f"[{j}] ({it['source']}) {it['title']}\nNumbers: {json.dumps(it.get('meta') or {}, ensure_ascii=False)}\n"
+            f"About: {(it.get('summary') or '')[:600]}"
+            for j, it in enumerate(batch)
+        )
+        data = _call("screen", config.SCREEN_MODEL, TECH_SCREEN_SYSTEM,
+                     f"Rate each of the {len(batch)} items below (use the bracketed index).\n\n{listing}",
+                     TECH_SCREEN_SCHEMA, effort="low", max_tokens=8000, meter=meter)
+        for r in data["results"]:
+            if 0 <= r["index"] < len(batch):
+                out[batch[r["index"]]["id"]] = (max(0.0, min(10.0, float(r["interest"]))), r["reason"])
+    return out
+
+
+_L = lambda n: {**_str, "description": f"<= {n} Korean chars, no line breaks"}  # noqa: E731
+
+TECH_SCHEMA = _obj({
+    "title_ko": {**_str, "description": "What it is, as a natural Korean title (<= 40 chars)"},
+    "one_liner": {**_str, "description": "One Korean sentence: what it is and why people are paying attention (<= 90 chars)"},
+    "summary": {**_str, "description": "5-7 Korean sentences: what it is, who made it, what it does, how it works, why it is trending now, "
+                                      "what to be careful about. Only facts from the material."},
+    "category": {**_str, "description": "Short field tag, e.g. 'AI 에이전트', '개발 도구', '오픈소스 모델', '보안'"},
+    "kind": {"type": "string", "enum": ["project", "model", "research", "news", "product"]},
+    "cover_headline": {**_str, "description": "A question a curious non-expert would ask, ending with '?' (<= 30 chars, no clickbait), "
+                                             "e.g. '코드 리뷰를 AI한테 맡겨도 될까?'"},
+    "cover_sub": _L(70),
+    "what": _obj({"headline": _L(24),
+                  "points": {**_str_list, "description": "Exactly 3 Korean sentences, each <= 75 chars: what it is, what it does, what is new about it"},
+                  "why_now": {**_str, "description": "2 Korean sentences on why people are talking about it now, with the numbers given (<= 160 chars)"}}),
+    "demo": _obj({"headline": _L(24), "body": {**_str, "description": "1-2 Korean sentences describing what the picture/clip shows or what using it looks like (<= 110 chars)"}}),
+    "how": _rows("3-4 steps: how it works or how it is used", title=_L(16), detail=_L(85)),
+    "numbers_headline": _L(24),
+    "so_what": _obj({
+        "headline": _L(26),
+        "items": _rows("Exactly 3 honest answers to '그래서 나랑 무슨 상관?': who benefits and how, what changes, what it costs or risks. No hype.",
+                       title=_L(18), detail=_L(75)),
+    }),
+    "try_it": _obj({
+        "headline": _L(24),
+        "steps": _rows("1-3 steps to try it. Use a command only if it appears in the material, copied exactly; otherwise describe the step and leave code empty",
+                       title=_L(18), detail=_L(70), code={**_str, "description": "One short shell command from the material, or empty"}),
+    }),
+    "caveats": {**_str_list, "description": "2-3 constructive Korean points to keep in mind (maturity, licence, cost, accuracy, privacy)"},
+    "summary_rows": _rows("Exactly 5 rows: 무엇 / 특징 / 화제 / 활용 / 주의", label=_str, value=_L(24), value_sub=_L(40)),
+    "terms": _rows("0-4 hard words used in the card copy, each marked with * right after the word where it appears",
+                   term={**_str, "description": "The word exactly as written before the *"},
+                   meaning={**_str, "description": "Plain Korean explanation, <= 60 chars, no analogies"}),
+    "caption": {**_str, "description": "Instagram caption in Korean, 8-12 lines: hook question, what it is, 2-3 facts with numbers, "
+                                      "who it helps, one thing to keep in mind, and a question inviting comments. No hashtags."},
+    "hashtags": {**_str_list, "description": "2 hashtags (with #) people actually search, matching the topic, e.g. #개발자, #오픈소스, #생성형AI"},
+})
+
+TECH_SYSTEM = """You turn a trending project or tech news item into a Korean Instagram card-news post and a short explainer for the dashboard.
+
+Audience: people with no engineering background who are curious about technology, plus developers.
+- Explain things as they actually are, in plain words - no analogies or metaphors ("마치 ~처럼").
+- Mark unavoidable technical words with * right after the word (e.g. "API*") and define them in `terms` (at most 4).
+- Use only facts in the material and the numbers given. Never invent features, benchmarks, prices, dates or commands. If something is unknown, leave it out.
+- Say what numbers mean (e.g. "하루 만에 GitHub 스타 2,300개 - 그만큼 많은 개발자가 관심을 표시했다는 뜻").
+- Caveats are constructive ("~는 아직 초기 단계라 보완이 필요해 보입니다").
+- Short, clear sentences; natural Korean; no hype. Respect every length limit; never insert line breaks."""
+
+
+def write_tech(item: dict, context: dict, meter: CostMeter | None = None) -> dict:
+    """Korean explainer and card copy for one tech item (TECH_SCHEMA)."""
+    from .collectors import tech as tech_src
+
+    source = tech_src.SOURCES.get(item["source"], {}).get("name", item["source"])
+    media = ("a demo clip" if context.get("videos") else "pictures" if context.get("images") else "nothing to show")
+    prompt = (
+        f"Source: {source}\nTitle: {item['title']}\nLink: {item.get('url')}\n"
+        f"Numbers from the source: {json.dumps(item.get('meta') or {}, ensure_ascii=False)}\n"
+        f"Listing text: {item.get('summary') or ''}\n"
+        f"The post will show: {media}.\n\n"
+        f"Material (README / article / model card, may be cut off):\n{context.get('text') or '(none)'}\n\nWrite every field."
+    )
+    data = _call("write", config.WRITER_MODEL, TECH_SYSTEM, prompt, TECH_SCHEMA,
+                 effort=config.WRITER_EFFORT, max_tokens=16000, meter=meter)
+    data["_models"] = {"screen": config.SCREEN_MODEL, "write": config.WRITER_MODEL}
+    return data
