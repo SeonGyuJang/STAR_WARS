@@ -139,7 +139,7 @@ SAMPLE_REVIEW = {
     "overall_score": 7.8,
     "card": {
         "category": "LLM 추론",
-        "cover_headline": "작은 AI가\n스스로 답을 검산합니다",
+        "cover_headline": "작은 AI도 스스로 검산하면 더 똑똑해질까?",
         "cover_sub": "답을 낸 뒤 스스로 다시 확인하고 고치게 했더니, 수학 문제 정답률이 크게 올랐습니다.",
         "cover_points": [
             "답 만들기 → 확인하기 → 고치기를 한 AI가 반복",
@@ -147,7 +147,7 @@ SAMPLE_REVIEW = {
             "대신 답을 내는 데 드는 계산은 약 3배",
         ],
         "problem": {
-            "headline": "작은 AI는 왜\n수학 풀이에 약할까요?",
+            "headline": "작은 AI는 왜 수학 풀이에 약할까요?",
             "points": [
                 "작은 언어모델*은 풀이 중간에 한 번 틀리면, 그 실수를 끝까지 이어 가 틀린 답을 냅니다.",
                 "여러 번 풀게 한 뒤 가장 많이 나온 답을 고르는 방법도, 틀린 단계 자체를 고치지는 못합니다.",
@@ -157,7 +157,7 @@ SAMPLE_REVIEW = {
             "figure_number": 0,
         },
         "idea": {
-            "headline": "답을 낸 뒤\n스스로 다시 확인합니다",
+            "headline": "답을 낸 뒤 스스로 다시 확인합니다",
             "body": "문제를 처음부터 맞히는 것보다, 이미 쓴 풀이가 맞는지 확인하는 일이 더 쉽다는 점을 이용합니다. 같은 AI가 자기 풀이를 한 줄씩 점검하고, 틀린 줄부터 다시 풉니다.",
             "figure_number": 1,
         },
@@ -178,7 +178,7 @@ SAMPLE_REVIEW = {
             "같은 계산량으로 다수결만 한 경우는 42.4%에 머물러, '틀린 곳부터 고치기'가 핵심이었습니다.",
         ],
         "results": {
-            "headline": "정답률이\n크게 올랐습니다",
+            "headline": "정답률이 크게 올랐습니다",
             "highlight": "+12.4%p",
             "highlight_label": "MATH* 정답률 상승",
             "rows": [
@@ -186,7 +186,20 @@ SAMPLE_REVIEW = {
                 {"item": "다수결 방식", "value": "42.4%", "note": "같은 계산량으로 비교했을 때"},
                 {"item": "다른 시험 3종", "value": "+2~6%p", "note": "모두 정답률이 올랐습니다"},
             ],
+            "bars": [
+                {"label": "이 논문 (스스로 검산)", "value": 53.6, "display": "53.6%", "highlight": True},
+                {"label": "여러 번 풀고 다수결", "value": 42.4, "display": "42.4%", "highlight": False},
+                {"label": "그냥 한 번 풀기", "value": 41.2, "display": "41.2%", "highlight": False},
+            ],
             "figure_number": 2,
+        },
+        "so_what": {
+            "headline": "비싼 AI 없이도 더 정확한 답을 얻을 수 있습니다",
+            "items": [
+                {"title": "휴대폰 속 AI가 더 정확해집니다", "detail": "인터넷 없이 기기 안에서 도는 작은 AI도, 이 방식을 붙이면 계산 문제를 더 잘 풉니다."},
+                {"title": "새로 학습시킬 필요가 없습니다", "detail": "이미 쓰고 있는 AI에 질문하는 방식만 바꾸면 되므로, 회사나 개인이 바로 시험해 볼 수 있습니다."},
+                {"title": "대신 답이 조금 늦어집니다", "detail": "검산하는 만큼 계산이 약 3배 늘어, 빠른 답보다 정확한 답이 중요한 곳에 어울립니다."},
+            ],
         },
         "verdict": {
             "strengths": ["추가 학습 없이 기존 AI에 바로 적용할 수 있습니다", "같은 계산량의 다수결보다 정답률이 11.2%p 높습니다"],
@@ -329,11 +342,11 @@ def seed(render_cards=True):
         review["_figures"] = figures
         review["_page1"] = storage.put_file(f"figures/{pid}/page1.png", tmp / "figs" / "page1.png")
     review["_cost"] = {"total_usd": 0.0, "calls": [], "note": "demo data - no API calls"}
-    card_keys = cardnews.render_and_store({**SAMPLE_PAPER, "id": pid}, review) if render_cards else []
+    card_keys, videos = cardnews.render_and_store({**SAMPLE_PAPER, "id": pid}, review) if render_cards else ([], {})
     db.update_paper(pid, status="done", read_depth="full_pdf", review=review, relevance=9.0,
                     relevance_reason="관심 키워드와 직접 관련된 데모 논문",
                     score_method=review["methodology_score"], score_novelty=review["novelty_score"],
-                    score_overall=review["overall_score"], card_paths=card_keys, cost_usd=0.0,
+                    score_overall=review["overall_score"], card_paths=card_keys, card_videos=videos, cost_usd=0.0,
                     reviewed_at=db.now_iso())
     for uid, title, status, rel, reason in QUEUED:
         db.insert_paper({**SAMPLE_PAPER, "uid": uid, "title": title, "matched_keywords": SAMPLE_PAPER["matched_keywords"][:1]})

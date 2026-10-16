@@ -8,209 +8,279 @@
 @font-face { font-family: "Pretendard"; font-weight: 600; src: url("{{ fonts }}/Pretendard-SemiBold.woff2") format("woff2"); }
 @font-face { font-family: "Pretendard"; font-weight: 700; src: url("{{ fonts }}/Pretendard-Bold.woff2") format("woff2"); }
 @font-face { font-family: "Mono"; font-weight: 400; src: url("{{ fonts }}/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Mono"; font-weight: 500; src: url("{{ fonts }}/jetbrains-mono-latin-500-normal.woff2") format("woff2"); }
 
+/* One frame for every post. The category (paper = blue, tech = orange) is the
+   colour of the band on top of each slide and of the whole cover. */
 :root {
-  --bg: #ffffff;
-  --well: #f4f4f2;
-  --ink: #141414;
-  --body: #3d3d3d;
-  --mute: #8a8a8a;
-  --line: #e6e6e3;
-  --accent: #2b59c3;
-  --accent-soft: #edf1fa;
-  --good: #1f7a4d;
-  --bad: #b4452f;
-  --dark: #121212;
+  --c: {{ theme.color }};
+  --deep: {{ theme.deep }};
+  --soft: {{ theme.soft }};
+  --ink: #111214;
+  --body: #3b3d42;
+  --mute: #8b8d93;
+  --line: #e7e7ea;
+  --well: #f4f4f6;
+  --good: #11804a;
+  --bad: #c2410c;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { background: #000; }
 body { font-family: "Pretendard", system-ui, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; word-break: keep-all;
-       overflow-wrap: anywhere; font-feature-settings: "tnum" 1; }
+       overflow-wrap: break-word; font-feature-settings: "tnum" 1; }
+h1, h2, h3, h4 { text-wrap: balance; }
+p, li, span, b { text-wrap: pretty; }
 
 /* Every size scales with --k, which the script lowers when a slide's text would overflow. */
-.slide { --k: 1; width: 1080px; height: 1350px; position: relative; overflow: hidden; background: var(--bg);
-         display: flex; flex-direction: column; padding: 60px 76px 52px; }
-.top { flex: none; display: flex; justify-content: space-between; align-items: center; height: 40px; }
-.logo { font-size: 25px; font-weight: 700; letter-spacing: 0.02em; }
-.page { font-size: 23px; font-weight: 500; color: var(--mute); }
-.bottom { flex: none; padding-top: 24px; display: flex; justify-content: space-between; font-size: 21px; color: var(--mute); }
-.id { font-family: "Mono", monospace; font-size: 20px; }
-.main { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-top: calc(56px * var(--k)); }
+.slide { --k: 1; width: 1080px; height: 1350px; position: relative; overflow: hidden; background: #fff; display: flex; flex-direction: column; }
 
-.step { flex: none; font-size: calc(28px * var(--k)); font-weight: 600; color: var(--accent); }
-.step i { font-style: normal; color: var(--mute); font-weight: 500; margin-right: 12px; }
-h1, h2, h3, .claim { text-wrap: balance; }
-p, li, .v b, .v span, .item, .note { text-wrap: pretty; }
-h1 { flex: none; font-size: calc(78px * var(--k)); line-height: 1.2; font-weight: 700; letter-spacing: -0.035em; }
-h2 { flex: none; margin-top: calc(16px * var(--k)); font-size: calc(62px * var(--k)); line-height: 1.22; font-weight: 700; letter-spacing: -0.035em; }
-.lead { flex: none; font-size: calc(32px * var(--k)); line-height: 1.6; color: var(--body); letter-spacing: -0.01em; }
-.tag { flex: none; align-self: flex-start; font-size: calc(25px * var(--k)); font-weight: 600; color: var(--body);
-       background: var(--well); padding: 9px 20px; border-radius: 999px; }
+/* the colour block on top of every content slide */
+.band { flex: none; height: 108px; padding: 0 72px; background: var(--c); color: #fff; display: flex; align-items: center; justify-content: space-between; }
+.brand { display: flex; align-items: center; gap: 18px; }
+.brand b { font-size: 27px; font-weight: 700; letter-spacing: .06em; }
+.brand span { font-size: 21px; font-weight: 600; letter-spacing: .14em; padding: 7px 14px; border-radius: 8px; background: rgba(255,255,255,.18); }
+.pg { font-family: "Mono", monospace; font-size: 25px; font-weight: 500; }
+.pg i { font-style: normal; opacity: .6; }
 
-.figure { flex: 1 1 0; min-height: 0; margin-top: calc(36px * var(--k)); background: var(--well); border-radius: 26px;
-          padding: 28px 28px 20px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
-.figure .img { flex: 1; min-height: 0; width: 100%; position: relative; }
-.figure img { position: absolute; inset: 0; margin: auto; max-width: 100%; max-height: 100%; object-fit: contain; display: block;
-              border-radius: 6px; background: #fff; }
-.figure .cap { flex: none; width: 100%; font-size: 20px; line-height: 1.4; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.main { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding: calc(60px * var(--k)) 72px 0; }
+.bottom { flex: none; height: 84px; margin: 0 72px; border-top: 2px solid var(--line); display: flex; align-items: center; justify-content: space-between;
+          font-size: 21px; color: var(--mute); }
+.bottom .id { font-family: "Mono", monospace; font-size: 20px; }
+.bottom b { color: var(--ink); font-weight: 600; }
 
-/* bullet list with dividers */
-.points { flex: none; list-style: none; margin-top: calc(34px * var(--k)); border-top: 2px solid var(--ink); }
-.points li { display: grid; grid-template-columns: calc(54px * var(--k)) minmax(0, 1fr); align-items: baseline; padding: calc(22px * var(--k)) 0;
-             border-bottom: 1px solid var(--line); font-size: calc(32px * var(--k)); line-height: 1.5; color: var(--ink); letter-spacing: -0.015em; }
-.points li b { font-family: "Mono", monospace; font-size: calc(23px * var(--k)); color: var(--accent); font-weight: 400; }
+.label { flex: none; display: flex; align-items: center; gap: 14px; font-size: calc(29px * var(--k)); font-weight: 700; color: var(--c); }
+.label i { font-style: normal; font-family: "Mono", monospace; font-weight: 500; font-size: calc(24px * var(--k)); color: #fff; background: var(--c);
+           padding: 4px 10px; border-radius: 8px; }
+h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(--k)); line-height: 1.17; font-weight: 700; letter-spacing: -0.045em; }
+.lead { flex: none; margin-top: calc(26px * var(--k)); font-size: calc(35px * var(--k)); line-height: 1.58; color: var(--body); letter-spacing: -0.015em; }
 
-/* ---------- cover ---------- */
-.cover .main { padding-top: calc(64px * var(--k)); }
-.cover h1 { margin-top: calc(26px * var(--k)); }
-.cover .lead { margin-top: calc(18px * var(--k)); }
-.cover .points { margin-top: calc(30px * var(--k)); border-top: 0; }
-.cover .points li { padding: calc(12px * var(--k)) 0; border-bottom: 0; font-size: calc(31px * var(--k)); font-weight: 500; }
-.cover .figure { margin-top: calc(26px * var(--k)); }
-.score { flex: none; margin-top: calc(32px * var(--k)); display: flex; align-items: flex-end; gap: 52px; padding-top: calc(26px * var(--k)); border-top: 2px solid var(--ink); }
-.score .total { display: flex; align-items: baseline; gap: 8px; }
-.score .total b { font-size: calc(96px * var(--k)); font-weight: 700; line-height: .9; letter-spacing: -0.04em; }
-.score .total span { font-size: 28px; color: var(--mute); font-weight: 500; }
-.score .label { font-size: 21px; color: var(--mute); font-weight: 500; margin-bottom: 10px; }
-.score .parts { flex: 1; display: flex; flex-direction: column; gap: 16px; padding-bottom: 8px; }
-.bar { display: grid; grid-template-columns: 104px 1fr 56px; align-items: center; gap: 18px; font-size: calc(25px * var(--k)); }
-.bar span { color: var(--body); font-weight: 500; }
-.bar b { text-align: right; font-weight: 600; }
-.bar .track { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
-.bar .fill { height: 100%; background: var(--ink); border-radius: 3px; }
-.bar.alt .fill { background: var(--accent); }
+/* figures sit in a white panel sized to the figure (the script sets the height) */
+.figure { flex: none; margin-top: calc(36px * var(--k)); border: 2px solid var(--line); border-radius: 28px; background: #fff; padding: 20px;
+          display: flex; flex-direction: column; gap: 12px; height: 420px; }
+.figure .img { flex: 1; min-height: 0; position: relative; border-radius: 14px; overflow: hidden; background: #fff; }
+.figure img { position: absolute; inset: 0; margin: auto; max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.figure .cap { flex: none; font-size: 19px; line-height: 1.4; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.figure .cap b { color: var(--c); font-weight: 600; margin-right: 6px; }
+.figure.photo { padding: 0; border: 0; background: var(--well); }
+.figure.photo .img { border-radius: 28px; background: #0f1013; }
+.figure.photo img { object-fit: contain; width: 100%; height: 100%; }
+.media-tag { position: absolute; left: 16px; top: 16px; z-index: 1; font-size: 18px; font-weight: 700; letter-spacing: .08em; color: #fff;
+             background: var(--c); padding: 6px 12px; border-radius: 8px; }
 
-/* ---------- idea ---------- */
-.idea .lead { margin-top: calc(28px * var(--k)); font-size: calc(35px * var(--k)); color: var(--ink); }
+/* numbered points */
+.points { flex: none; list-style: none; margin-top: calc(40px * var(--k)); display: flex; flex-direction: column; gap: calc(26px * var(--k)); }
+.points li { display: grid; grid-template-columns: calc(58px * var(--k)) minmax(0, 1fr); gap: 22px; align-items: start;
+             font-size: calc(34px * var(--k)); line-height: 1.5; letter-spacing: -0.015em; }
+.points li b { width: calc(54px * var(--k)); height: calc(54px * var(--k)); margin-top: calc(-1px * var(--k)); border-radius: 14px; background: var(--soft); color: var(--c);
+               display: flex; align-items: center; justify-content: center; font-family: "Mono", monospace; font-size: calc(25px * var(--k)); font-weight: 500; }
+
+/* a tinted box of supporting text */
+.note-box { flex: none; margin-top: calc(38px * var(--k)); background: var(--soft); border-radius: 24px; padding: calc(30px * var(--k)) 36px; }
+.note-box h4 { font-size: calc(25px * var(--k)); font-weight: 700; color: var(--c); margin-bottom: calc(10px * var(--k)); }
+.note-box p, .note-box li { font-size: calc(29px * var(--k)); line-height: 1.6; color: var(--body); }
+.note-box li + li { margin-top: calc(10px * var(--k)); }
+.dots li { list-style: none; position: relative; padding-left: 1em; }
+.dots li::before { content: ""; position: absolute; left: .15em; top: calc(.5lh - 5px); width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
+
+/* ---------- cover: the whole slide in the category colour ---------- */
+.cover { background: var(--c); color: #fff; }
+.cover .band { background: transparent; }
+.cover .main { padding-top: calc(28px * var(--k)); }
+.chips { flex: none; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.chip { font-size: calc(25px * var(--k)); font-weight: 700; padding: 9px 18px; border-radius: 10px; background: #fff; color: var(--c); letter-spacing: .02em; }
+.chip.ghost { background: rgba(255,255,255,.16); color: #fff; font-weight: 600; letter-spacing: 0; }
+.cover h1 { flex: none; margin-top: calc(34px * var(--k)); font-size: calc(102px * var(--k)); line-height: 1.12; font-weight: 700; letter-spacing: -0.05em; }
+.cover .lead { color: rgba(255,255,255,.88); font-size: calc(35px * var(--k)); margin-top: calc(26px * var(--k)); }
+.cover .figure { border: 0; }
+.stat { flex: none; margin-top: auto; padding-top: calc(36px * var(--k)); }
+.stat-card { background: #fff; color: var(--ink); border-radius: 28px; padding: calc(28px * var(--k)) 36px; display: flex; align-items: center; gap: 44px; }
+.stat-card .big { display: flex; flex-direction: column; }
+.stat-card .big small { font-size: 21px; color: var(--mute); font-weight: 600; }
+.stat-card .big b { font-size: calc(96px * var(--k)); line-height: 1; font-weight: 700; letter-spacing: -0.05em; color: var(--c); }
+.stat-card .big b span { font-size: 30px; color: var(--mute); letter-spacing: 0; font-weight: 500; margin-left: 6px; }
+.stat-card .parts { flex: 1; display: flex; flex-direction: column; gap: 18px; }
+.tiles-row { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+.tiles-row > div { padding: 0 24px; border-left: 2px solid var(--line); }
+.tiles-row > div:first-child { padding-left: 0; border-left: 0; }
+.tiles-row b { display: block; font-size: calc(56px * var(--k)); font-weight: 700; letter-spacing: -0.04em; color: var(--c); line-height: 1.05; white-space: nowrap; }
+.tiles-row span { display: block; margin-top: 6px; font-size: 21px; color: var(--mute); font-weight: 600; }
+.cover .foot { border-top-color: rgba(255,255,255,.25); color: rgba(255,255,255,.85); }
+.cover .foot b { color: #fff; }
+.cover .foot b::before { color: #fff; }
+.cover .bottom { border-top-color: rgba(255,255,255,.25); color: rgba(255,255,255,.75); }
+.cover .bottom b { color: #fff; }
+.cover .star { color: #fff; }
+
+/* score bars */
+.bar { display: grid; grid-template-columns: 110px 1fr 60px; align-items: center; gap: 18px; font-size: calc(26px * var(--k)); }
+.bar span { color: var(--body); font-weight: 600; }
+.bar b { text-align: right; font-weight: 700; }
+.bar .track { height: 14px; background: var(--well); border-radius: 7px; overflow: hidden; }
+.bar .fill { height: 100%; background: var(--c); border-radius: 7px; }
+.bar.alt .fill { background: var(--ink); }
 
 /* ---------- steps ---------- */
-.steps { flex: none; list-style: none; margin-top: calc(40px * var(--k)); display: flex; flex-direction: column; gap: calc(22px * var(--k)); }
-.steps li { display: grid; grid-template-columns: calc(70px * var(--k)) 1fr; gap: 26px; align-items: start;
-            background: var(--well); border-radius: 22px; padding: calc(28px * var(--k)) 32px; }
-.steps .n { width: calc(64px * var(--k)); height: calc(64px * var(--k)); border-radius: 50%; background: var(--accent); color: #fff;
+.steps { flex: none; list-style: none; margin-top: calc(42px * var(--k)); display: flex; flex-direction: column; }
+.steps li { display: grid; grid-template-columns: calc(66px * var(--k)) minmax(0, 1fr); gap: 28px; align-items: start; padding: calc(26px * var(--k)) 0;
+            border-top: 2px solid var(--line); }
+.steps li:first-child { border-top: 0; padding-top: 0; }
+.steps .n { width: calc(64px * var(--k)); height: calc(64px * var(--k)); border-radius: 50%; background: var(--c); color: #fff;
             display: flex; align-items: center; justify-content: center; font-size: calc(30px * var(--k)); font-weight: 700; }
-.steps h3 { font-size: calc(36px * var(--k)); font-weight: 700; letter-spacing: -0.02em; line-height: 1.3; }
-.steps p { margin-top: calc(8px * var(--k)); font-size: calc(30px * var(--k)); line-height: 1.5; color: var(--body); }
+.steps h3 { font-size: calc(38px * var(--k)); font-weight: 700; letter-spacing: -0.03em; line-height: 1.3; }
+.steps p { margin-top: calc(8px * var(--k)); font-size: calc(30px * var(--k)); line-height: 1.52; color: var(--body); }
+.steps code { display: block; margin-top: calc(12px * var(--k)); font-family: "Mono", monospace; font-size: calc(24px * var(--k)); line-height: 1.5; color: #f5f5f5;
+              background: #16171b; padding: 14px 18px; border-radius: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 
-/* ---------- table rows (setup, summary) ---------- */
-.rows { flex: none; margin-top: calc(40px * var(--k)); border-top: 2px solid var(--ink); }
-.row { display: grid; grid-template-columns: calc(180px * var(--k)) 1fr; gap: 28px; padding: calc(28px * var(--k)) 0; border-bottom: 1px solid var(--line); }
-.row .k { font-size: calc(27px * var(--k)); color: var(--mute); font-weight: 500; padding-top: 4px; }
-.row .v b { display: block; font-size: calc(34px * var(--k)); font-weight: 600; line-height: 1.4; letter-spacing: -0.02em; }
+/* ---------- label/value rows (setup, summary) ---------- */
+.rows { flex: none; margin-top: calc(40px * var(--k)); }
+.row { display: grid; grid-template-columns: calc(200px * var(--k)) minmax(0, 1fr); gap: 28px; padding: calc(24px * var(--k)) 0; border-top: 2px solid var(--line); }
+.row:first-child { border-top: 3px solid var(--ink); }
+.row .k { font-size: calc(26px * var(--k)); color: var(--c); font-weight: 700; padding-top: 5px; }
+.row .v b { display: block; font-size: calc(34px * var(--k)); font-weight: 600; line-height: 1.42; letter-spacing: -0.02em; }
 .row .v span { display: block; margin-top: 4px; font-size: calc(26px * var(--k)); color: var(--body); line-height: 1.45; }
-.setup .row .v b { font-weight: 500; }
 
-/* ---------- results ---------- */
-.stat { flex: none; margin-top: calc(30px * var(--k)); display: flex; align-items: baseline; gap: 24px; flex-wrap: wrap; }
-.stat b { font-size: calc(112px * var(--k)); font-weight: 700; color: var(--accent); letter-spacing: -0.04em; line-height: 1; }
-.stat span { font-size: calc(30px * var(--k)); color: var(--body); font-weight: 500; }
-.rtable { flex: none; margin-top: calc(28px * var(--k)); border-top: 2px solid var(--ink); }
-.rtable .r { display: grid; grid-template-columns: 1fr auto; column-gap: 24px; padding: calc(18px * var(--k)) 0; border-bottom: 1px solid var(--line); align-items: baseline; }
-.rtable .item { font-size: calc(29px * var(--k)); font-weight: 500; }
-.rtable .val { font-size: calc(34px * var(--k)); font-weight: 700; text-align: right; letter-spacing: -0.02em; }
-.rtable .note { grid-column: 1 / -1; font-size: calc(24px * var(--k)); color: var(--mute); margin-top: 2px; }
+/* ---------- numbers: one huge number, simple bars ---------- */
+.hl { flex: none; margin-top: calc(30px * var(--k)); }
+.hl b { display: block; font-size: calc(172px * var(--k)); line-height: .95; font-weight: 700; color: var(--c); letter-spacing: -0.06em; }
+.hl span { display: block; margin-top: calc(14px * var(--k)); font-size: calc(32px * var(--k)); color: var(--body); font-weight: 600; }
+.hbars { flex: none; margin-top: calc(40px * var(--k)); display: flex; flex-direction: column; gap: calc(22px * var(--k)); }
+.hbar .top { display: flex; justify-content: space-between; align-items: baseline; gap: 20px; font-size: calc(28px * var(--k)); margin-bottom: 10px; }
+.hbar .top span { color: var(--body); font-weight: 500; }
+.hbar .top b { font-weight: 700; }
+.hbar .track { height: calc(34px * var(--k)); border-radius: 10px; background: var(--well); overflow: hidden; }
+.hbar .fill { height: 100%; border-radius: 10px; background: #c9cbd1; }
+.hbar.on .top span, .hbar.on .top b { color: var(--c); font-weight: 700; }
+.hbar.on .fill { background: var(--c); }
+.rtable { flex: none; margin-top: calc(36px * var(--k)); }
+.rtable .r { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 24px; padding: calc(18px * var(--k)) 0; border-top: 2px solid var(--line); align-items: baseline; }
+.rtable .r:first-child { border-top: 3px solid var(--ink); }
+.rtable .item { font-size: calc(30px * var(--k)); font-weight: 600; }
+.rtable .val { font-size: calc(36px * var(--k)); font-weight: 700; text-align: right; letter-spacing: -0.02em; color: var(--c); }
+.rtable .note { grid-column: 1 / -1; font-size: calc(25px * var(--k)); color: var(--body); margin-top: 2px; }
+.tiles { flex: none; margin-top: calc(40px * var(--k)); display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.tiles > div { background: var(--soft); border-radius: 24px; padding: calc(28px * var(--k)) 30px; }
+.tiles b { display: block; font-size: calc(64px * var(--k)); font-weight: 700; color: var(--c); letter-spacing: -0.04em; line-height: 1.05; }
+.tiles span { display: block; margin-top: 8px; font-size: calc(25px * var(--k)); color: var(--body); font-weight: 600; line-height: 1.4; }
+
+/* ---------- so what: tinted slide, three white cards ---------- */
+.sowhat, .sowhat .main { background: var(--soft); }
+.cards3 { flex: none; margin-top: calc(40px * var(--k)); display: flex; flex-direction: column; gap: calc(20px * var(--k)); }
+.cards3 > div { background: #fff; border-radius: 26px; padding: calc(30px * var(--k)) 34px; display: grid;
+                grid-template-columns: calc(62px * var(--k)) minmax(0, 1fr); gap: 22px; }
+.cards3 i { font-style: normal; font-family: "Mono", monospace; font-weight: 500; font-size: calc(30px * var(--k)); color: var(--c); padding-top: 4px; }
+.cards3 h3 { font-size: calc(36px * var(--k)); font-weight: 700; letter-spacing: -0.03em; line-height: 1.3; }
+.cards3 p { margin-top: calc(8px * var(--k)); font-size: calc(29px * var(--k)); line-height: 1.55; color: var(--body); }
+.sowhat .foot, .sowhat .bottom { border-top-color: rgba(0,0,0,.09); }
 
 /* ---------- verdict ---------- */
-.crit { flex: none; margin-top: calc(26px * var(--k)); display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: calc(10px * var(--k)) 20px;
-        font-size: calc(26px * var(--k)); line-height: 1.5; }
-.crit b { font-weight: 600; color: var(--ink); }
+.score-box { flex: none; margin-top: calc(36px * var(--k)); background: var(--soft); border-radius: 26px; padding: calc(28px * var(--k)) 36px;
+             display: flex; align-items: center; gap: 44px; }
+.score-box .big b { font-size: calc(96px * var(--k)); line-height: 1; font-weight: 700; letter-spacing: -0.05em; color: var(--c); }
+.score-box .big b span { font-size: 30px; color: var(--mute); letter-spacing: 0; font-weight: 500; margin-left: 6px; }
+.score-box .big small { display: block; font-size: 21px; color: var(--mute); font-weight: 600; }
+.score-box .parts { flex: 1; display: flex; flex-direction: column; gap: 18px; }
+.score-box .track { background: #fff; }
+.crit { flex: none; margin-top: calc(26px * var(--k)); display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: calc(12px * var(--k)) 22px;
+        font-size: calc(26px * var(--k)); line-height: 1.52; }
+.crit b { font-weight: 700; color: var(--ink); }
 .crit span { color: var(--body); }
-.verdict .score { margin-top: calc(34px * var(--k)); }
-.pc { flex: none; margin-top: calc(30px * var(--k)); border-top: 2px solid var(--ink); }
-.pc section { padding: calc(22px * var(--k)) 0; border-bottom: 1px solid var(--line); }
-.pc h4 { font-size: calc(26px * var(--k)); font-weight: 700; margin-bottom: calc(10px * var(--k)); }
+.pc { flex: none; margin-top: calc(28px * var(--k)); }
+.pc section { padding: calc(20px * var(--k)) 0; border-top: 2px solid var(--line); }
+.pc h4 { font-size: calc(26px * var(--k)); font-weight: 700; margin-bottom: calc(8px * var(--k)); }
 .pc .good h4 { color: var(--good); }
 .pc .bad h4 { color: var(--bad); }
 .pc li { font-size: calc(29px * var(--k)); line-height: 1.5; }
-.who { flex: none; margin-top: calc(26px * var(--k)); padding: calc(24px * var(--k)) 28px; border-radius: 20px; background: var(--accent-soft);
+.pc .good .dots li::before { background: var(--good); }
+.pc .bad .dots li::before { background: var(--bad); }
+.who { flex: none; margin-top: calc(22px * var(--k)); padding: calc(22px * var(--k)) 28px; border-radius: 20px; background: var(--ink); color: #fff;
        display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 18px; font-size: calc(28px * var(--k)); line-height: 1.5; }
-.who b { color: var(--accent); }
-
-/* a grey box of supporting text that fills the rest of a slide */
-.note-box { flex: none; margin-top: calc(34px * var(--k)); background: var(--well); border-radius: 22px; padding: calc(30px * var(--k)) 34px; }
-.note-box h4 { font-size: calc(25px * var(--k)); font-weight: 700; color: var(--accent); margin-bottom: calc(12px * var(--k)); }
-.note-box p, .note-box li { font-size: calc(28px * var(--k)); line-height: 1.6; color: var(--body); }
-.note-box li + li { margin-top: calc(12px * var(--k)); }
-
-/* one bullet style everywhere: a dot centred on the first line, wrapped lines indented under the text */
-.dots li { list-style: none; position: relative; padding-left: 1.05em; }
-.dots li::before { content: ""; position: absolute; left: .2em; top: calc(.5lh - 4px); width: 8px; height: 8px; border-radius: 50%; background: var(--mute); }
-.note-box .dots li::before { background: var(--accent); }
+.who b { color: #fff; background: var(--c); padding: 0 10px; border-radius: 6px; align-self: start; }
 
 /* explained words: a raised * in the text, the meaning at the bottom of the slide */
-.star { font-size: .6em; vertical-align: .6em; line-height: 0; margin-left: 1px; color: var(--accent); font-weight: 700; }
-.foot { flex: none; margin-top: auto; padding-top: calc(18px * var(--k)); border-top: 1px solid var(--line); display: grid;
+.star { font-size: .6em; vertical-align: .6em; line-height: 0; margin-left: 1px; color: var(--c); font-weight: 700; }
+.foot { flex: none; margin-top: auto; padding: calc(18px * var(--k)) 0; border-top: 2px solid var(--line); display: grid;
         grid-template-columns: max-content minmax(0, 1fr); gap: calc(6px * var(--k)) 14px; font-size: calc(22px * var(--k)); line-height: 1.5; color: var(--body); }
-.foot b { font-weight: 600; color: var(--ink); }
-.foot b::before { content: "* "; color: var(--accent); }
-.figure + .foot, .rtable + .foot { margin-top: calc(24px * var(--k)); }
-
-/* ---------- summary ---------- */
-.summary .rows { margin-top: calc(32px * var(--k)); }
-.summary .row { padding: calc(22px * var(--k)) 0; }
+.foot b { font-weight: 700; color: var(--ink); }
+.foot b::before { content: "* "; color: var(--c); }
 
 /* ---------- outro ---------- */
-.outro { background: var(--dark); color: #fff; }
-.outro .page, .outro .bottom { color: #6b6b6b; }
-.acro { margin-top: 110px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 40px; }
-.acro div { font-size: 64px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.25; color: #5c5c5c; white-space: nowrap; }
+.outro { background: #0f1013; color: #fff; }
+.acro { margin: 96px 72px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 40px; }
+.acro div { font-size: 62px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.26; color: #5a5c63; white-space: nowrap; }
 .acro b { color: #fff; font-weight: 700; }
-.outro .claim { margin-top: 96px; font-size: 52px; line-height: 1.35; font-weight: 700; letter-spacing: -0.03em; }
-.outro .cta { margin-top: 28px; font-size: 30px; line-height: 1.6; color: #a3a3a3; }
+.outro .claim { margin: 88px 72px 0; font-size: 54px; line-height: 1.32; font-weight: 700; letter-spacing: -0.035em; }
+.outro .cta { margin: 30px 72px 0; font-size: 31px; line-height: 1.6; color: #a7a9ae; }
 .outro .cta b { color: #fff; font-weight: 600; }
+.outro .cta em { font-style: normal; color: #fff; background: var(--c); padding: 1px 10px; border-radius: 6px; font-weight: 600; }
+.outro .bottom { border-top-color: #26272c; color: #6d6f75; }
+.outro .bottom b { color: #fff; }
+
+/* while measuring, figures are out and the notes sit right under the text */
+.measuring .figure { display: none; }
+.measuring .foot, .measuring .stat { margin-top: 0; }
+/* the mask for a video slide: white where the moving window is, black elsewhere */
+.mask-mode { background: #000 !important; }
+.mask-mode * { visibility: hidden !important; background: transparent !important; border-color: transparent !important; box-shadow: none !important; }
+.mask-mode [data-window] { visibility: visible !important; background: #fff !important; }
+.mask-mode [data-window] * { visibility: hidden !important; }
 </style>
 </head>
 <body>
-{% macro top(n) %}<div class="top"><div class="logo">{{ brand }}</div><div class="page">{{ n }} / {{ total }}</div></div>{% endmacro %}
-{% macro bottom() %}<div class="bottom"><span class="id">{{ source_ref }}</span><span>{{ handle }}</span></div>{% endmacro %}
-{% macro bar(label, score, cls='') %}<div class="bar {{ cls }}"><span>{{ label }}</span><div class="track"><div class="fill" style="width: {{ (score * 10) | round | int }}%"></div></div><b>{{ score }}</b></div>{% endmacro %}
-{% macro step(n, label) %}<div class="step"><i>{{ '%02d' % (n - 1) }}</i>{{ label }}</div>{% endmacro %}
-{% macro figure(f) %}{% if f %}<div class="figure"><div class="img"><img src="{{ f.uri }}"></div>
-  <div class="cap">Figure {{ f.number }}. {{ f.caption | replace('Figure ' ~ f.number ~ ':', '') | replace('Figure ' ~ f.number ~ '.', '') | trim }}</div></div>{% endif %}{% endmacro %}
-
+{% macro band(n) %}<header class="band"><div class="brand"><b>{{ brand }}</b><span>{{ theme.label }}</span></div><div class="pg">{{ '%02d' % n }} <i>/ {{ '%02d' % total }}</i></div></header>{% endmacro %}
+{% macro bottom() %}<div class="bottom"><span class="id">{{ source_ref }}</span><b>{{ handle }}</b></div>{% endmacro %}
+{% macro label(n, text) %}<div class="label"><i>{{ '%02d' % (n - 1) }}</i>{{ text }}</div>{% endmacro %}
+{% macro bar(name, score, cls='') %}{% set score = score or 0 %}<div class="bar {{ cls }}"><span>{{ name }}</span><div class="track"><div class="fill" style="width: {{ (score * 10) | round | int }}%"></div></div><b>{{ score }}</b></div>{% endmacro %}
+{% macro figure(f, tag=None, window=False) %}{% if f %}<div class="figure {{ 'photo' if f.photo }}">
+  <div class="img" {{ 'data-window' if window }}>{% if tag %}<span class="media-tag">{{ tag }}</span>{% endif %}<img src="{{ f.uri }}" alt=""></div>
+  {% if f.caption and not f.photo %}<div class="cap">{% if f.number %}<b>Figure {{ f.number }}</b>{% endif %}{{ f.caption | replace('Figure ' ~ f.number ~ ':', '') | replace('Figure ' ~ f.number ~ '.', '') | trim }}</div>{% endif %}
+</div>{% endif %}{% endmacro %}
 {% macro foot(notes) %}{% if notes %}<div class="foot">{% for t in notes %}<b>{{ t.term }}</b><span>{{ t.meaning }}</span>{% endfor %}</div>{% endif %}{% endmacro %}
 
 {% for s in slides %}{% set n = loop.index %}
 {% if s.kind == 'cover' %}
 <section class="slide cover">
-  {{ top(n) }}
+  {{ band(n) }}
   <div class="main">
-    <div class="tag">{{ card.category }}</div>
-    <h1>{{ card.cover_headline | t }}</h1>
-    <p class="lead">{{ card.cover_sub | t }}</p>
-    {% if card.cover_points %}<ul class="points">{% for x in card.cover_points[:3] %}<li><b>{{ '%02d' % loop.index }}</b><span>{{ x | t }}</span></li>{% endfor %}</ul>{% endif %}
-    {% if cover_image %}<div class="figure"><div class="img"><img src="{{ cover_image }}"></div></div>{% endif %}
-    <div class="score">
-      <div><div class="label">종합 평점</div><div class="total"><b>{{ review.overall_score }}</b><span>/ 10</span></div></div>
-      <div class="parts">{{ bar('방법론', review.methodology_score) }}{{ bar('참신성', review.novelty_score, 'alt') }}</div>
+    <div class="chips"><span class="chip">{{ theme.name }}</span>{% if cover.topic %}<span class="chip ghost">{{ cover.topic }}</span>{% endif %}</div>
+    <h1>{{ cover.headline | t }}</h1>
+    {% if cover.sub %}<p class="lead">{{ cover.sub | t }}</p>{% endif %}
+    {{ figure(cover.image) }}
+    <div class="stat">
+      {% if cover.stat.type == 'score' %}
+      <div class="stat-card">
+        <div class="big"><small>종합 평점</small><b>{{ cover.stat.overall }}<span>/ 10</span></b></div>
+        <div class="parts">{{ bar('방법론', cover.stat.method) }}{{ bar('참신성', cover.stat.novelty, 'alt') }}</div>
+      </div>
+      {% elif cover.stat.tiles %}
+      <div class="stat-card"><div class="tiles-row">{% for t in cover.stat.tiles[:3] %}<div><b>{{ t.value }}</b><span>{{ t.label }}</span></div>{% endfor %}</div></div>
+      {% endif %}
     </div>
     {{ foot(s.notes) }}
   </div>
   {{ bottom() }}
 </section>
 
-{% elif s.kind == 'problem' %}
-<section class="slide problem">
-  {{ top(n) }}
+{% elif s.kind == 'points' %}
+<section class="slide points-slide">
+  {{ band(n) }}
   <div class="main">
-    {{ step(n, s.label) }}
+    {{ label(n, s.label) }}
     <h2>{{ s.headline | t }}</h2>
-    <ul class="points">{% for x in s.points %}<li><b>{{ '%02d' % loop.index }}</b><span>{{ x | t }}</span></li>{% endfor %}</ul>
-    {% if s.figure %}{{ figure(s.figure) }}
-    {% elif s.context or review.background %}<div class="note-box"><h4>배경</h4><p>{{ (s.context or review.background) | t }}</p></div>{% endif %}
+    <ul class="points">{% for x in s.points[:3] %}<li><b>{{ '%02d' % loop.index }}</b><span>{{ x | t }}</span></li>{% endfor %}</ul>
+    {% if s.figure %}{{ figure(s.figure) }}{% elif s.note %}<div class="note-box"><h4>{{ s.note_title }}</h4><p>{{ s.note | t }}</p></div>{% endif %}
     {{ foot(s.notes) }}
   </div>
   {{ bottom() }}
 </section>
 
-{% elif s.kind == 'idea' %}
-<section class="slide idea">
-  {{ top(n) }}
+{% elif s.kind == 'media' %}
+<section class="slide media" {% if s.video %}data-video="{{ s.video.src }}" data-video-pad="{{ s.video.pad }}"{% endif %}>
+  {{ band(n) }}
   <div class="main">
-    {{ step(n, s.label) }}
+    {{ label(n, s.label) }}
     <h2>{{ s.headline | t }}</h2>
-    <p class="lead">{{ s.body | t }}</p>
-    {{ figure(s.figure) }}
+    {% if s.body %}<p class="lead">{{ s.body | t }}</p>{% endif %}
+    {{ figure(s.figure, s.tag, window=True) }}
     {{ foot(s.notes) }}
   </div>
   {{ bottom() }}
@@ -218,39 +288,53 @@ h2 { flex: none; margin-top: calc(16px * var(--k)); font-size: calc(62px * var(-
 
 {% elif s.kind == 'steps' %}
 <section class="slide">
-  {{ top(n) }}
+  {{ band(n) }}
   <div class="main">
-    {{ step(n, s.label) }}
-    <h2>어떻게 작동하나요</h2>
-    <ol class="steps">{% for x in s.steps[:4] %}<li><span class="n">{{ loop.index }}</span><div><h3>{{ x.title | t }}</h3><p>{{ x.detail | t }}</p></div></li>{% endfor %}</ol>
-    {{ foot(s.notes) }}
-  </div>
-  {{ bottom() }}
-</section>
-
-{% elif s.kind == 'setup' %}
-<section class="slide setup">
-  {{ top(n) }}
-  <div class="main">
-    {{ step(n, s.label) }}
-    <h2>어떻게 실험했나요</h2>
-    <div class="rows">{% for r in s.rows[:5] %}<div class="row"><div class="k">{{ r.label | t }}</div><div class="v"><b>{{ r.value | t }}</b></div></div>{% endfor %}</div>
-    {% set findings = card.findings or review.analysis %}
-    {% if findings %}<div class="note-box"><h4>분석에서 확인한 것</h4><ul class="dots">{% for x in findings[:2] %}<li>{{ x | t }}</li>{% endfor %}</ul></div>{% endif %}
-    {{ foot(s.notes) }}
-  </div>
-  {{ bottom() }}
-</section>
-
-{% elif s.kind == 'results' %}
-<section class="slide results">
-  {{ top(n) }}
-  <div class="main">
-    {{ step(n, s.label) }}
+    {{ label(n, s.label) }}
     <h2>{{ s.headline | t }}</h2>
-    {% if s.highlight %}<div class="stat"><b>{{ s.highlight }}</b><span>{{ s.highlight_label | t }}</span></div>{% endif %}
-    {% if s.rows %}<div class="rtable">{% for r in s.rows[:4] %}<div class="r"><span class="item">{{ r.item | t }}</span><span class="val">{{ r.value | t }}</span>{% if r.note %}<span class="note">{{ r.note | t }}</span>{% endif %}</div>{% endfor %}</div>{% endif %}
+    <ol class="steps">{% for x in s.steps[:4] %}<li><span class="n">{{ loop.index }}</span><div><h3>{{ x.title | t }}</h3>{% if x.detail %}<p>{{ x.detail | t }}</p>{% endif %}{% if x.code %}<code>{{ x.code }}</code>{% endif %}</div></li>{% endfor %}</ol>
+    {% if s.link %}<div class="note-box"><h4>바로 가기</h4><p>{{ s.link }}</p></div>{% endif %}
+    {{ foot(s.notes) }}
+  </div>
+  {{ bottom() }}
+</section>
+
+{% elif s.kind == 'rows' %}
+<section class="slide">
+  {{ band(n) }}
+  <div class="main">
+    {{ label(n, s.label) }}
+    <h2>{{ s.headline | t }}</h2>
+    <div class="rows">{% for r in s.rows %}<div class="row"><div class="k">{{ r.label | t }}</div><div class="v"><b>{{ r.value | t }}</b></div></div>{% endfor %}</div>
+    {% if s.note_list %}<div class="note-box"><h4>{{ s.note_title }}</h4><ul class="dots">{% for x in s.note_list %}<li>{{ x | t }}</li>{% endfor %}</ul></div>{% endif %}
+    {{ foot(s.notes) }}
+  </div>
+  {{ bottom() }}
+</section>
+
+{% elif s.kind == 'numbers' %}
+<section class="slide">
+  {{ band(n) }}
+  <div class="main">
+    {{ label(n, s.label) }}
+    <h2>{{ s.headline | t }}</h2>
+    {% if s.highlight %}<div class="hl"><b>{{ s.highlight }}</b>{% if s.highlight_label %}<span>{{ s.highlight_label | t }}</span>{% endif %}</div>{% endif %}
+    {% if s.bars %}<div class="hbars">{% for b in s.bars %}<div class="hbar {{ 'on' if b.highlight }}"><div class="top"><span>{{ b.label | t }}</span><b>{{ b.display }}</b></div><div class="track"><div class="fill" style="width: {{ b.pct }}%"></div></div></div>{% endfor %}</div>{% endif %}
+    {% if s.tiles %}<div class="tiles">{% for t in s.tiles[:4] %}<div><b>{{ t.value }}</b><span>{{ t.label | t }}</span></div>{% endfor %}</div>{% endif %}
+    {% if s.rows %}<div class="rtable">{% for r in s.rows[:(2 if s.bars else 4)] %}<div class="r"><span class="item">{{ r.item | t }}</span><span class="val">{{ r.value | t }}</span>{% if r.note %}<span class="note">{{ r.note | t }}</span>{% endif %}</div>{% endfor %}</div>{% endif %}
     {{ figure(s.figure) }}
+    {{ foot(s.notes) }}
+  </div>
+  {{ bottom() }}
+</section>
+
+{% elif s.kind == 'sowhat' %}
+<section class="slide sowhat">
+  {{ band(n) }}
+  <div class="main">
+    {{ label(n, s.label) }}
+    <h2>{{ s.headline | t }}</h2>
+    <div class="cards3">{% for x in s['items'] %}<div><i>{{ '%02d' % loop.index }}</i><div><h3>{{ x.title | t }}</h3><p>{{ x.detail | t }}</p></div></div>{% endfor %}</div>
     {{ foot(s.notes) }}
   </div>
   {{ bottom() }}
@@ -258,15 +342,15 @@ h2 { flex: none; margin-top: calc(16px * var(--k)); font-size: calc(62px * var(-
 
 {% elif s.kind == 'verdict' %}
 <section class="slide verdict">
-  {{ top(n) }}
+  {{ band(n) }}
   <div class="main">
-    {{ step(n, s.label) }}
-    <h2>얼마나 믿을 만한가요</h2>
-    <div class="score">
-      <div><div class="label">종합 평점</div><div class="total"><b>{{ review.overall_score }}</b><span>/ 10</span></div></div>
+    {{ label(n, s.label) }}
+    <h2>{{ s.headline | t }}</h2>
+    <div class="score-box">
+      <div class="big"><small>종합 평점</small><b>{{ review.overall_score }}<span>/ 10</span></b></div>
       <div class="parts">{{ bar('방법론', review.methodology_score) }}{{ bar('참신성', review.novelty_score, 'alt') }}</div>
     </div>
-    <div class="crit"><b>방법론</b><span>{{ review.methodology_reason }}</span><b>참신성</b><span>{{ review.novelty_reason }}</span></div>
+    <div class="crit"><b>방법론</b><span>{{ review.methodology_reason | t }}</span><b>참신성</b><span>{{ review.novelty_reason | t }}</span></div>
     {% if s.strengths or s.weaknesses %}<div class="pc">
       {% if s.strengths %}<section class="good"><h4>강점</h4><ul class="dots">{% for x in s.strengths[:2] %}<li>{{ x | t }}</li>{% endfor %}</ul></section>{% endif %}
       {% if s.weaknesses %}<section class="bad"><h4>보완할 점</h4><ul class="dots">{% for x in s.weaknesses[:2] %}<li>{{ x | t }}</li>{% endfor %}</ul></section>{% endif %}
@@ -279,11 +363,12 @@ h2 { flex: none; margin-top: calc(16px * var(--k)); font-size: calc(62px * var(-
 
 {% elif s.kind == 'summary' %}
 <section class="slide summary">
-  {{ top(n) }}
+  {{ band(n) }}
   <div class="main">
-    <h2>한눈에 정리</h2>
+    <div class="label"><i>SUM</i>정리</div>
+    <h2>{{ s.headline | t }}</h2>
     <div class="rows">
-      {% for r in card.summary_rows %}
+      {% for r in s.rows %}
       <div class="row"><div class="k">{{ r.label | t }}</div><div class="v"><b>{{ r.value | t }}</b>{% if r.value_sub %}<span>{{ r.value_sub | t }}</span>{% endif %}</div></div>
       {% endfor %}
     </div>
@@ -294,13 +379,13 @@ h2 { flex: none; margin-top: calc(16px * var(--k)); font-size: calc(62px * var(-
 
 {% elif s.kind == 'outro' %}
 <section class="slide outro">
-  {{ top(n) }}
+  {{ band(n) }}
   <div class="acro">
     {% for initial, rest in acronym[:4] %}<div style="grid-column: 1; grid-row: {{ loop.index }}"><b>{{ initial }}</b>{{ rest }}</div>{% endfor %}
     {% for initial, rest in acronym[4:] %}<div style="grid-column: 2; grid-row: {{ loop.index }}"><b>{{ initial }}</b>{{ rest }}</div>{% endfor %}
   </div>
-  <p class="claim">읽을 가치가 있는 논문만<br>골라 읽고, 평가합니다.</p>
-  <p class="cta">원문 링크와 전체 리뷰는 <b>프로필 링크</b>에서 볼 수 있어요.<br>매일 새 논문을 받아보려면 <b>{{ handle }}</b></p>
+  <p class="claim">{{ theme.claim }}</p>
+  <p class="cta">원문 링크와 전체 리뷰는 <b>프로필 링크</b>에서 볼 수 있어요.<br>논문은 <em>PAPER</em>, 테크 소식은 <em>TECH</em>로 올라옵니다. <b>{{ handle }}</b></p>
   <div style="flex: 1"></div>
   {{ bottom() }}
 </section>
@@ -308,23 +393,50 @@ h2 { flex: none; margin-top: calc(16px * var(--k)); font-size: calc(62px * var(-
 {% endfor %}
 
 <script>
-// Fit each slide: shrink its type scale until the text fits, then drop any
-// figure that was squeezed too small to read.
+// Fit each slide. Text first: shrink the type scale until it fits. Then the
+// figure gets the room that is left, sized to its own shape; if too little is
+// left it is dropped (and the text goes back to the size it had without it).
+const MIN_FIGURE = { media: 420, cover: 300 };
+function fit(slide) {
+  const main = slide.querySelector(".main");
+  if (!main) return;
+  const setK = (k) => slide.style.setProperty("--k", k);
+  const bottom = () => Math.max(0, ...[...main.children].map((c) => c.offsetTop + c.offsetHeight));
+  const room = () => main.clientHeight - bottom();
+  slide.classList.add("measuring");
+  let k = 1;
+  setK(k);
+  while (room() < -1 && k > 0.62) { k = +(k - 0.02).toFixed(2); setK(k); }
+  const f = slide.querySelector(".figure");
+  if (f) {
+    const kind = slide.classList.contains("media") ? "media" : slide.classList.contains("cover") ? "cover" : "other";
+    const need = MIN_FIGURE[kind] || 300;
+    let kk = k;
+    const gap = () => 36 * kk;
+    while (room() - gap() < need && kk > Math.max(0.74, k - 0.16)) { kk = +(kk - 0.02).toFixed(2); setK(kk); }
+    const avail = room() - gap();
+    if (avail >= need) {
+      slide.classList.remove("measuring");
+      const img = f.querySelector("img");
+      const ar = (img.naturalWidth && img.naturalHeight) ? img.naturalWidth / img.naturalHeight : 1.6;
+      const photo = f.classList.contains("photo");
+      const cap = f.querySelector(".cap");
+      const chrome = photo ? 0 : 40 + (cap ? cap.offsetHeight + 12 : 0);
+      const natural = (f.clientWidth - (photo ? 0 : 40)) / ar + chrome;
+      const h = Math.min(avail, Math.max(need, natural));
+      f.style.height = Math.floor(h) + "px";
+    } else {
+      setK(k);
+      f.remove();
+      slide.removeAttribute("data-video");
+    }
+  }
+  slide.classList.remove("measuring");
+}
 document.fonts.ready.then(() => {
   const imgs = [...document.images].map((im) => im.complete ? null : new Promise((r) => { im.onload = im.onerror = r; }));
   Promise.all(imgs).then(() => {
-    document.querySelectorAll(".slide").forEach((slide) => {
-      const main = slide.querySelector(".main");
-      if (!main) return;
-      // where the last block ends (glyphs that poke out of their line box don't count)
-      const bottom = () => Math.max(...[...main.children].map((c) => c.offsetTop + c.offsetHeight));
-      let k = 1;
-      while (bottom() > main.clientHeight + 1 && k > 0.66) {
-        k = +(k - 0.03).toFixed(2);
-        slide.style.setProperty("--k", k);
-      }
-      slide.querySelectorAll(".figure").forEach((f) => { if (f.clientHeight < 250) f.remove(); });
-    });
+    document.querySelectorAll(".slide").forEach(fit);
     document.body.dataset.ready = "1";
   });
 });

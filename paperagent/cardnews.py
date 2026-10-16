@@ -1,8 +1,17 @@
-"""Instagram card-news generator: renders a 9-slide 1080x1350 (4:5) carousel to PNG.
+"""Card news: 1080x1350 (4:5) carousels rendered to PNG, plus one MP4 slide.
+
+Two categories share one frame and differ by colour and label, so a scroll
+through the feed shows at a glance what kind of post it is:
+
+  paper - a reviewed paper (blue)      cards/<id>/card_NN.png
+  tech  - a trending project or news   tech/<id>/card_NN.png
+          (orange; GitHub Trending, Hacker News, GeekNews, Hugging Face)
 
 The slides are laid out in HTML/CSS (templates/cards/cards.html) and captured
-with headless Chromium through Playwright, so typography (Korean via the bundled
-Pretendard font) stays crisp and the design is easy to tweak."""
+with headless Chromium through Playwright, so Korean typography (the bundled
+Pretendard font) stays crisp. One slide per carousel can also be written as a
+video (video.py): the frame stays still and only its image window moves.
+"""
 import io
 import json
 import logging
@@ -16,28 +25,43 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup, escape
 
-from . import config, storage
+from . import config, storage, video
 
 log = logging.getLogger(__name__)
 PKG_DIR = Path(__file__).resolve().parent
 FONT_DIR = PKG_DIR / "static" / "fonts"
 
+THEMES = {
+    "paper": {"key": "paper", "color": "#2346E0", "deep": "#1631B0", "soft": "#EBF0FF", "label": "PAPER",
+              "name": "논문 리뷰", "kicker": "오늘의 논문",
+              "claim": "읽을 가치가 있는 논문만 골라 읽고, 평가합니다."},
+    "tech": {"key": "tech", "color": "#F2541B", "deep": "#C43B0B", "soft": "#FFEFE7", "label": "TECH",
+             "name": "테크 트렌드", "kicker": "오늘의 테크",
+             "claim": "지금 개발자들이 주목하는 기술을 골라, 쉽게 풀어 드립니다."},
+}
+
 _env = Environment(loader=FileSystemLoader(PKG_DIR / "templates" / "cards"), autoescape=select_autoescape(["html"]))
-_env.filters["nl2br"] = lambda s: Markup("<br>".join(escape(line) for line in str(s or "").replace("\\n", "\n").split("\n")))
+
+
+def _one_line(s) -> str:
+    """Card copy flows on its own: line breaks the writer put in (often in odd
+    places once the type scale changes) are turned into spaces."""
+    return re.sub(r"\s*(?:\\n|\n)+\s*", " ", str(s or "")).strip()
 
 
 def _text(s):
-    """Card text: escaped, line breaks kept, and the * after an explained word raised."""
-    html = _env.filters["nl2br"](s)
-    return Markup(re.sub(r"(?<=\S)\*", '<sup class="star">*</sup>', str(html)))
+    """Card text: escaped, on one flowing line, and the * after an explained word raised."""
+    html = str(escape(_one_line(s)))
+    return Markup(re.sub(r"(?<=\S)\*", '<sup class="star">*</sup>', html))
 
 
 _env.filters["t"] = _text
 
 
 def _source_ref(paper):
-    if paper["uid"].startswith("arxiv:"):
-        return f"arXiv:{paper['uid'][6:]}"
+    uid = paper.get("uid") or ""
+    if uid.startswith("arxiv:"):
+        return f"arXiv:{uid[6:]}"
     m = re.search(r"arxiv\.org/(?:abs|pdf)/([\w.\-]+?)(?:v\d+)?$", paper.get("url") or "")
     if m:
         return f"arXiv:{m.group(1)}"
@@ -71,62 +95,137 @@ def normalize_card(review: dict) -> dict:
     return card
 
 
-def build_html(paper: dict, review: dict, figures, page1=None) -> str:
-    """figures: [{number, caption, path}] with local file paths."""
+def _bars(rows):
+    """Bars for the results slide: only real numbers, scaled to the largest."""
+    out = []
+    for b in rows or []:
+        try:
+            value = float(b.get("value"))
+        except (TypeError, ValueError):
+            continue
+        if value >= 0 and b.get("label"):
+            out.append({**b, "value": value})
+    if len(out) < 2:
+        return []
+    top = max(b["value"] for b in out) or 1
+    for b in out:
+        b["pct"] = max(4, round(b["value"] / top * 100))
+        b["display"] = b.get("display") or f"{b['value']:g}"
+    return out[:4]
+
+
+def _usable_figures(figures):
+    """Figures worth showing on a card: big enough to read, not a thin strip."""
+    out = {}
+    for f in figures:
+        size = _image_size(f["path"])
+        if size:
+            w, h = size
+            if w < 360 or h < 160 or w / h > 3.6 or h / w > 2.2:
+                continue
+            f = {**f, "w": w, "h": h}
+        out[f["number"]] = {**f, "uri": Path(f["path"]).resolve().as_uri()}
+    return out
+
+
+def _image_size(path):
+    try:
+        from PIL import Image
+
+        with Image.open(path) as im:
+            return im.size
+    except Exception:
+        return None
+
+
+def _attach_notes(slides, card, extra_text=None):
+    """Each explained word (marked with *) gets its meaning at the bottom of the
+    first slide it appears on."""
+    explained = set()
+    for s in slides:
+        text = json.dumps({k: v for k, v in s.items() if k not in ("figure", "image")}, ensure_ascii=False)
+        text += json.dumps((extra_text or {}).get(s["kind"]), ensure_ascii=False)
+        s["notes"] = [t for t in card.get("terms") or [] if t.get("term") and f"{t['term']}*" in text and t["term"] not in explained]
+        explained.update(t["term"] for t in s["notes"])
+
+
+def paper_slides(paper, review, figures):
+    """The slides of a paper's carousel, in order; a slide with nothing to say is left out."""
     card = normalize_card(review)
-    figs = {f["number"]: {**f, "uri": Path(f["path"]).resolve().as_uri()} for f in figures}
+    figs = _usable_figures(figures)
 
     def fig(part):
         return figs.get((card.get(part) or {}).get("figure_number") or 0)
 
-    # One entry per slide, in order; a slide whose content is missing is left out.
     slides = [{"kind": "cover"}]
-    if card.get("problem", {}).get("points"):
-        slides.append({"kind": "problem", "label": "문제", **card["problem"], "figure": fig("problem")})
-    if card.get("idea", {}).get("body"):
-        slides.append({"kind": "idea", "label": "핵심 아이디어", **card["idea"], "figure": fig("idea")})
+    problem = card.get("problem") or {}
+    if problem.get("points"):
+        slides.append({"kind": "points", "label": "문제", "headline": problem.get("headline"), "points": problem["points"],
+                       "note_title": "배경", "note": problem.get("context") or review.get("background"), "figure": fig("problem")})
+    idea = card.get("idea") or {}
+    if idea.get("body"):
+        slides.append({"kind": "media", "label": "핵심 아이디어", "headline": idea.get("headline"), "body": idea["body"],
+                       "figure": fig("idea")})
     if card.get("steps"):
-        slides.append({"kind": "steps", "label": "작동 방식", "steps": card["steps"]})
+        slides.append({"kind": "steps", "label": "작동 방식", "headline": "어떻게 작동하나요", "steps": card["steps"][:4]})
     if card.get("setup"):
-        slides.append({"kind": "setup", "label": "실험 설정", "rows": card["setup"]})
-    if card.get("results"):
-        slides.append({"kind": "results", "label": "결과", **card["results"], "figure": fig("results")})
-    slides.append({"kind": "verdict", "label": "평가", **card["verdict"]})
-    slides.append({"kind": "summary"})
+        slides.append({"kind": "rows", "label": "실험 설정", "headline": "어떻게 실험했나요", "rows": card["setup"][:5],
+                       "note_title": "분석에서 확인한 것", "note_list": (card.get("findings") or review.get("analysis") or [])[:2]})
+    res = card.get("results") or {}
+    if res:
+        slides.append({"kind": "numbers", "label": "결과", "headline": res.get("headline"), "highlight": res.get("highlight"),
+                       "highlight_label": res.get("highlight_label"), "bars": _bars(res.get("bars")),
+                       "rows": res.get("rows") or [], "figure": fig("results")})
+    so = card.get("so_what") or {}
+    if so.get("items"):
+        slides.append({"kind": "sowhat", "label": "그래서 나랑 무슨 상관?", "headline": so.get("headline"), "items": so["items"][:3]})
+    slides.append({"kind": "verdict", "label": "평가", "headline": "얼마나 믿을 만한가요", **card["verdict"]})
+    slides.append({"kind": "summary", "headline": "한눈에 정리", "rows": card.get("summary_rows") or []})
     slides.append({"kind": "outro"})
 
-    explained = set()
-    for s in slides:
-        text = json.dumps({k: v for k, v in s.items() if k != "figure"}, ensure_ascii=False)
-        if s["kind"] == "cover":
-            text += json.dumps([card.get(k) for k in ("cover_headline", "cover_sub", "cover_points")], ensure_ascii=False)
-        elif s["kind"] == "summary":
-            text += json.dumps(card.get("summary_rows"), ensure_ascii=False)
-        s["notes"] = [t for t in card.get("terms") or [] if t.get("term") and f"{t['term']}*" in text and t["term"] not in explained]
-        explained.update(t["term"] for t in s["notes"])
-
-    # Cover visual: a figure not shown on later slides, else the paper's
-    # first page, else any figure.
+    # The key-idea slide moves (video) when it has a figure; otherwise the
+    # first unused figure goes there, so the idea is never just text.
     used = {s["figure"]["number"] for s in slides if s.get("figure")}
-    cover = next((f for n, f in figs.items() if n not in used), None)
-    cover_uri = cover["uri"] if cover else None
-    if not cover_uri and page1 and Path(page1).exists():
-        cover_uri = Path(page1).resolve().as_uri()
-    if not cover_uri and figs:
-        cover_uri = next(iter(figs.values()))["uri"]
+    for s in slides:
+        if s["kind"] == "media" and not s.get("figure"):
+            spare = next((f for n, f in figs.items() if n not in used), None)
+            if spare:
+                s["figure"] = spare
+                used.add(spare["number"])
+        if s["kind"] == "media" and s.get("figure"):
+            s["video"] = {"src": s["figure"]["path"], "pad": "white"}
 
+    cover_image = next((f for n, f in figs.items() if n not in used), None) or (
+        next((s["figure"] for s in slides if s["kind"] == "media" and s.get("figure")), None))
+    cover = {
+        "headline": card.get("cover_headline"), "sub": card.get("cover_sub"), "topic": card.get("category"),
+        "image": cover_image, "stat": {"type": "score", "overall": review.get("overall_score"),
+                                       "method": review.get("methodology_score"), "novelty": review.get("novelty_score")},
+    }
+    _attach_notes(slides, card, {"cover": [card.get(k) for k in ("cover_headline", "cover_sub")]})
+    return slides, cover
+
+
+def build_html(paper: dict, review: dict, figures, page1=None, kind="paper") -> str:
+    """figures: [{number, caption, path}] with local file paths. (page1 is
+    accepted for older callers; the first page is no longer shown - a page of
+    body text makes a poor picture.)"""
+    slides, cover = paper_slides(paper, review, figures)
+    return render_html(THEMES["paper"], slides, cover, source_ref=_source_ref(paper), review=review)
+
+
+def render_html(theme, slides, cover, source_ref, review=None) -> str:
     return _env.get_template("cards.html").render(
         fonts=FONT_DIR.resolve().as_uri(),
         brand=config.CARD_BRAND,
         handle=config.CARD_HANDLE,
         acronym=config.BRAND_ACRONYM,
-        paper=paper,
-        review=review,
-        card=card,
+        theme=theme,
+        review=review or {},
+        cover=cover,
         slides=slides,
         total=len(slides),
-        cover_image=cover_uri,
-        source_ref=_source_ref(paper),
+        source_ref=source_ref,
     )
 
 
@@ -149,28 +248,68 @@ def _launch(p):
     raise RuntimeError(f"Could not launch Chromium for card rendering: {last}")
 
 
-def render(paper: dict, review: dict, figures, out_dir: Path, page1=None):
-    """Render all slides to out_dir/card_XX.png; returns the list of paths."""
+def capture(html: str, out_dir: Path, videos=True):
+    """Screenshot every slide of the HTML to out_dir/card_NN.png and write the
+    video slides as card_NN.mp4. Returns (png paths, {slide number: mp4 path})."""
     from playwright.sync_api import sync_playwright
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    for old in out_dir.glob("card_*.png"):
+    for old in list(out_dir.glob("card_*.png")) + list(out_dir.glob("card_*.mp4")):
         old.unlink()
     html_path = out_dir / "cards.html"
-    html_path.write_text(build_html(paper, review, figures, page1), encoding="utf-8")
-    paths = []
+    html_path.write_text(html, encoding="utf-8")
+    paths, clips = [], {}
     with sync_playwright() as p:
         browser = _launch(p)
         try:
             page = browser.new_page(viewport={"width": 1080, "height": 1350}, device_scale_factor=1)
             page.goto(html_path.as_uri())
             page.wait_for_selector("body[data-ready='1']", timeout=30000)
-            for i, el in enumerate(page.query_selector_all("section.slide"), start=1):
+            slides = page.query_selector_all("section.slide")
+            for i, el in enumerate(slides, start=1):
                 path = out_dir / f"card_{i:02d}.png"
                 el.screenshot(path=str(path))
                 paths.append(str(path))
+            if videos and video.available():
+                for i, el in enumerate(slides, start=1):
+                    src = el.get_attribute("data-video")
+                    if not src:
+                        continue
+                    try:
+                        clips[i] = str(_video_slide(page, el, i, src, el.get_attribute("data-video-pad") or "white", out_dir))
+                    except Exception as exc:  # the still card is still there
+                        log.warning("video slide %s failed: %s", i, exc)
         finally:
             browser.close()
+    return paths, clips
+
+
+def _video_slide(page, el, n, src, pad, out_dir: Path):
+    """Frame = the card as rendered; mask = white where the window is."""
+    box = el.evaluate("""(slide) => {
+        const w = slide.querySelector('[data-window]'); if (!w) return null;
+        const a = slide.getBoundingClientRect(), b = w.getBoundingClientRect();
+        return [b.left - a.left, b.top - a.top, b.width, b.height];
+    }""")
+    if not box or box[2] < 200 or box[3] < 150:
+        raise RuntimeError("no room for a video window")
+    frame = out_dir / f"frame_{n:02d}.png"
+    mask = out_dir / f"mask_{n:02d}.png"
+    el.screenshot(path=str(frame))
+    el.evaluate("(slide) => slide.classList.add('mask-mode')")
+    el.screenshot(path=str(mask))
+    el.evaluate("(slide) => slide.classList.remove('mask-mode')")
+    out = out_dir / f"card_{n:02d}.mp4"
+    video.compose(frame, mask, src, box, out, pad_color=pad)
+    frame.unlink(missing_ok=True)
+    mask.unlink(missing_ok=True)
+    return out
+
+
+def render(paper: dict, review: dict, figures, out_dir: Path, page1=None, videos=False):
+    """Render a paper's slides to out_dir/card_XX.png; returns the list of paths.
+    With videos=True the key-idea slide is also written as card_XX.mp4."""
+    paths, _ = capture(build_html(paper, review, figures), out_dir, videos=videos)
     (out_dir / "caption.txt").write_text(build_caption(paper, review), encoding="utf-8")
     return paths
 
@@ -178,12 +317,12 @@ def render(paper: dict, review: dict, figures, out_dir: Path, page1=None):
 _HASHTAG = re.compile(r"#[^\s#]+")
 
 
-def hashtags(card: dict) -> list[str]:
-    """The fixed account tags plus the paper's own, without duplicates, capped at
+def hashtags(card: dict, base=None) -> list[str]:
+    """The fixed account tags plus the post's own, without duplicates, capped at
     Instagram's per-post limit. Older reviews carried their tags in the caption."""
     own = card.get("hashtags") or _HASHTAG.findall(card.get("caption") or "")
     out = []
-    for tag in config.CARD_BASE_HASHTAGS + own:
+    for tag in (config.CARD_BASE_HASHTAGS if base is None else base) + own:
         tag = "#" + tag.strip().lstrip("#").replace(" ", "")
         if len(tag) > 1 and tag.lower() not in {t.lower() for t in out}:
             out.append(tag)
@@ -199,11 +338,21 @@ def build_caption(paper, review):
             + " ".join(hashtags(card)))
 
 
-def render_and_store(paper: dict, review: dict) -> list[str]:
+def store(prefix: str, paths, clips, caption: str):
+    """Replace what is stored under prefix with the new cards. Returns
+    (png keys, {slide number as str: mp4 key})."""
+    storage.delete_prefix(prefix)
+    keys = [storage.put_file(prefix + Path(p).name, p) for p in paths]
+    videos = {str(n): storage.put_file(prefix + Path(p).name, p) for n, p in clips.items()}
+    storage.put(prefix + "caption.txt", caption.encode("utf-8"), "text/plain; charset=utf-8")
+    return keys, videos
+
+
+def render_and_store(paper: dict, review: dict):
     """Render the cards for a reviewed paper and save them to storage.
 
-    Figures come from storage (keys in review["_figures"]); the HTML and PNGs
-    are built in a temporary directory. Returns the storage keys of the cards."""
+    Figures come from storage (keys in review["_figures"]); the HTML, PNGs and
+    the MP4 are built in a temporary directory. Returns (card keys, video keys)."""
     pid = paper["id"]
     with tempfile.TemporaryDirectory(prefix="cards-") as tmp:
         tmp = Path(tmp)
@@ -212,23 +361,21 @@ def render_and_store(paper: dict, review: dict) -> list[str]:
             local = storage.materialize(f["key"], tmp)
             if local:
                 figures.append({**f, "path": str(local)})
-        page1 = storage.materialize(review["_page1"], tmp) if review.get("_page1") else None
-        paths = render(paper, review, figures, tmp / "out", page1)
-        prefix = f"cards/{pid}/"
-        storage.delete_prefix(prefix)
-        keys = [storage.put_file(prefix + Path(p).name, p) for p in paths]
-        storage.put(prefix + "caption.txt", (tmp / "out" / "caption.txt").read_bytes(), "text/plain; charset=utf-8")
-    return keys
+        paths, clips = capture(build_html(paper, review, figures), tmp / "out")
+        return store(f"cards/{pid}/", paths, clips, build_caption(paper, review))
 
 
-def zip_cards(paper_id: int, card_keys) -> bytes:
+def zip_cards(prefix: str, card_keys, video_keys=None) -> bytes:
+    """All slides in posting order (a video slide as its .mp4) and the caption."""
+    video_keys = video_keys or {}
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for key in card_keys:
+        for n, key in enumerate(card_keys, start=1):
+            key = video_keys.get(str(n)) or key
             item = storage.get(key)
             if item:
                 zf.writestr(Path(key).name, item[0])
-        caption = storage.get(f"cards/{paper_id}/caption.txt")
+        caption = storage.get(prefix + "caption.txt")
         if caption:
             zf.writestr("caption.txt", caption[0])
     return buf.getvalue()

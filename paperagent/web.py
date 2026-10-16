@@ -314,12 +314,21 @@ def file_card(paper_id, n):
                         as_attachment=request.args.get("dl") == "1")
 
 
+@bp.route("/files/card/<int:paper_id>/<int:n>.mp4")
+def file_card_video(paper_id, n):
+    p = db.get_paper(paper_id)
+    key = ((p or {}).get("card_videos") or {}).get(str(n))
+    if not key:
+        abort(404)
+    return _send_stored(key, f"paper{paper_id}_card_{n:02d}.mp4", as_attachment=request.args.get("dl") == "1")
+
+
 @bp.route("/files/cards/<int:paper_id>.zip")
 def file_cards_zip(paper_id):
     p = db.get_paper(paper_id)
     if not p or not p.get("card_paths"):
         abort(404)
-    data = cardnews.zip_cards(paper_id, p["card_paths"])
+    data = cardnews.zip_cards(f"cards/{paper_id}/", p["card_paths"], p.get("card_videos"))
     return send_file(io.BytesIO(data), mimetype="application/zip", as_attachment=True,
                      download_name=f"cardnews-{cardnews.slug(p['title'])}.zip")
 

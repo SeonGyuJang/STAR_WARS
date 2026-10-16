@@ -481,17 +481,17 @@ Style: plain, natural Korean; keep technical terms in English where natural (e.g
 
 CARD_SCHEMA = _obj({
     "category": {**_str, "description": "Short field tag, e.g. 'LLM 에이전트'"},
-    "cover_headline": {**_str, "description": "Korean hook, 2 lines separated by \\n, <= 16 chars per line"},
-    "cover_sub": {**_str, "description": "One Korean sentence under the headline (<= 70 chars)"},
+    "cover_headline": {**_str, "description": "A question a curious non-expert would ask, answered by this paper, ending with '?' - e.g. '작은 AI도 스스로 검산하면 더 똑똑해질까?'. <= 30 Korean chars, no line breaks, no clickbait"},
+    "cover_sub": {**_str, "description": "One Korean sentence that hints at the answer, with the key number if there is one (<= 70 chars)"},
     "cover_points": {**_str_list, "description": "Exactly 3 Korean takeaways, each <= 44 chars, at least one with a number"},
     "problem": _obj({
-        "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
+        "headline": {**_str, "description": "One flowing phrase, <= 24 Korean chars, no line breaks"},
         "points": {**_str_list, "description": "3 Korean sentences, each <= 75 chars: the situation, what goes wrong, why it matters"},
         "context": {**_str, "description": "2-3 plain Korean sentences of background, <= 170 chars (shown when there is no figure)"},
         "figure_number": {"type": "integer", "description": "Figure to show, 0 for none"},
     }),
     "idea": _obj({
-        "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
+        "headline": {**_str, "description": "One flowing phrase, <= 24 Korean chars, no line breaks"},
         "body": {**_str, "description": "2-3 Korean sentences, <= 170 chars in total: the core idea"},
         "figure_number": {"type": "integer", "description": "The method overview figure, 0 for none"},
     }),
@@ -501,12 +501,24 @@ CARD_SCHEMA = _obj({
                    label={**_str, "description": "<= 8 chars"}, value={**_str, "description": "<= 70 chars"}),
     "findings": {**_str_list, "description": "2 plain Korean sentences on what the extra experiments showed, each <= 80 chars"},
     "results": _obj({
-        "headline": {**_str, "description": "2 lines separated by \\n, <= 16 chars per line"},
+        "headline": {**_str, "description": "One flowing phrase, <= 24 Korean chars, no line breaks"},
         "highlight": {**_str, "description": "The single most important number, e.g. '+12.4%p'"},
         "highlight_label": {**_str, "description": "What it measures, <= 30 chars"},
         "rows": _rows("3-4 results", item={**_str, "description": "<= 22 chars"}, value={**_str, "description": "<= 16 chars"},
                       note={**_str, "description": "comparison or context in plain words, <= 40 chars"}),
+        "bars": _rows("2-3 bars comparing the SAME metric (this paper vs baselines), drawn to scale; empty when the paper has no such comparison",
+                      label={**_str, "description": "<= 16 chars, e.g. '이 논문', '기존 최고 방법'"},
+                      value={"type": "number", "description": "The plain number exactly as reported (e.g. 53.6)"},
+                      display={**_str, "description": "How to show it, e.g. '53.6%'"},
+                      highlight={"type": "boolean", "description": "true only for this paper's result"}),
         "figure_number": {"type": "integer", "description": "A results plot or table, 0 for none"},
+    }),
+    "so_what": _obj({
+        "headline": {**_str, "description": "The practical meaning in one phrase, <= 26 Korean chars"},
+        "items": _rows("Exactly 3 honest answers to '그래서 나랑 무슨 상관?' for an ordinary reader: what could change in products, "
+                       "work or daily life, what it costs or when it might arrive. No hype; if the paper is far from everyday "
+                       "life, say what it would change for whom.",
+                       title={**_str, "description": "<= 18 chars"}, detail={**_str, "description": "<= 75 chars"}),
     }),
     "verdict": _obj({
         "strengths": {**_str_list, "description": "2 Korean points, each <= 60 chars"},
@@ -525,13 +537,14 @@ CARD_SCHEMA = _obj({
                                             "e.g. #LLM, #컴퓨터비전, #생성형AI, #자율주행 - only if the paper is really about it"},
 })
 
-CARD_SYSTEM = """You turn a Korean paper review into copy for an Instagram card-news post (cover, problem, key idea, how it works, setup, results, verdict, summary; a fixed closing slide follows).
+CARD_SYSTEM = """You turn a Korean paper review into copy for an Instagram card-news post (question cover, problem, key idea, how it works, setup, results, "so what for me", verdict, summary; a fixed closing slide follows).
 
 Audience: people with no AI or engineering background. Write so they can follow every card:
 - Explain things as they actually are, in plain words and enough detail - do not explain by analogy or metaphor (no "마치 ~처럼", no comparing the method to everyday objects).
 - When a technical word is unavoidable (a benchmark, method or metric name), either explain it in the same sentence or put * right after it (e.g. "MATH*") and define it in `terms`. Use at most 4 terms.
 - Say what numbers mean ("정답률 41.2% → 53.6%, 100문제 중 약 12문제를 더 맞힘") rather than leaving bare figures, but never change or invent a number.
 - Short, clear sentences; natural Korean; no hype.
+- The cover is a question the reader wants answered; the slides answer it. Never insert line breaks - the layout wraps text itself.
 - Weaknesses and limits are constructive: "~에 대한 보완이 필요해 보입니다", "~는 다소 미흡할 수 있습니다", "~에 대한 추가 연구가 필요할 수 있습니다".
 
 Use only facts from the review. Card copy is rendered large, so respect every length limit - shorten wording, never cut a number.

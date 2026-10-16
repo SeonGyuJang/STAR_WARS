@@ -1,4 +1,5 @@
 import copy
+from pathlib import Path
 
 from PIL import Image
 
@@ -29,7 +30,7 @@ def test_render_cards(sample_pdf, tmp_path):
     paper = {"uid": "arxiv:2610.01234", "title": "Self-Verification Loops", "authors": ["A. Kim"],
              "source_kind": "arxiv", "source_name": "arXiv · cs.CL", "published": "2026-10-09", "url": "https://arxiv.org/abs/2610.01234"}
     paths = cardnews.render(paper, review, figs, tmp_path / "cards")
-    assert len(paths) == 9
+    assert len(paths) == 10  # cover .. so-what, verdict, summary, outro
     for p in paths:
         assert Image.open(p).size == (1080, 1350)
     caption = (tmp_path / "cards" / "caption.txt").read_text()
@@ -77,3 +78,41 @@ def test_hard_words_are_explained_once(sample_pdf, tmp_path):
     html = cardnews.build_html(paper, copy.deepcopy(demo.SAMPLE_REVIEW), figs)
     assert html.count('<b>MATH</b>') == 1  # used on several cards, explained on the first only
     assert 'MATH<sup class="star">*</sup>' in html
+
+
+def test_card_copy_flows_without_forced_line_breaks(sample_pdf, tmp_path):
+    figs = pdfs.extract_figures(sample_pdf, tmp_path / "figs")
+    review = copy.deepcopy(demo.SAMPLE_REVIEW)
+    review["card"]["problem"]["headline"] = "작은 AI는 왜\\n수학 풀이에\n약할까요?"
+    html = cardnews.build_html({"uid": "arxiv:1", "title": "T", "url": "https://x"}, review, figs)
+    assert "<br>" not in html.split('class="slide outro"')[0] and "작은 AI는 왜 수학 풀이에 약할까요?" in html
+    assert "그래서 나랑 무슨 상관?" in html and 'class="hbar on"' in html  # so-what card, bars to scale
+    assert 'class="slide cover"' in html and "page1" not in html  # no first-page screenshot as a picture
+
+
+def test_video_slide(sample_pdf, tmp_path):
+    """The key-idea slide is also written as an MP4: still frame, moving figure window."""
+    import subprocess
+
+    import pytest
+
+    from paperagent import video
+
+    if not video.available():
+        pytest.skip("ffmpeg not available")
+    figs = pdfs.extract_figures(sample_pdf, tmp_path / "figs")
+    paper = {"uid": "arxiv:1", "title": "T", "url": "https://x"}
+    paths, clips = cardnews.capture(cardnews.build_html(paper, copy.deepcopy(demo.SAMPLE_REVIEW), figs), tmp_path / "out")
+    assert list(clips) == [3] and Path(clips[3]).stat().st_size > 10_000
+    info = subprocess.run([video.ffmpeg_exe(), "-i", clips[3]], capture_output=True, text=True).stderr
+    assert "h264" in info and "1080x1350" in info and "yuv420p" in info and "Duration: 00:00:09" in info
+    # the frame around the window does not move; the window does
+    frames = []
+    for t in ("1", "5"):
+        out = tmp_path / f"f{t}.png"
+        subprocess.run([video.ffmpeg_exe(), "-v", "error", "-ss", t, "-i", clips[3], "-frames:v", "1", "-y", str(out)], check=True)
+        frames.append(Image.open(out).convert("L"))
+    band = [f.crop((0, 0, 1080, 300)).tobytes() for f in frames]
+    diff = sum(abs(a - b) for a, b in zip(band[0], band[1])) / len(band[0])
+    assert diff < 2
+    assert frames[0].tobytes() != frames[1].tobytes()

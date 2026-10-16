@@ -75,7 +75,7 @@ def test_uploaded_pdf_is_deleted_after_review(fresh_db, sample_pdf):
     key = paper["pdf_url"][len("storage:"):]
     review = dict(demo.SAMPLE_REVIEW, _cost={"total_usd": 0.1, "calls": []})
     with mock.patch.object(agent, "review", return_value=(review, "full_pdf")) as rv, \
-         mock.patch.object(pipeline.cardnews, "render_and_store", return_value=[]):
+         mock.patch.object(pipeline.cardnews, "render_and_store", return_value=([], {})):
         ok, _ = pipeline.process_paper(paper, ["AI agent"])
     assert ok and rv.call_args.args[2] is not None  # Claude got the uploaded PDF
     assert storage.get(key) is None and db.get_paper(pid)["pdf_url"] is None and db.get_paper(pid)["status"] == "done"

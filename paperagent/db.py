@@ -75,8 +75,39 @@ papers = Table(
     # -1 when an admin set it aside (stays under 관련도 미달 whatever its relevance)
     Column("priority", Integer, default=0),
     Column("card_paths", Text, nullable=False, default="[]"),
+    # slide number -> storage key of the MP4 version of that slide (video card)
+    Column("card_videos", Text),
     Column("citation_count", Integer),
     Column("error", Text),
+    Column("created_at", String(32), nullable=False, index=True),
+    Column("updated_at", String(32), nullable=False),
+)
+
+# Trending projects and tech news (GitHub Trending, Hacker News, GeekNews,
+# Hugging Face), made into TECH card news. uid: "github:owner/repo",
+# "hn:<id>", "geeknews:<id>", "hf:model/<id>", "hf:space/<id>".
+# status: new -> screened (worth a post) | skipped -> done | error
+# meta (JSON): numbers from the source (stars, points, likes, ...), author, discussion link
+# media (JSON): {"image": storage key, "video": storage key, "image_url": ..., "video_url": ...}
+tech_items = Table(
+    "tech_items", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("uid", String(300), nullable=False, unique=True),
+    Column("source", String(20), nullable=False, index=True),
+    Column("title", Text, nullable=False),
+    Column("url", Text),
+    Column("summary", Text),
+    Column("meta", Text),
+    Column("media", Text),
+    Column("interest", Float),
+    Column("interest_reason", Text),
+    Column("status", String(20), nullable=False, default="new", index=True),
+    Column("review", Text),
+    Column("card_paths", Text, nullable=False, default="[]"),
+    Column("card_videos", Text),
+    Column("cost_usd", Float),
+    Column("error", Text),
+    Column("reviewed_at", String(32), index=True),
     Column("created_at", String(32), nullable=False, index=True),
     Column("updated_at", String(32), nullable=False),
 )
@@ -123,7 +154,7 @@ blobs = Table(
     Column("updated_at", String(32), nullable=False),
 )
 
-JSON_FIELDS = ("authors", "categories", "matched_keywords", "review", "card_paths", "meta")
+JSON_FIELDS = ("authors", "categories", "matched_keywords", "review", "card_paths", "card_videos", "meta", "media")
 
 DEFAULT_KEYWORDS = [
     "large language model",
@@ -731,3 +762,71 @@ def get_blob(key: str):
 def delete_blobs(prefix: str, exact: bool = False):
     with engine().begin() as conn:
         conn.execute(delete(blobs).where(blobs.c.key == prefix if exact else blobs.c.key.like(f"{prefix}%")))
+
+
+# --- tech news ----------------------------------------------------------------
+
+def insert_tech(item: dict) -> bool:
+    """Insert a newly collected tech item. Returns False if it was already known."""
+    ts = now_iso()
+    values = dict(uid=item["uid"], source=item["source"], title=item["title"][:500], url=item.get("url"),
+                  summary=item.get("summary"), meta=json.dumps(item.get("meta") or {}, ensure_ascii=False),
+                  media=json.dumps(item.get("media") or {}, ensure_ascii=False), status="new", card_paths="[]",
+                  created_at=ts, updated_at=ts)
+    with engine().begin() as conn:
+        stmt = _insert(tech_items).values(**values).on_conflict_do_nothing(index_elements=["uid"]).returning(tech_items.c.id)
+        return conn.execute(stmt).first() is not None
+
+
+def update_tech(item_id: int, **fields):
+    if not fields:
+        return
+    fields["updated_at"] = now_iso()
+    for k in JSON_FIELDS:
+        if k in fields and not isinstance(fields[k], str) and fields[k] is not None:
+            fields[k] = json.dumps(fields[k], ensure_ascii=False)
+    with engine().begin() as conn:
+        conn.execute(update(tech_items).where(tech_items.c.id == item_id).values(**fields))
+
+
+def get_tech(item_id: int):
+    with engine().connect() as conn:
+        return _row(conn.execute(select(tech_items).where(tech_items.c.id == item_id)).first())
+
+
+def get_tech_by_uid(uid: str):
+    with engine().connect() as conn:
+        return _row(conn.execute(select(tech_items).where(tech_items.c.uid == uid)).first())
+
+
+def tech_by_status(status: str, limit: int = 200, source=None):
+    """Items in a state; screened ones best first, the rest newest first."""
+    q = select(tech_items).where(tech_items.c.status == status)
+    if source:
+        q = q.where(tech_items.c.source == source)
+    order = (tech_items.c.interest.desc().nulls_last(), tech_items.c.created_at.desc()) if status == "screened" \
+        else (tech_items.c.created_at.desc(),)
+    with engine().connect() as conn:
+        return _rows(conn.execute(q.order_by(*order).limit(limit)))
+
+
+def query_tech(source=None, search=None, limit=24, offset=0):
+    """Finished tech posts, newest first."""
+    q = select(tech_items).where(tech_items.c.status == "done")
+    if source:
+        q = q.where(tech_items.c.source == source)
+    if search:
+        pat = f"%{search}%"
+        q = q.where(tech_items.c.title.ilike(pat) | tech_items.c.summary.ilike(pat) | tech_items.c.review.ilike(pat))
+    q = q.order_by(func.coalesce(tech_items.c.reviewed_at, tech_items.c.updated_at).desc()).limit(limit).offset(offset)
+    with engine().connect() as conn:
+        return _rows(conn.execute(q))
+
+
+def tech_counts():
+    """{"status": {status: n}, "done_by_source": {source: n}}"""
+    with engine().connect() as conn:
+        by_status = dict(conn.execute(select(tech_items.c.status, func.count()).group_by(tech_items.c.status)).all())
+        by_source = dict(conn.execute(select(tech_items.c.source, func.count()).where(tech_items.c.status == "done")
+                                      .group_by(tech_items.c.source)).all())
+    return {"status": by_status, "done_by_source": by_source}

@@ -210,11 +210,11 @@ def process_paper(paper: dict, keywords, say=log.info) -> tuple[bool, float]:
         say(f"  reviewed ({depth}): method {review['methodology_score']} / novelty {review['novelty_score']}"
             f" · ${cost:.3f} ({breakdown})")
 
-        card_paths = []
+        card_paths, card_videos = [], {}
         try:
             stage("render")
-            card_paths = cardnews.render_and_store({**paper, "id": pid}, review)
-            say(f"  rendered {len(card_paths)} cards")
+            card_paths, card_videos = cardnews.render_and_store({**paper, "id": pid}, review)
+            say(f"  rendered {len(card_paths)} cards" + (f" + {len(card_videos)} video" if card_videos else ""))
         except Exception as exc:
             say(f"  card rendering failed: {exc}")
 
@@ -227,6 +227,7 @@ def process_paper(paper: dict, keywords, say=log.info) -> tuple[bool, float]:
             score_novelty=review["novelty_score"],
             score_overall=review["overall_score"],
             card_paths=card_paths,
+            card_videos=card_videos,
             cost_usd=cost,
             priority=0,
             reviewed_at=db.now_iso(),
@@ -260,8 +261,8 @@ def _spent(exc, say):
 
 def rerender_cards(paper_id: int):
     paper = db.get_paper(paper_id)
-    keys = cardnews.render_and_store(paper, paper["review"])
-    db.update_paper(paper_id, card_paths=keys)
+    keys, videos = cardnews.render_and_store(paper, paper["review"])
+    db.update_paper(paper_id, card_paths=keys, card_videos=videos)
     return keys
 
 

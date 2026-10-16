@@ -120,5 +120,8 @@ BRAND_ACRONYM = [
     ("W", "orthwise"), ("A", "rticle"), ("R", "esearch"), ("S", "ystem"),
 ]
 CHROMIUM_EXECUTABLE = os.environ.get("CHROMIUM_EXECUTABLE", "")
+# Video card slides (MP4) need ffmpeg: the system one, else imageio-ffmpeg's bundled binary.
+VIDEO_CARDS = os.environ.get("VIDEO_CARDS", "1").lower() not in ("0", "false", "no", "off")
+FFMPEG_EXECUTABLE = os.environ.get("FFMPEG_EXECUTABLE", "")
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
