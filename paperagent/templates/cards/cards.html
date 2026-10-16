@@ -463,6 +463,15 @@ function fit(slide) {
   }
   slide.classList.remove("measuring");
   guard(slide, main);
+  settle(slide, main);
+}
+// Safety net for every slide: nothing may reach into the space above the line
+// over the source and account. If something still does, the type scale shrinks.
+function settle(slide, main) {
+  const pad = parseFloat(getComputedStyle(main).paddingBottom) || 0;
+  const over = () => Math.max(0, ...[...main.children].map((c) => c.offsetTop + c.offsetHeight)) - (main.clientHeight - pad);
+  let k = +slide.style.getPropertyValue("--k") || 1;
+  while (over() > 0.5 && k > 0.5) { k = +(k - 0.02).toFixed(2); slide.style.setProperty("--k", k); }
 }
 // Last check on the finished layout: if the figure still runs into the next
 // block or the slide overflows, shrink the figure; drop it if it gets too small.
