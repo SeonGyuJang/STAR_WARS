@@ -87,8 +87,11 @@ def maker_for(item: dict, review: dict | None = None) -> dict | None:
     if src in ("github", "hf") and "/" in title:
         name = ORG_MAKERS.get(title.split("/")[0].lower())
     if not name:  # news that points at a repository or model (GeekNews, Hacker News)
-        m = re.match(r"^https?://(?:www\.)?(?:github\.com|huggingface\.co)/(?:spaces/)?([\w.-]+)/", item.get("url") or "")
-        name = ORG_MAKERS.get(m.group(1).lower()) if m else None
+        for link in (item.get("url") or "", (item.get("meta") or {}).get("repo") or ""):
+            m = re.match(r"^https?://(?:www\.)?(?:github\.com|huggingface\.co)/(?:spaces/)?([\w.-]+)/", link)
+            name = ORG_MAKERS.get(m.group(1).lower()) if m else None
+            if name:
+                break
     if not name:
         name = ((review or {}).get("maker") or "").strip() or None
     if not name:

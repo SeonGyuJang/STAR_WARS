@@ -691,6 +691,8 @@ TECH_SYSTEM = """You turn a trending project or tech news item into a Korean Ins
 Audience: people with no engineering background who are curious about technology, plus developers.
 - Explain things as they actually are, in plain words - no analogies or metaphors ("마치 ~처럼").
 - Mark unavoidable technical words with * right after the word (e.g. "API*") and define them in `terms` (at most 4).
+- The material can hold several parts: the news site's summary (GeekNews, Hacker News) and the original it points to (an article, a
+  GitHub README, a model card). Read all of them; take facts, features and numbers from the original first and use the summary for context.
 - Use only facts in the material and the numbers given. Never invent features, benchmarks, prices, dates or commands. If something is unknown, leave it out.
 - Say what numbers mean (e.g. "하루 만에 GitHub 스타 2,300개 - 그만큼 많은 개발자가 관심을 표시했다는 뜻").
 - Caveats are constructive ("~는 아직 초기 단계라 보완이 필요해 보입니다").
@@ -710,7 +712,7 @@ def write_tech(item: dict, context: dict, meter: CostMeter | None = None) -> dic
         f"Numbers from the source: {json.dumps(item.get('meta') or {}, ensure_ascii=False)}\n"
         f"Listing text: {item.get('summary') or ''}\n"
         f"Available to show: {media}.\n\n"
-        f"Material (README / article / model card, may be cut off):\n{context.get('text') or '(none)'}\n\nWrite every field."
+        f"Material (the news summary and every original behind it):\n{context.get('text') or '(none)'}\n\nWrite every field."
     )
     data = _call("write", config.WRITER_MODEL, TECH_SYSTEM, prompt, TECH_SCHEMA,
                  effort=config.WRITER_EFFORT, max_tokens=16000, meter=meter)

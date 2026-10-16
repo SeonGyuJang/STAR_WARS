@@ -20,6 +20,7 @@
   {% if r.title_ko %}<p class="en">{{ t.title }}</p>{% endif %}
   <div class="actions">
     {% if t.url %}<a class="btn" href="{{ t.url }}" target="_blank" rel="noopener">원문 보기</a>{% endif %}
+    {% if (t.meta or {}).repo and (t.meta or {}).repo != t.url %}<a class="btn ghost" href="{{ t.meta.repo }}" target="_blank" rel="noopener">GitHub 저장소</a>{% endif %}
     {% if (t.meta or {}).discussion and (t.meta or {}).discussion != t.url %}<a class="btn ghost" href="{{ t.meta.discussion }}" target="_blank" rel="noopener">{{ source.short }} 토론</a>{% endif %}
     <button class="btn ghost" data-share="{{ share_url }}" data-title="{{ r.title_ko or t.title }}">링크 공유</button>
     {% if is_admin and t.status != 'done' %}<form method="post" action="{{ url_for('web.tech_run') }}">{{ csrf() }}<input type="hidden" name="item_id" value="{{ t.id }}"><button class="btn ghost">지금 카드뉴스 만들기</button></form>{% endif %}

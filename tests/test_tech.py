@@ -327,3 +327,55 @@ def test_geeknews_origin_without_the_usual_markup():
             '<p><a href="https://blog.example.com/post">원문</a></p><div id="topic_contents">요약</div>'
             '<footer><a href="https://twitter.com/x">x</a></footer></body></html>')
     assert tech.geeknews_origin(html) == ("https://blog.example.com/post", "요약")
+
+
+def test_news_reads_everything_behind_it():
+    """GeekNews -> a blog post (the original) -> the GitHub project it introduces: all three are read, and the
+    pictures and clips of the original and the repository can be used on the cards."""
+    topic = """<html><body><div class="topictitle"><a href="https://blog.example.com/hoot-launch"><h1>Hoot 공개</h1></a></div>
+      <div id="topic_contents"><p>로컬 음성 비서 Hoot이 공개됨.</p><p>저장소: <a href="https://github.com/facebookresearch/hoot">github</a></p></div></body></html>"""
+    article = """<html><head><meta property="og:image" content="https://blog.example.com/cover.jpg"></head>
+      <body><article><h1>Introducing Hoot</h1><p>Hoot answers in 120 ms on a laptop.</p>
+      <p>Code: <a href="https://github.com/facebookresearch/hoot">facebookresearch/hoot</a></p></article></body></html>"""
+    readme = "# Hoot\\nInstall with pip install hoot.\\n![ui](docs/ui.png)\\n## Demo\\nAsking for the weather:\\n![demo](docs/demo.mp4)"
+
+    def fake(url, **kw):
+        pages = {"https://news.hada.io/topic?id=1": topic, "https://blog.example.com/hoot-launch": article,
+                 "https://raw.githubusercontent.com/facebookresearch/hoot/HEAD/README.md": readme}
+        if url in pages:
+            return Resp(text=pages[url])
+        raise RuntimeError(f"unexpected {url}")
+
+    item = {"uid": "geeknews:1", "source": "geeknews", "title": "Hoot 공개", "url": "https://news.hada.io/topic?id=1",
+            "summary": "", "meta": {"discussion": "https://news.hada.io/topic?id=1"}}
+    with mock.patch.object(tech, "http_get", side_effect=fake):
+        ctx = tech.fetch_context(item)
+    text = ctx["text"]
+    assert "GeekNews 요약" in text and "로컬 음성 비서" in text  # the news summary
+    assert "원문 (https://blog.example.com/hoot-launch)" in text and "120 ms" in text  # the original article
+    assert "facebookresearch/hoot" in text and "pip install hoot" in text  # the project's README
+    assert item["url"] == "https://blog.example.com/hoot-launch" and item["meta"]["repo"] == "https://github.com/facebookresearch/hoot"
+    base = "https://raw.githubusercontent.com/facebookresearch/hoot/HEAD/docs/"
+    assert ctx["images"][:2] == ["https://blog.example.com/cover.jpg", base + "ui.png"]
+    assert ctx["videos"] == [base + "demo.mp4"] and "weather" in ctx["clip_notes"][base + "demo.mp4"]
+    from paperagent import logos
+
+    assert logos.maker_for(item)["name"] == "Meta"
+
+
+def test_one_failing_original_keeps_the_rest():
+    topic = """<div class="topictitle"><a href="https://down.example.com/x">t</a></div>
+      <div id="topic_contents">요약 <a href="https://github.com/acme/tool">repo</a></div>"""
+
+    def fake(url, **kw):
+        if url == "https://news.hada.io/topic?id=2":
+            return Resp(text=topic)
+        if url == "https://raw.githubusercontent.com/acme/tool/HEAD/README.md":
+            return Resp(text="# tool\\nDoes things.")
+        raise RuntimeError("down")
+
+    item = {"uid": "geeknews:2", "source": "geeknews", "title": "t", "url": "", "summary": "",
+            "meta": {"discussion": "https://news.hada.io/topic?id=2"}}
+    with mock.patch.object(tech, "http_get", side_effect=fake):
+        ctx = tech.fetch_context(item)
+    assert "요약" in ctx["text"] and "Does things." in ctx["text"]  # the article was down; the summary's repo still read

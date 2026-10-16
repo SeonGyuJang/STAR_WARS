@@ -36,7 +36,8 @@ RAW = "https://raw.githubusercontent.com"
 HN_API = "https://hacker-news.firebaseio.com/v0"
 GEEKNEWS_FEEDS = ["https://news.hada.io/rss/news", "https://feeds.feedburner.com/geeknews-feed"]
 HF_API = "https://huggingface.co/api"
-CONTEXT_CHARS = 14000
+CONTEXT_CHARS = 40000  # per source read (README, article, model card)
+TOTAL_CHARS = 90000  # everything handed to the writer for one post
 
 
 def _int(text) -> int | None:
@@ -331,6 +332,16 @@ def _from_hf(page_url: str, space: bool, rid: str):
     return re.sub(r"^---.*?---\s*", "", card, flags=re.S)[:CONTEXT_CHARS], images, videos, clip_notes(card, base, videos)
 
 
+def repo_links(html: str, skip=()) -> list[str]:
+    """GitHub repositories a page links to, in order ('owner/repo')."""
+    out = []
+    for a in BeautifulSoup(html or "", "lxml").select("a[href]"):
+        full = github_repo(a["href"])
+        if full and full.lower() not in {x.lower() for x in [*skip, *out]}:
+            out.append(full)
+    return out
+
+
 def _from_article(page_url: str):
     html = http_get(page_url, retries=1, timeout=30).text
     body, tags = _page_text(html)
@@ -342,21 +353,22 @@ def _from_article(page_url: str):
         if tags.get(key) and urlparse(tags[key]).path.lower().endswith((".mp4", ".webm", ".gif")):
             videos.append(urljoin(page_url, tags[key]))
     more, clips = media_candidates(html, page_url)
-    images += [u for u in more if u not in images][:4]
+    images += [u for u in more if u not in images][:6]
     videos += [u for u in clips if u not in videos][:2]
-    return body, images, videos, clip_notes(html, page_url, videos)
+    return body, images, videos, clip_notes(html, page_url, videos), repo_links(html)
 
 
 def read_source(url: str):
-    """(text, images, videos, clip notes) of whatever a link points to: a GitHub
-    repository is read through its README, a Hugging Face model/Space through its
-    card, anything else as an article page."""
+    """(text, images, videos, clip notes, linked repos) of whatever a link points
+    to: a GitHub repository is read through its README, a Hugging Face
+    model/Space through its card, anything else as an article page (whose
+    links to GitHub repositories are returned too)."""
     full = github_repo(url)
     if full:
-        return _from_github(full)
+        return (*_from_github(full), [])
     m = _HF_PAGE.match(url or "")
     if m and m.group(2).split("/")[0] not in ("docs", "blog", "papers", "datasets", "learn"):
-        return _from_hf(url.split("?")[0].split("#")[0], bool(m.group(1)), m.group(2))
+        return (*_from_hf(url.split("?")[0].split("#")[0], bool(m.group(1)), m.group(2)), [])
     return _from_article(url)
 
 
@@ -372,6 +384,9 @@ def geeknews_origin(html: str):
             origin = el["href"]
             break
     body = soup.select_one("#topic_contents") or soup.select_one(".topic_contents") or soup.select_one("#topic_content")
+    if body is not None:  # links the poster put in the summary, e.g. the project's repository
+        for a in body.select("a[href^='http']"):
+            a.append(f" ({a['href']})")
     if not origin:  # the first outside link above the summary
         stop = body.sourceline if body is not None and body.sourceline else None
         for a in soup.select("a[href^='http']"):
@@ -387,31 +402,60 @@ def fetch_context(item: dict) -> dict:
     article says, the pictures/clips it shows (best first) and the text next to
     each clip (to judge whether it shows what the post is about).
 
-    GeekNews and Hacker News only point somewhere else, so the original is read:
-    the GeekNews topic page names it at the top (item["url"] is set to it)."""
+    A news item (GeekNews, Hacker News) only introduces something, so everything
+    behind it is read too: the original it points to (the GeekNews topic page
+    names it at the top; item["url"] becomes that original), and, when that
+    original is an article about a project, the project's GitHub repository
+    (README, pictures, demo clips) - from the article's links or the GeekNews
+    summary's. The writer gets the news summary and all the originals together."""
     src, meta = item["source"], item.get("meta") or {}
-    text, images, videos, notes = "", [], [], {}
+    pieces, images, videos, notes = [], [], [], {}
+
+    def add(label, got):
+        body, imgs, clips, clip_notes_ = got[:4]
+        if body:
+            pieces.append(f"{label}:\n{body}")
+        images.extend(u for u in imgs if u not in images)
+        videos.extend(u for u in clips if u not in videos)
+        notes.update(clip_notes_)
+        return got[4] if len(got) > 4 else []
+
     try:
         if src == "github":
-            text, images, videos, notes = _from_github(item["title"])
+            add(f"GitHub 저장소 README ({item['title']})", _from_github(item["title"]))
         elif src == "hf":
-            text, images, videos, notes = _from_hf(item["url"], meta.get("kind") == "space", item["title"])
+            add(f"Hugging Face 모델 카드 ({item['title']})", _from_hf(item["url"], meta.get("kind") == "space", item["title"]))
         else:
-            pieces = [item.get("summary") or ""]
+            name = SOURCES.get(src, {}).get("name", src)
+            if item.get("summary"):
+                pieces.append(f"{name} 목록의 소개:\n{item['summary']}")
+            linked = []
             if src == "geeknews" and meta.get("discussion"):
-                origin, summary = geeknews_origin(http_get(meta["discussion"], retries=1, timeout=30).text)
+                topic_html = http_get(meta["discussion"], retries=1, timeout=30).text
+                origin, summary = geeknews_origin(topic_html)
                 if summary:
-                    pieces.append(f"GeekNews 요약:\n{summary}")
+                    pieces.append(f"GeekNews 요약 (원문을 소개한 글):\n{summary}")
+                    body = BeautifulSoup(topic_html, "lxml").select_one("#topic_contents, .topic_contents, #topic_content")
+                    linked += repo_links(body.decode() if body is not None else "")
                 if origin:
                     item["url"] = origin
                     meta["origin"] = origin
             page_url = item.get("url") or ""
             if page_url.startswith("http") and "news.ycombinator.com" not in page_url and "news.hada.io" not in page_url:
-                body, images, videos, notes = read_source(page_url)
-                pieces.append(f"원문 ({page_url}):\n{body}")
-            text = "\n\n".join(p for p in pieces if p)[:CONTEXT_CHARS]
+                try:
+                    linked += add(f"원문 ({page_url})", read_source(page_url))
+                except Exception as exc:
+                    log.warning("original %s of %s failed: %s", page_url, item["uid"], exc)
+            # the project behind an article: its repository has the pictures and demos
+            here = github_repo(page_url)
+            repo = next((r for r in linked if not here or r.lower() != here.lower()), None)
+            if repo and not here:
+                try:
+                    add(f"원문이 소개하는 GitHub 저장소 README ({repo})", _from_github(repo))
+                    meta["repo"] = f"https://github.com/{repo}"
+                except Exception as exc:
+                    log.warning("repository %s of %s failed: %s", repo, item["uid"], exc)
     except Exception as exc:  # write from what the listing said
         log.warning("context for %s failed: %s", item["uid"], exc)
-        if not text:
-            text = item.get("summary") or ""
+    text = "\n\n".join(pieces)[:TOTAL_CHARS] or (item.get("summary") or "")
     return {"text": text, "images": images[:8], "videos": videos[:3], "clip_notes": {u: notes.get(u, "") for u in videos[:3]}}

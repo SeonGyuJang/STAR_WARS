@@ -113,6 +113,8 @@ def process_item(item: dict, say=log.info) -> tuple[bool, float]:
     try:
         stage("download")
         context = sources.fetch_context(item)
+        read = [line.split(":")[0] for line in context["text"].split("\n\n") if line.endswith(":") is False and ":\n" in line]
+        say(f"  read {len(context['text']):,} chars from: " + (", ".join(read) or "the listing only"))
         if item.get("url") != db.get_tech(iid).get("url"):  # GeekNews: the original it points to
             db.update_tech(iid, url=item["url"], meta=item.get("meta"))
         media = fetch_media(iid, context, say)
