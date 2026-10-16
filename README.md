@@ -4,7 +4,7 @@
 
 **S**mart **T**opic **A**nalysis & **R**ating : **W**orthwise **A**rticle **R**esearch **S**ystem
 
-읽을 가치가 있는 논문만 골라 읽고, 평가하고, 인스타 카드뉴스로 만드는 Claude 에이전트
+읽을 가치가 있는 논문만 골라 읽고, 평가하고, 지금 화제인 기술 소식과 함께 인스타 카드뉴스로 만드는 Claude 에이전트
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![Flask](https://img.shields.io/badge/Flask-3-000000?logo=flask&logoColor=white)
@@ -18,9 +18,11 @@
 [Heroku 업데이트](#5-heroku에-변경-사항-올리기) ·
 [처음 설정 (API 키·Heroku 첫 배포)](docs/SETUP.md)
 
-<img src="docs/preview-cards.png" width="640" alt="카드뉴스 9장 예시">
+<img src="docs/preview-cards.png" width="640" alt="논문 카드뉴스 예시 (PAPER, 파란색)">
 
-<sub>위 카드뉴스와 아래 화면은 데모용 가상 논문으로 만든 예시입니다.</sub>
+<img src="docs/preview-tech-cards.png" width="640" alt="테크 카드뉴스 예시 (TECH, 주황색)">
+
+<sub>위 카드뉴스와 아래 화면은 데모용 가상 논문·가상 프로젝트로 만든 예시입니다. 파란색은 논문(PAPER), 주황색은 테크 소식(TECH)입니다.</sub>
 
 </div>
 
@@ -35,8 +37,9 @@
 | 1 | **수집** | arXiv 분야와 저널·학회(NeurIPS, CVPR 같은 학회 포함)에서 키워드에 맞는 새 논문을 모읍니다. 학회 논문은 arXiv에 "Accepted at NeurIPS"처럼 적힌 채택 논문과 OpenAlex 목록에서 찾습니다 |
 | 2 | **관련도 판단** | 모은 논문 전부에 0~10점을 매깁니다. 7점 미만은 **관련도 미달**로 남겨 두고, 관리자가 골라서 읽힐 수 있습니다 |
 | 3 | **정독 → 평가 → 작성** | PDF 전문을 읽고 **방법론 신뢰도**와 **참신성**으로 채점한 뒤, 한국어 리뷰를 씁니다 |
-| 4 | **카드뉴스** | 논문 그림과 핵심 수치로 인스타용 1080×1350 카드 9장(문제·아이디어·작동 방식·실험·결과·평가·정리·프로필 안내)과 캡션을 만듭니다 |
+| 4 | **카드뉴스** | 인스타용 1080×1350 카드 10장: 질문형 표지 → 문제 → 핵심 아이디어(**움직이는 영상 카드**) → 작동 방식 → 실험 → 결과(큰 숫자와 막대) → **그래서 나랑 무슨 상관?** → 평가 → 정리 → 프로필 안내, 그리고 캡션 |
 | 5 | **트렌드** | 오늘 화제인 논문, 인용이 빠르게 느는 논문을 모읍니다. 공개 데이터만 쓰므로 **Claude API 없이도** 갱신됩니다 |
+| 6 | **테크 소식** | GitHub Trending, Hacker News, GeekNews, Hugging Face에서 화제인 프로젝트와 소식을 모아 흥미도를 매기고, 가장 좋은 것(기본 2개)을 쉬운 한국어 설명과 **TECH 카드뉴스**(주황색, 데모 영상 카드 포함)로 만듭니다 |
 
 결과는 누구나 볼 수 있는 대시보드에 올라가고, 출처(저널·학회·arXiv 분야)별로 나눠 볼 수 있습니다. **설정** 페이지와 키워드·저널 관리, 실행은 관리자만 쓸 수 있습니다.
 
@@ -51,9 +54,13 @@ flowchart LR
     B -->|7점 이상| C(정독<br/>Haiku가 PDF 전문 읽기)
     C -->|근거 노트| D(평가<br/>Opus가 채점)
     D --> E(작성<br/>Sonnet이 한국어 리뷰)
-    E --> F[카드뉴스 9장]
+    E --> F[PAPER 카드뉴스<br/>+ 영상 카드]
     E --> G[(DB)]
     F --> G
+    T[GitHub · HN · GeekNews · HF] -->|화제인 소식| U(흥미도 판단<br/>Haiku)
+    U --> V(설명 작성<br/>Sonnet)
+    V --> W[TECH 카드뉴스<br/>+ 데모 영상]
+    W --> G
     G --> H[대시보드]
 ```
 
@@ -68,6 +75,10 @@ flowchart LR
 <tr>
 <td width="50%"><img src="docs/preview-home.png" alt="오늘의 논문 화면"><p align="center"><sub>오늘의 논문</sub></p></td>
 <td width="50%"><img src="docs/preview-paper.png" alt="논문 리뷰 화면"><p align="center"><sub>논문 리뷰와 평점</sub></p></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/preview-tech.png" alt="테크 소식 화면"><p align="center"><sub>테크 소식</sub></p></td>
+<td width="50%"><img src="docs/preview-tech-item.png" alt="테크 소식 상세 화면"><p align="center"><sub>테크 소식 설명과 카드뉴스</sub></p></td>
 </tr>
 </table>
 
@@ -141,8 +152,8 @@ ADMIN_PASSWORD=test1234          # 넣으면 설정·관리 기능에 로그인�
 python -m paperagent demo
 ```
 
-`demo paper #1 added - open /paper/1 on the dashboard`가 나오면 성공입니다.
-가상 논문 1편이 리뷰와 카드뉴스 9장까지 갖춰 들어가고, 대기열에도 논문 3편이 들어갑니다. API 호출은 하지 않습니다.
+`demo paper #1 and TECH post #1 added ...`가 나오면 성공입니다.
+가상 논문 1편(리뷰와 카드뉴스 10장, 영상 카드 포함)과 가상 테크 소식 1개(카드뉴스 9장, 데모 영상 카드 포함)가 들어가고, 대기열에도 논문 3편이 들어갑니다. API 호출은 하지 않습니다.
 
 ### 6단계: 서버 실행
 
@@ -162,9 +173,11 @@ python -m paperagent serve --host 127.0.0.1 --port 8000 --no-scheduler
 
 | 주소 | 확인할 것 |
 |---|---|
-| http://127.0.0.1:8000 | **오늘의 논문**: 데모 논문 한 편이 점수, 요약, 썸네일과 함께 보이는지. 관리자는 카드 왼쪽 칸을 체크해 인스타 업로드 완료로 표시하고(카드가 초록색으로 바뀜), **인스타에 올린 논문** 탭에서 모아 보거나 취소할 수 있습니다. 실행 중에는 오른쪽 위 **논문 읽는 중**을 누르면 진행 상황과 로그가 나옵니다 |
+| http://127.0.0.1:8000 | **오늘의 논문**: 파란 블록 아래 데모 논문 한 편이 점수, 요약, 썸네일과 함께 보이는지. 오른쪽에 **새 테크 소식**이 보입니다. 실행 중에는 오른쪽 위 **논문 읽는 중**을 누르면 진행 상황과 로그가 나옵니다 |
+| http://127.0.0.1:8000/tech | **테크 소식**: 주황 블록 아래 데모 프로젝트, 출처별 탭(GitHub · Hacker News · GeekNews · Hugging Face), 다음에 만들 소식 |
+| http://127.0.0.1:8000/tech/1 | **테크 소식 상세**: 쉬운 설명, 그래서 나랑 무슨 상관?, 직접 써보기, 숫자로 보기, 카드뉴스(3번 카드는 영상으로 재생) |
 | http://127.0.0.1:8000/paper/1 | **논문 리뷰**: 평점 막대, 단계별 요약, 주요 그림, 카드뉴스 넘겨보기, 캡션 복사 |
-| http://127.0.0.1:8000/files/cards/1.zip | **카드뉴스 ZIP**: PNG 9장과 `caption.txt`가 들어 있는지 |
+| http://127.0.0.1:8000/files/cards/1.zip | **카드뉴스 ZIP**: 카드 10장(3번은 `card_03.mp4` 영상)과 `caption.txt`가 들어 있는지. 번호 순서대로 인스타에 올리면 됩니다 |
 | http://127.0.0.1:8000/queue | **대기열**: 맨 위에 실행 상태(지금 실행 / 강제 종료)와 **다음 실행에서 읽을 논문**이 읽을 순서대로 나옵니다. 체크박스로 골라 **지금 읽기** / **다음 실행 때 먼저 읽기** / **읽지 않기** |
 | http://127.0.0.1:8000/settings | **설정** (관리자 전용): **PDF로 논문 추가**(끌어다 놓으면 관련도 판단 → 정독 → 평가 → 카드뉴스), 키워드, 논문 출처(저널·학회·arXiv 분야와 출처별 논문 수), 실행 간격, API 상태, 단계별 모델과 비용, 실행 기록 (한국 시간) |
 | http://127.0.0.1:8000/trending | **트렌드**: 비어 있으면 **지금 새로고침**을 누르세요 (인터넷 필요, API 키 불필요) |

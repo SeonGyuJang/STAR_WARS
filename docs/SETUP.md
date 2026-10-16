@@ -92,6 +92,13 @@ WRITER_MODEL=claude-haiku-5-5  # 한국어 문장이 약간 단조로워질 수 
 | `CARD_BASE_HASHTAGS` | | `#인공지능,#AI,#논문리뷰` | 캡션에 항상 붙는 해시태그 (쉼표로 구분). 나머지는 AI가 논문 분야에 맞게 고릅니다 |
 | `CARD_HASHTAG_LIMIT` | | `5` | 캡션 해시태그 최대 개수. 인스타그램은 2025년 12월부터 게시물당 5개까지만 허용합니다 |
 | `CARD_BRAND` | | `STAR WARS` | 카드뉴스 로고 글자 |
+| `CARD_TECH_BASE_HASHTAGS` | | `#IT,#테크,#개발자` | 테크 카드뉴스 캡션에 항상 붙는 해시태그 |
+| `TECH_SOURCES` | | `github,hn,geeknews,hf` | 테크 소식을 가져올 곳의 처음 값 (이후에는 **설정 → 테크 소식**에서 바꿉니다) |
+| `TECH_PER_RUN` | | `2` | 실행마다 만드는 테크 카드뉴스 수의 처음 값. 0이면 정기 실행에서 만들지 않습니다 |
+| `TECH_MIN_INTEREST` | | `7` | 테크 소식을 카드뉴스로 만들 최소 흥미도(0~10)의 처음 값 |
+| `GITHUB_TOKEN` | | | 선택. GitHub Trending 페이지를 못 읽을 때 쓰는 GitHub 검색 API의 호출 한도를 늘립니다 (권한 없는 토큰이면 충분) |
+| `VIDEO_CARDS` | | `1` | `0`이면 영상(MP4) 카드를 만들지 않고 이미지 카드만 만듭니다 |
+| `FFMPEG_EXECUTABLE` | | | 영상 카드에 쓸 ffmpeg 경로. 비우면 시스템 ffmpeg, 없으면 `imageio-ffmpeg` 패키지에 들어 있는 것을 씁니다 (Heroku는 따로 설치할 필요 없음) |
 | `SITE_NAME` | | `STAR WARS` | 대시보드 이름 |
 | `READER_MODEL` | | `claude-haiku-5-5` | PDF 정독 모델 |
 | `JUDGE_MODEL` | | `claude-opus-5-5` | 채점 모델 |
