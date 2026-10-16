@@ -31,17 +31,14 @@ log = logging.getLogger(__name__)
 PKG_DIR = Path(__file__).resolve().parent
 FONT_DIR = PKG_DIR / "static" / "fonts"
 
-# Colours follow a 60-30-10 split: neutral white/ink for most of a slide, a
-# light tint of the category colour for panels, and the category colour itself
-# only for small accents (labels, key numbers, bars). Every text/background
-# pair meets WCAG AA (4.5:1); the accents are muted, not neon.
+# White slides; a light tint of the category colour for the header and panels,
+# the category colour itself only for small accents. Every text pair meets
+# WCAG AA contrast.
 THEMES = {
     "paper": {"key": "paper", "color": "#3A5A9F", "deep": "#1E2A47", "soft": "#EEF2F9", "tint": "#AEBFE8", "label": "PAPER",
-              "name": "논문 리뷰", "kicker": "오늘의 논문",
-              "claim": "읽을 가치가 있는 논문만 골라 읽고, 평가합니다."},
+              "name": "논문 리뷰", "claim": "읽을 가치가 있는 논문만 골라 읽고, 평가합니다."},
     "tech": {"key": "tech", "color": "#A84B24", "deep": "#2A221D", "soft": "#FAF0E9", "tint": "#F0A983", "label": "TECH",
-             "name": "테크 트렌드", "kicker": "오늘의 테크",
-             "claim": "지금 개발자들이 주목하는 기술을 골라, 쉽게 풀어 드립니다."},
+             "name": "테크 트렌드", "claim": "지금 개발자들이 주목하는 기술을 골라, 쉽게 풀어 드립니다."},
 }
 
 TECH_BASE_HASHTAGS = config.CARD_TECH_BASE_HASHTAGS
@@ -55,13 +52,34 @@ def _one_line(s) -> str:
     return re.sub(r"\s*(?:\\n|\n)+\s*", " ", str(s or "")).strip()
 
 
+def _star(html: str) -> str:
+    return re.sub(r"(?<=\S)\*", '<sup class="star">*</sup>', html)
+
+
 def _text(s):
     """Card text: escaped, on one flowing line, and the * after an explained word raised."""
-    html = str(escape(_one_line(s)))
-    return Markup(re.sub(r"(?<=\S)\*", '<sup class="star">*</sup>', html))
+    return Markup(_star(str(escape(_one_line(s)))))
+
+
+# Where a heading may break: after a comma or other clause mark, or where the
+# writer put a line break. Each phrase is kept together when it fits, so
+# "기술을 골라, 쉽게 풀어 드립니다" breaks after "골라," and not inside a phrase.
+_PHRASE_END = re.compile(r"(?<=[,·:;?!…])\s+|(?<=[가-힣a-zA-Z)][.])\s+|\s*(?:\\n|\n)+\s*")
+
+
+def phrases(s) -> list[str]:
+    return [p for p in _PHRASE_END.split(str(s or "").strip()) if p.strip()]
+
+
+def _heading(s):
+    parts = phrases(s)
+    if len(parts) < 2:
+        return _text(s)
+    return Markup(" ".join(f'<span class="ph">{_star(str(escape(p)))}</span>' for p in parts))
 
 
 _env.filters["t"] = _text
+_env.filters["th"] = _heading
 
 
 def _source_ref(paper):
@@ -450,7 +468,7 @@ def tech_slides(item, review, media, tmp: Path):
     if show:
         s = {"kind": "media", "label": "직접 보기 · 데모 영상" if poster else "직접 보기",
              "headline": demo.get("headline") or review.get("title_ko"), "body": demo.get("body"), "figure": show}
-        s["video"] = {"src": clip if poster else show["path"], "pad": "#0f1013"}
+        s["video"] = {"src": clip if poster else show["path"], "pad": "#16171b"}
         slides.append(s)
     if review.get("how"):
         slides.append({"kind": "steps", "label": "어떻게 작동하나요", "headline": "핵심만 짚어 보면", "steps": review["how"][:4]})

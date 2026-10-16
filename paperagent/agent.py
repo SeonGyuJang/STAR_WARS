@@ -544,7 +544,7 @@ Audience: people with no AI or engineering background. Write so they can follow 
 - When a technical word is unavoidable (a benchmark, method or metric name), either explain it in the same sentence or put * right after it (e.g. "MATH*") and define it in `terms`. Use at most 4 terms.
 - Say what numbers mean ("정답률 41.2% → 53.6%, 100문제 중 약 12문제를 더 맞힘") rather than leaving bare figures, but never change or invent a number.
 - Short, clear sentences; natural Korean; no hype.
-- The cover is a question the reader wants answered; the slides answer it. Never insert line breaks - the layout wraps text itself.
+- The cover is a question the reader wants answered; the slides answer it. Never insert line breaks: the layout breaks a heading where it has a comma, so put a comma where a reader would naturally pause (e.g. "기술을 골라, 쉽게 풀어 드립니다").
 - Weaknesses and limits are constructive: "~에 대한 보완이 필요해 보입니다", "~는 다소 미흡할 수 있습니다", "~에 대한 추가 연구가 필요할 수 있습니다".
 
 Use only facts from the review. Card copy is rendered large, so respect every length limit - shorten wording, never cut a number.
@@ -690,7 +690,8 @@ Audience: people with no engineering background who are curious about technology
 - Use only facts in the material and the numbers given. Never invent features, benchmarks, prices, dates or commands. If something is unknown, leave it out.
 - Say what numbers mean (e.g. "하루 만에 GitHub 스타 2,300개 - 그만큼 많은 개발자가 관심을 표시했다는 뜻").
 - Caveats are constructive ("~는 아직 초기 단계라 보완이 필요해 보입니다").
-- Short, clear sentences; natural Korean; no hype. Respect every length limit; never insert line breaks."""
+- Short, clear sentences; natural Korean; no hype. Respect every length limit; never insert line breaks - headings break where
+  they have a comma, so put a comma where a reader would naturally pause."""
 
 
 def write_tech(item: dict, context: dict, meter: CostMeter | None = None) -> dict:

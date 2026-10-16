@@ -32,15 +32,17 @@ html, body { background: #000; }
 body { font-family: "Pretendard", system-ui, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; word-break: keep-all;
        overflow-wrap: break-word; font-feature-settings: "tnum" 1; }
 h1, h2, h3, h4 { text-wrap: balance; }
+/* a heading breaks between phrases ("기술을 골라, / 쉽게 풀어 드립니다") before it breaks inside one */
+.ph { display: inline-block; }
 p, li, span, b { text-wrap: pretty; }
 
 /* Every size scales with --k, which the script lowers when a slide's text would overflow. */
 .slide { --k: 1; width: 1080px; height: 1350px; position: relative; overflow: hidden; background: #fff; display: flex; flex-direction: column; }
 
 /* the colour block on top of every content slide */
-/* the header: a light tint of the category colour with a thin accent line on top */
+/* the header: a light tint of the category colour */
 .band { flex: none; height: 108px; padding: 0 72px; background: var(--soft); color: var(--ink); display: flex; align-items: center;
-        justify-content: space-between; border-top: 8px solid var(--c); }
+        justify-content: space-between; }
 .brand { display: flex; align-items: center; gap: 18px; }
 .brand b { font-size: 27px; font-weight: 700; letter-spacing: .06em; color: var(--deep); }
 .brand span { font-size: 20px; font-weight: 700; letter-spacing: .14em; padding: 6px 13px; border-radius: 8px; background: var(--c); color: #fff; }
@@ -88,36 +90,27 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
 .dots li::before { content: ""; position: absolute; left: .15em; top: calc(.5lh - 5px); width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
 
 /* ---------- cover: the whole slide in the category colour ---------- */
-.cover { background: var(--deep); color: #fff; }
-.cover .band { background: transparent; border-top-color: var(--tint); }
-.cover .brand b, .cover .pg { color: #fff; }
-.cover .pg i { color: rgba(255,255,255,.55); }
+/* ---------- cover: the same frame as the other pages, a bigger headline ---------- */
 .cover .main { padding-top: calc(28px * var(--k)); }
 .chips { flex: none; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-.chip { font-size: calc(25px * var(--k)); font-weight: 700; padding: 9px 18px; border-radius: 10px; background: var(--tint); color: var(--deep); letter-spacing: .02em; }
-.chip.ghost { background: rgba(255,255,255,.1); color: rgba(255,255,255,.9); font-weight: 600; letter-spacing: 0; border: 1.5px solid rgba(255,255,255,.22); }
-.cover h1 em { font-style: normal; color: var(--tint); }
+.chip { font-size: calc(25px * var(--k)); font-weight: 700; padding: 9px 18px; border-radius: 10px; background: var(--soft); color: var(--c); letter-spacing: .02em; }
+.chip.ghost { background: var(--well); color: var(--body); font-weight: 600; letter-spacing: 0; }
 .cover h1 { flex: none; margin-top: calc(34px * var(--k)); font-size: calc(102px * var(--k)); line-height: 1.12; font-weight: 700; letter-spacing: -0.05em; }
-.cover .lead { color: rgba(255,255,255,.82); font-size: calc(35px * var(--k)); margin-top: calc(26px * var(--k)); }
-.cover .figure { border: 0; }
+.cover .lead { color: var(--body); font-size: calc(35px * var(--k)); margin-top: calc(26px * var(--k)); }
+.cover .figure { border: 2px solid var(--line); }
 .stat { flex: none; margin-top: auto; padding-top: calc(36px * var(--k)); }
-.stat-card { background: #fff; color: var(--ink); border-radius: 28px; padding: calc(28px * var(--k)) 36px; display: flex; align-items: center; gap: 44px; }
+.stat-card { background: var(--soft); color: var(--ink); border-radius: 28px; padding: calc(28px * var(--k)) 36px; display: flex; align-items: center; gap: 44px; }
 .stat-card .big { display: flex; flex-direction: column; }
 .stat-card .big small { font-size: 21px; color: var(--mute); font-weight: 600; }
 .stat-card .big b { font-size: calc(96px * var(--k)); line-height: 1; font-weight: 700; letter-spacing: -0.05em; color: var(--c); }
 .stat-card .big b span { font-size: 30px; color: var(--mute); letter-spacing: 0; font-weight: 500; margin-left: 6px; }
 .stat-card .parts { flex: 1; display: flex; flex-direction: column; gap: 18px; }
+.stat-card .track { background: #fff; }
 .tiles-row { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
-.tiles-row > div { padding: 0 24px; border-left: 2px solid var(--line); }
+.tiles-row > div { padding: 0 24px; border-left: 2px solid rgba(0,0,0,.08); }
 .tiles-row > div:first-child { padding-left: 0; border-left: 0; }
 .tiles-row b { display: block; font-size: calc(56px * var(--k)); font-weight: 700; letter-spacing: -0.04em; color: var(--c); line-height: 1.05; white-space: nowrap; }
 .tiles-row span { display: block; margin-top: 6px; font-size: 21px; color: var(--mute); font-weight: 600; }
-.cover .foot { border-top-color: rgba(255,255,255,.25); color: rgba(255,255,255,.85); }
-.cover .foot b { color: #fff; }
-.cover .foot b::before { color: #fff; }
-.cover .bottom { border-top-color: rgba(255,255,255,.25); color: rgba(255,255,255,.75); }
-.cover .bottom b { color: #fff; }
-.cover .star { color: #fff; }
 
 /* score bars */
 .bar { display: grid; grid-template-columns: 110px 1fr 60px; align-items: center; gap: 18px; font-size: calc(26px * var(--k)); }
@@ -200,9 +193,9 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
 .pc li { font-size: calc(29px * var(--k)); line-height: 1.5; }
 .pc .good .dots li::before { background: var(--good); }
 .pc .bad .dots li::before { background: var(--bad); }
-.who { flex: none; margin-top: calc(22px * var(--k)); padding: calc(22px * var(--k)) 28px; border-radius: 20px; background: var(--deep); color: #fff;
+.who { flex: none; margin-top: calc(22px * var(--k)); padding: calc(22px * var(--k)) 28px; border-radius: 20px; background: var(--soft); color: var(--ink);
        display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 18px; font-size: calc(28px * var(--k)); line-height: 1.5; }
-.who b { color: var(--deep); background: var(--tint); padding: 0 10px; border-radius: 6px; align-self: start; }
+.who b { color: var(--c); }
 
 /* explained words: a raised * in the text, the meaning at the bottom of the slide */
 .star { font-size: .6em; vertical-align: .6em; line-height: 0; margin-left: 1px; color: var(--c); font-weight: 700; }
@@ -212,19 +205,15 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
 .foot b::before { content: "* "; color: var(--c); }
 
 /* ---------- outro ---------- */
-.outro { background: var(--deep); color: #fff; }
-.outro .band { background: transparent; border-top-color: var(--tint); }
-.outro .brand b, .outro .pg { color: #fff; }
-.outro .acro b { color: var(--tint); }
+.outro { background: #fff; color: var(--ink); }
+.outro .acro b { color: var(--c); }
 .acro { margin: 96px 72px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 40px; }
-.acro div { font-size: 62px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.26; color: rgba(255,255,255,.4); white-space: nowrap; }
+.acro div { font-size: 62px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.26; color: #c4c5c9; white-space: nowrap; }
 .acro b { color: #fff; font-weight: 700; }
 .outro .claim { margin: 88px 72px 0; font-size: 54px; line-height: 1.32; font-weight: 700; letter-spacing: -0.035em; }
-.outro .cta { margin: 30px 72px 0; font-size: 31px; line-height: 1.6; color: rgba(255,255,255,.72); }
-.outro .cta b { color: #fff; font-weight: 600; }
-.outro .cta em { font-style: normal; color: var(--deep); background: var(--tint); padding: 1px 10px; border-radius: 6px; font-weight: 700; }
-.outro .bottom { border-top-color: rgba(255,255,255,.14); color: rgba(255,255,255,.55); }
-.outro .bottom b { color: #fff; }
+.outro .cta { margin: 30px 72px 0; font-size: 31px; line-height: 1.6; color: var(--body); }
+.outro .cta b { color: var(--ink); font-weight: 600; }
+.outro .cta em { font-style: normal; color: var(--c); background: var(--soft); padding: 1px 10px; border-radius: 6px; font-weight: 700; }
 
 /* while measuring, figures are out and the notes sit right under the text */
 .measuring .figure { display: none; }
@@ -253,7 +242,7 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
   {{ band(n) }}
   <div class="main">
     <div class="chips"><span class="chip">{{ theme.name }}</span>{% if cover.topic %}<span class="chip ghost">{{ cover.topic }}</span>{% endif %}</div>
-    <h1>{{ cover.headline | t }}</h1>
+    <h1>{{ cover.headline | th }}</h1>
     {% if cover.sub %}<p class="lead">{{ cover.sub | t }}</p>{% endif %}
     {{ figure(cover.image) }}
     <div class="stat">
@@ -276,7 +265,7 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
   {{ band(n) }}
   <div class="main">
     {{ label(n, s.label) }}
-    <h2>{{ s.headline | t }}</h2>
+    <h2>{{ s.headline | th }}</h2>
     <ul class="points">{% for x in s.points[:3] %}<li><b>{{ '%02d' % loop.index }}</b><span>{{ x | t }}</span></li>{% endfor %}</ul>
     {% if s.figure %}{{ figure(s.figure) }}{% elif s.note %}<div class="note-box"><h4>{{ s.note_title }}</h4><p>{{ s.note | t }}</p></div>{% endif %}
     {{ foot(s.notes) }}
@@ -289,7 +278,7 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
   {{ band(n) }}
   <div class="main">
     {{ label(n, s.label) }}
-    <h2>{{ s.headline | t }}</h2>
+    <h2>{{ s.headline | th }}</h2>
     {% if s.body %}<p class="lead">{{ s.body | t }}</p>{% endif %}
     {{ figure(s.figure, s.tag, window=True) }}
     {{ foot(s.notes) }}
@@ -302,8 +291,8 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
   {{ band(n) }}
   <div class="main">
     {{ label(n, s.label) }}
-    <h2>{{ s.headline | t }}</h2>
-    <ol class="steps">{% for x in s.steps[:4] %}<li><span class="n">{{ loop.index }}</span><div><h3>{{ x.title | t }}</h3>{% if x.detail %}<p>{{ x.detail | t }}</p>{% endif %}{% if x.code %}<code>{{ x.code }}</code>{% endif %}</div></li>{% endfor %}</ol>
+    <h2>{{ s.headline | th }}</h2>
+    <ol class="steps">{% for x in s.steps[:4] %}<li><span class="n">{{ loop.index }}</span><div><h3>{{ x.title | th }}</h3>{% if x.detail %}<p>{{ x.detail | t }}</p>{% endif %}{% if x.code %}<code>{{ x.code }}</code>{% endif %}</div></li>{% endfor %}</ol>
     {% if s.link %}<div class="note-box"><h4>바로 가기</h4><p>{{ s.link }}</p></div>{% endif %}
     {{ foot(s.notes) }}
   </div>
@@ -315,7 +304,7 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
   {{ band(n) }}
   <div class="main">
     {{ label(n, s.label) }}
-    <h2>{{ s.headline | t }}</h2>
+    <h2>{{ s.headline | th }}</h2>
     <div class="rows">{% for r in s.rows %}<div class="row"><div class="k">{{ r.label | t }}</div><div class="v"><b>{{ r.value | t }}</b></div></div>{% endfor %}</div>
     {% if s.note_list %}<div class="note-box"><h4>{{ s.note_title }}</h4><ul class="dots">{% for x in s.note_list %}<li>{{ x | t }}</li>{% endfor %}</ul></div>{% endif %}
     {{ foot(s.notes) }}
@@ -328,7 +317,7 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
   {{ band(n) }}
   <div class="main">
     {{ label(n, s.label) }}
-    <h2>{{ s.headline | t }}</h2>
+    <h2>{{ s.headline | th }}</h2>
     {% if s.highlight %}<div class="hl"><b>{{ s.highlight }}</b>{% if s.highlight_label %}<span>{{ s.highlight_label | t }}</span>{% endif %}</div>{% endif %}
     {% if s.bars %}<div class="hbars">{% for b in s.bars %}<div class="hbar {{ 'on' if b.highlight }}"><div class="top"><span>{{ b.label | t }}</span><b>{{ b.display }}</b></div><div class="track"><div class="fill" style="width: {{ b.pct }}%"></div></div></div>{% endfor %}</div>{% endif %}
     {% if s.tiles %}<div class="tiles">{% for t in s.tiles[:4] %}<div><b>{{ t.value }}</b><span>{{ t.label | t }}</span></div>{% endfor %}</div>{% endif %}
@@ -344,8 +333,8 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
   {{ band(n) }}
   <div class="main">
     {{ label(n, s.label) }}
-    <h2>{{ s.headline | t }}</h2>
-    <div class="cards3">{% for x in s['items'] %}<div><i>{{ '%02d' % loop.index }}</i><div><h3>{{ x.title | t }}</h3><p>{{ x.detail | t }}</p></div></div>{% endfor %}</div>
+    <h2>{{ s.headline | th }}</h2>
+    <div class="cards3">{% for x in s['items'] %}<div><i>{{ '%02d' % loop.index }}</i><div><h3>{{ x.title | th }}</h3><p>{{ x.detail | t }}</p></div></div>{% endfor %}</div>
     {{ foot(s.notes) }}
   </div>
   {{ bottom() }}
@@ -356,7 +345,7 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
   {{ band(n) }}
   <div class="main">
     {{ label(n, s.label) }}
-    <h2>{{ s.headline | t }}</h2>
+    <h2>{{ s.headline | th }}</h2>
     <div class="score-box">
       <div class="big"><small>종합 평점</small><b>{{ review.overall_score }}<span>/ 10</span></b></div>
       <div class="parts">{{ bar('방법론', review.methodology_score) }}{{ bar('참신성', review.novelty_score, 'alt') }}</div>
@@ -377,7 +366,7 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
   {{ band(n) }}
   <div class="main">
     <div class="label"><i>SUM</i>정리</div>
-    <h2>{{ s.headline | t }}</h2>
+    <h2>{{ s.headline | th }}</h2>
     <div class="rows">
       {% for r in s.rows %}
       <div class="row"><div class="k">{{ r.label | t }}</div><div class="v"><b>{{ r.value | t }}</b>{% if r.value_sub %}<span>{{ r.value_sub | t }}</span>{% endif %}</div></div>
@@ -395,7 +384,7 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
     {% for initial, rest in acronym[:4] %}<div style="grid-column: 1; grid-row: {{ loop.index }}"><b>{{ initial }}</b>{{ rest }}</div>{% endfor %}
     {% for initial, rest in acronym[4:] %}<div style="grid-column: 2; grid-row: {{ loop.index }}"><b>{{ initial }}</b>{{ rest }}</div>{% endfor %}
   </div>
-  <p class="claim">{{ theme.claim }}</p>
+  <p class="claim">{{ theme.claim | th }}</p>
   <p class="cta">원문 링크와 전체 리뷰는 <b>프로필 링크</b>에서 볼 수 있어요.<br>논문은 <em>PAPER</em>, 테크 소식은 <em>TECH</em>로 올라옵니다. <b>{{ handle }}</b></p>
   <div style="flex: 1"></div>
   {{ bottom() }}

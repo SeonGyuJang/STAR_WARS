@@ -85,7 +85,12 @@ def test_card_copy_flows_without_forced_line_breaks(sample_pdf, tmp_path):
     review = copy.deepcopy(demo.SAMPLE_REVIEW)
     review["card"]["problem"]["headline"] = "작은 AI는 왜\\n수학 풀이에\n약할까요?"
     html = cardnews.build_html({"uid": "arxiv:1", "title": "T", "url": "https://x"}, review, figs)
-    assert "<br>" not in html.split('class="slide outro"')[0] and "작은 AI는 왜 수학 풀이에 약할까요?" in html
+    assert "<br>" not in html.split('class="slide outro"')[0]
+    # a heading breaks between phrases (where the writer broke it, or after a comma), never inside one
+    assert '<span class="ph">작은 AI는 왜</span> <span class="ph">수학 풀이에</span> <span class="ph">약할까요?</span>' in html
+    assert [str(x) for x in cardnews.phrases("지금 개발자들이 주목하는 기술을 골라, 쉽게 풀어 드립니다.")] == \
+        ["지금 개발자들이 주목하는 기술을 골라,", "쉽게 풀어 드립니다."]
+    assert cardnews.phrases("정답률 41.2%에서 53.6%로") == ["정답률 41.2%에서 53.6%로"]  # no break inside numbers
     assert "그래서 나랑 무슨 상관?" in html and 'class="hbar on"' in html  # so-what card, bars to scale
     assert 'class="slide cover"' in html and "page1" not in html  # no first-page screenshot as a picture
 
