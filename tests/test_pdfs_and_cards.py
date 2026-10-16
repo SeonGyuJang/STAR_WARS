@@ -108,14 +108,17 @@ def test_closing_slide_video(sample_pdf, tmp_path):
     paths, clips = cardnews.capture(cardnews.build_html(paper, copy.deepcopy(demo.SAMPLE_REVIEW), figs), tmp_path / "out")
     assert list(clips) == [len(paths)] == [10]
     info = subprocess.run([video.ffmpeg_exe(), "-i", clips[10]], capture_output=True, text=True).stderr
-    assert "h264" in info and "1080x1350" in info and "yuv420p" in info and "Duration: 00:00:06" in info
+    assert "h264" in info and "1080x1350" in info and "yuv420p" in info and "Duration: 00:00:07" in info
     frames = []
     for t in ("0.1", "5.5"):
         out = tmp_path / f"f{t}.png"
         subprocess.run([video.ffmpeg_exe(), "-v", "error", "-ss", t, "-i", clips[10], "-frames:v", "1", "-y", str(out)], check=True)
         frames.append(Image.open(out).convert("L"))
     claim = [f.crop((60, 600, 1020, 900)) for f in frames]
-    assert claim[0].getextrema()[1] < 80  # the text is not there yet
+    assert claim[0].getextrema()[1] < 80  # the claim is not there yet
+    initials = frames[0].crop((72, 180, 140, 520))  # ...but S T A R stand from the first frame
+    meanings = frames[0].crop((150, 180, 500, 520))  # while their meanings have not unfolded yet
+    assert initials.getextrema()[1] > 200 and meanings.getextrema()[1] < 140
     # the last frame is the still card
     still = Image.open(paths[-1]).convert("L")
     from PIL import ImageChops, ImageStat
@@ -143,11 +146,18 @@ def test_figures_never_touch_the_footnotes(sample_pdf, tmp_path):
         page.wait_for_selector("body[data-ready='1']")
         rows = page.evaluate("""() => [...document.querySelectorAll('.slide')].map((s) => {
             const r = (e) => e && e.getBoundingClientRect(), f = s.querySelector('.figure'), m = s.querySelector('.main');
-            const next = f && f.nextElementSibling;
+            const next = f && f.nextElementSibling, line = s.querySelector('.bottom'), ft = s.querySelector('.foot');
+            const shown = m ? [...m.children].filter((c) => r(c).height > 0) : [];
+            const prev = ft && ft.previousElementSibling;
             return {gap: f && next ? r(next).top - r(f).bottom : null,
-                    spill: m ? Math.max(0, ...[...m.children].map((c) => r(c).bottom)) - r(m).bottom : 0};
+                    spill: m ? Math.max(0, ...shown.map((c) => r(c).bottom)) - r(m).bottom : 0,
+                    toLine: m && line ? r(line).top - Math.max(0, ...shown.map((c) => r(c).bottom)) : null,
+                    aboveNotes: ft && prev ? r(ft).top - r(prev).bottom : null};
         })""")
         browser.close()
     assert any(r["gap"] is not None for r in rows)
     assert all(r["gap"] is None or r["gap"] >= 18 for r in rows), rows
     assert all(r["spill"] <= 1 for r in rows), rows
+    # nothing touches the line above the source/account, and the notes keep clear of what is above them
+    assert all(r["toLine"] is None or r["toLine"] >= 28 for r in rows), rows
+    assert all(r["aboveNotes"] is None or r["aboveNotes"] >= 28 for r in rows), rows

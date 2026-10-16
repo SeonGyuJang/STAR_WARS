@@ -1,7 +1,8 @@
 """Video cards.
 
 * The closing card of every carousel: the same animation each time - the
-  words rise into place one after another, then the lines below fade up.
+  letters S T A R W A R S stand from the first frame, the meaning of each
+  unfolds out of its letter, then the claim rises and the lines below fade up.
 * A TECH post's demo slide, only when the project's source has a demo clip
   that shows what the post is about: the card stays still and the clip plays
   in the picture window. Every other slide is a still image.
@@ -22,7 +23,7 @@ from . import config
 
 log = logging.getLogger(__name__)
 FPS = 30
-OUTRO_SECONDS = 6.0
+OUTRO_SECONDS = 7.0
 
 
 def ffmpeg_exe():

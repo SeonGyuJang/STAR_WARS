@@ -21,6 +21,90 @@ document.querySelectorAll("[data-carousel]").forEach((root) => {
   update();
 });
 
+// Full-screen viewer for the card news: opens from "크게 보기" or a click on a card;
+// arrows / swipe to move, Esc or the backdrop to close. The video cards play.
+(() => {
+  const carousels = document.querySelectorAll("[data-carousel]");
+  if (!carousels.length) return;
+  const box = document.createElement("div");
+  box.className = "lightbox";
+  box.hidden = true;
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-modal", "true");
+  box.setAttribute("aria-label", "카드뉴스 크게 보기");
+  box.innerHTML = `
+    <div class="lb-top"><span class="lb-count"></span><span class="lb-sp"></span>
+      <a class="lb-dl" download>이 장 받기</a><button type="button" class="lb-x" aria-label="닫기">✕</button></div>
+    <div class="lb-stage"></div>
+    <button type="button" class="lb-btn lb-prev" aria-label="이전 장">‹</button>
+    <button type="button" class="lb-btn lb-next" aria-label="다음 장">›</button>`;
+  document.body.appendChild(box);
+  const stage = box.querySelector(".lb-stage");
+  let items = [], at = 0, track = null, lastFocus = null;
+
+  const show = (i) => {
+    at = (i + items.length) % items.length;
+    const it = items[at];
+    stage.replaceChildren();
+    let el;
+    if (it.tagName === "VIDEO") {
+      el = document.createElement("video");
+      Object.assign(el, { src: it.currentSrc || it.src, poster: it.poster, muted: true, loop: true, playsInline: true, autoplay: true });
+      el.play().catch(() => {});
+    } else {
+      el = document.createElement("img");
+      el.src = it.currentSrc || it.src;
+      el.alt = it.alt || "";
+    }
+    stage.appendChild(el);
+    box.querySelector(".lb-count").textContent = `${at + 1} / ${items.length}${it.tagName === "VIDEO" ? " · 영상" : ""}`;
+    box.querySelector(".lb-dl").href = `${(it.currentSrc || it.src).split("?")[0]}?dl=1`;
+    box.querySelector(".lb-prev").hidden = box.querySelector(".lb-next").hidden = items.length < 2;
+  };
+  const open = (root, i) => {
+    track = root.querySelector(".slides");
+    items = [...track.children];
+    lastFocus = document.activeElement;
+    box.hidden = false;
+    document.body.classList.add("lb-open");
+    show(i);
+    box.querySelector(".lb-x").focus();
+  };
+  const close = () => {
+    box.hidden = true;
+    document.body.classList.remove("lb-open");
+    stage.replaceChildren();
+    if (track) track.scrollTo({ left: at * track.clientWidth }); // the small carousel follows
+    lastFocus?.focus();
+  };
+
+  carousels.forEach((root) => {
+    const tr = root.querySelector(".slides");
+    const current = () => Math.round(tr.scrollLeft / tr.clientWidth);
+    root.querySelector("[data-zoom]")?.addEventListener("click", () => open(root, current()));
+    [...tr.children].forEach((el, i) => { el.style.cursor = "zoom-in"; el.addEventListener("click", () => open(root, i)); });
+    root.addEventListener("keydown", (e) => { if (e.key === "f" || e.key === "F") open(root, current()); });
+  });
+  box.querySelector(".lb-x").addEventListener("click", close);
+  box.querySelector(".lb-prev").addEventListener("click", () => show(at - 1));
+  box.querySelector(".lb-next").addEventListener("click", () => show(at + 1));
+  box.addEventListener("click", (e) => { if (e.target === box || e.target === stage) close(); });
+  document.addEventListener("keydown", (e) => {
+    if (box.hidden) return;
+    if (e.key === "Escape") close();
+    else if (e.key === "ArrowLeft") show(at - 1);
+    else if (e.key === "ArrowRight") show(at + 1);
+  });
+  let x0 = null;
+  stage.addEventListener("touchstart", (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+  stage.addEventListener("touchend", (e) => {
+    if (x0 === null) return;
+    const dx = e.changedTouches[0].clientX - x0;
+    if (Math.abs(dx) > 40) show(at + (dx < 0 ? 1 : -1));
+    x0 = null;
+  });
+})();
+
 // Copy caption text
 document.querySelectorAll("[data-copy]").forEach((btn) => {
   btn.addEventListener("click", async () => {

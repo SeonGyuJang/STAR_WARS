@@ -178,7 +178,7 @@ def test_tech_stage_end_to_end(fresh_db):
     assert "터미널 안에서 일하는 AI 코딩 도우미" in html and "1.3만" in html and 'class="sbadge s-github"' in html
     assert 'class="mi maker"><svg class="logo-mark"' in html and 'aria-label="Meta"' in html  # facebookresearch -> Meta's logo
     page = c.get(f"/tech/{done['id']}").get_data(as_text=True)
-    assert "그래서 나랑 무슨 상관?" in page and "cargo install termpilot" in page and "#IT #테크 #개발자 #오픈소스 #코딩" in page
+    assert "그래서 나랑 무슨 상관?" in page and "cargo install termpilot" in page and "data-zoom" in page  # full-screen viewer and "#IT #테크 #개발자 #오픈소스 #코딩" in page
     assert c.get(f"/files/tech/{done['id']}/card/1").status_code == 200
     z = zipfile.ZipFile(io.BytesIO(c.get(f"/files/tech/{done['id']}/cards.zip").data))
     names = z.namelist()

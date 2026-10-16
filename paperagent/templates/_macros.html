@@ -20,6 +20,7 @@
     <div class="carousel" data-carousel>
       <div class="slides">{% for s in slides %}{% if s.mp4 %}<video src="{{ s.mp4 }}" poster="{{ s.png }}" muted loop playsinline preload="metadata" aria-label="카드 {{ s.n }} (영상)"></video>{% else %}<img src="{{ s.png }}" alt="카드 {{ s.n }}" loading="lazy">{% endif %}{% endfor %}</div>
       <button class="nav-btn prev" data-prev aria-label="이전">‹</button><button class="nav-btn next" data-next aria-label="다음">›</button>
+      <button type="button" class="zoom-btn" data-zoom aria-label="카드뉴스 크게 보기" title="크게 보기 (F)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>크게 보기</button>
       <div class="dots"></div>
     </div>
     <div class="dl">한 장씩 받기 {% for s in slides %}<a href="{{ (s.mp4 or s.png) ~ '?dl=1' }}" class="{{ 'vid' if s.mp4 }}" title="{{ '영상 (MP4)' if s.mp4 else '이미지 (PNG)' }}">{{ s.n }}{% if s.mp4 %}▶{% endif %}</a>{% endfor %}</div>
