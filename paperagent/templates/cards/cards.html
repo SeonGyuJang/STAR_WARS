@@ -40,13 +40,13 @@ p, li, span, b { text-wrap: pretty; }
 .slide { --k: 1; width: 1080px; height: 1350px; position: relative; overflow: hidden; background: #fff; display: flex; flex-direction: column; }
 
 /* the colour block on top of every content slide */
-/* the header: a light tint of the category colour */
-.band { flex: none; height: 108px; padding: 0 72px; background: var(--soft); color: var(--ink); display: flex; align-items: center;
+/* the header: logo, category label and page number on the plain white slide */
+.band { flex: none; height: 108px; padding: 0 72px; background: transparent; color: var(--ink); display: flex; align-items: center;
         justify-content: space-between; }
 .brand { display: flex; align-items: center; gap: 18px; }
-.brand b { font-size: 27px; font-weight: 700; letter-spacing: .06em; color: var(--deep); }
+.brand b { font-size: 27px; font-weight: 700; letter-spacing: .06em; color: var(--ink); }
 .brand span { font-size: 20px; font-weight: 700; letter-spacing: .14em; padding: 6px 13px; border-radius: 8px; background: var(--c); color: #fff; }
-.pg { font-family: "Mono", monospace; font-size: 25px; font-weight: 500; color: var(--deep); }
+.pg { font-family: "Mono", monospace; font-size: 25px; font-weight: 500; color: var(--ink); }
 .pg i { font-style: normal; color: var(--mute); }
 
 .main { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding: calc(60px * var(--k)) 72px 0; }
@@ -205,15 +205,20 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
 .foot b::before { content: "* "; color: var(--c); }
 
 /* ---------- outro ---------- */
-.outro { background: #fff; color: var(--ink); }
-.outro .acro b { color: var(--c); }
+/* the closing slide: white on black */
+.outro { background: #121212; color: #fff; }
+.outro .brand b, .outro .pg { color: #fff; }
+.outro .pg i { color: #6b6b6b; }
+.outro .acro b { color: #fff; }
 .acro { margin: 96px 72px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 40px; }
-.acro div { font-size: 62px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.26; color: #c4c5c9; white-space: nowrap; }
+.acro div { font-size: 62px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.26; color: #5c5c5c; white-space: nowrap; }
 .acro b { color: #fff; font-weight: 700; }
 .outro .claim { margin: 88px 72px 0; font-size: 54px; line-height: 1.32; font-weight: 700; letter-spacing: -0.035em; }
-.outro .cta { margin: 30px 72px 0; font-size: 31px; line-height: 1.6; color: var(--body); }
-.outro .cta b { color: var(--ink); font-weight: 600; }
-.outro .cta em { font-style: normal; color: var(--c); background: var(--soft); padding: 1px 10px; border-radius: 6px; font-weight: 700; }
+.outro .cta { margin: 30px 72px 0; font-size: 31px; line-height: 1.6; color: #a3a3a3; }
+.outro .cta b { color: #fff; font-weight: 600; }
+.outro .cta em { font-style: normal; color: #fff; font-weight: 600; }
+.outro .bottom { border-top-color: #2a2a2a; color: #6b6b6b; }
+.outro .bottom b { color: #a3a3a3; }
 
 /* while measuring, figures are out and the notes sit right under the text */
 .measuring .figure { display: none; }
