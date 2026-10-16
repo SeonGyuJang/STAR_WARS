@@ -130,7 +130,8 @@ def test_tech_stage_end_to_end(fresh_db):
     from paperagent import agent, create_app, db, demo, pipeline, technews
 
     items = [
-        {**demo.SAMPLE_TECH, "uid": "github:acme/agentkit", "title": "acme/agentkit", "url": "https://github.com/acme/agentkit"},
+        {**demo.SAMPLE_TECH, "uid": "github:facebookresearch/agentkit", "title": "facebookresearch/agentkit",
+         "url": "https://github.com/facebookresearch/agentkit"},
         {"uid": "hn:99", "source": "hn", "title": "Celebrity drama", "url": "https://gossip.example", "summary": "", "meta": {"points": 500}},
     ]
 
@@ -158,31 +159,33 @@ def test_tech_stage_end_to_end(fresh_db):
 
     run = db.get_run(run_id)
     assert run["status"] == "ok" and run["stats"]["tech_done"] == 1, run["log"]
-    done = db.get_tech_by_uid("github:acme/agentkit")
+    done = db.get_tech_by_uid("github:facebookresearch/agentkit")
     assert done["status"] == "done" and done["interest"] == 8.5
     assert db.get_tech_by_uid("hn:99")["status"] == "skipped"
     assert len(done["media"]["images"]) == 1  # the 200px picture was too small
     assert done["media"]["video"].endswith("demo.gif")
-    assert len(done["card_paths"]) == 9 and done["card_paths"][0] == f"tech/{done['id']}/cards/card_01.png"
+    # cover, what, demo, how, so-what, try, summary, closing - no separate numbers slide
+    assert len(done["card_paths"]) == 8 and done["card_paths"][0] == f"tech/{done['id']}/cards/card_01.png"
     from paperagent import video
 
     if video.available():
-        assert list(done["card_videos"]) == ["9"]  # the closing slide
+        assert sorted(done["card_videos"]) == ["3", "8"]  # the demo clip (it shows what the post is about) and the closing slide
 
     app = create_app(start_scheduler=False)
     c = app.test_client()
     c.environ_base["REMOTE_ADDR"] = "127.0.0.1"
     html = c.get("/tech").get_data(as_text=True)
     assert "터미널 안에서 일하는 AI 코딩 도우미" in html and "1.3만" in html and 'class="sbadge s-github"' in html
+    assert 'class="mi maker"><svg class="logo-mark"' in html and 'aria-label="Meta"' in html  # facebookresearch -> Meta's logo
     page = c.get(f"/tech/{done['id']}").get_data(as_text=True)
     assert "그래서 나랑 무슨 상관?" in page and "cargo install termpilot" in page and "#IT #테크 #개발자 #오픈소스 #코딩" in page
     assert c.get(f"/files/tech/{done['id']}/card/1").status_code == 200
     z = zipfile.ZipFile(io.BytesIO(c.get(f"/files/tech/{done['id']}/cards.zip").data))
     names = z.namelist()
-    assert "caption.txt" in names and len([n for n in names if n.startswith("card_")]) == 9
+    assert "caption.txt" in names and len([n for n in names if n.startswith("card_")]) == 8
     if video.available():
-        assert "card_09.mp4" in names and "card_09.png" not in names and "card_03.png" in names
-        assert c.get(f"/files/tech/{done['id']}/card/9.mp4").mimetype == "video/mp4"
+        assert {"card_03.mp4", "card_08.mp4"} <= set(names) and "card_02.png" in names and "card_08.png" not in names
+        assert c.get(f"/files/tech/{done['id']}/card/8.mp4").mimetype == "video/mp4"
         assert "<video" in page
     # the home page points to the new TECH post
     assert "새 테크 소식" in c.get("/").get_data(as_text=True)
@@ -238,3 +241,35 @@ def test_context_from_readme_and_article():
     assert gh["videos"] == ["https://cdn.example.com/demo.mp4"]
     assert "released version 2" in hn["text"] and "menu" not in hn["text"]
     assert hn["images"][0] == "https://blog.example.com/img/cover.jpg"
+
+
+def test_makers_and_logos():
+    from paperagent import logos
+
+    assert logos.maker_for({"source": "github", "title": "facebookresearch/sam"})["logo"]["slug"] == "meta"
+    assert logos.maker_for({"source": "hf", "title": "google/gemma-4"})["name"] == "Google"
+    assert logos.maker_for({"source": "hn", "title": "x"}, {"maker": "Apple"})["logo"]["slug"] == "apple"
+    assert logos.maker_for({"source": "hn", "title": "x"}, {"maker": "Instagram"})["logo"]["hex"]
+    openai = logos.maker_for({"source": "github", "title": "openai/codex"})
+    assert openai["name"] == "OpenAI" and openai["logo"] is None  # no official mark in the set: name only
+    assert logos.maker_for({"source": "hn", "title": "x"}, {"maker": ""}) is None
+    assert 'fill="#111111"' in str(logos.svg(logos.find("Hugging Face")))  # too light on white -> dark
+
+
+def test_demo_clip_only_when_it_shows_the_post(tmp_path):
+    """The project's own clip becomes a video slide only when the writer says it shows what the post is about."""
+    from paperagent import cardnews, demo, video
+
+    if not video.ffmpeg_exe():
+        pytest.skip("ffmpeg not available")
+    banner, gif = demo.make_tech_media(tmp_path)
+    item = {**demo.SAMPLE_TECH, "id": 1}
+    media = {"images": [str(banner)], "video": str(gif)}
+    review = copy.deepcopy(demo.SAMPLE_TECH_REVIEW)
+    slides, _ = cardnews.tech_slides(item, review, media, tmp_path)
+    assert [s.get("video") is not None for s in slides if s["kind"] == "media"] == [True]
+    assert "numbers" not in [s["kind"] for s in slides]
+    review["demo"]["use_clip"] = False
+    slides, _ = cardnews.tech_slides(item, review, media, tmp_path)
+    media_slide = next(s for s in slides if s["kind"] == "media")
+    assert "video" not in media_slide and media_slide["figure"]  # a still from the clip instead

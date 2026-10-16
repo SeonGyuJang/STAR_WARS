@@ -254,6 +254,9 @@ heroku pg:backups:download                                        # 내려받기
 
 ## 5. 인스타그램 업로드
 
+> 테크 카드뉴스의 회사 로고는 [Simple Icons](https://simpleicons.org)(CC0)의 공식 브랜드 마크를 `paperagent/static/logos/brands.json`에 담아 씁니다. 로고는 누가 만든 프로젝트인지 알리는 용도로만 쓰며, 상표권은 각 회사에 있습니다. Simple Icons에 없는 회사(예: OpenAI, Microsoft)는 로고 없이 이름만 표시합니다.
+
+
 게시는 직접 합니다. 대시보드는 올릴 재료를 한 번에 준비해 줍니다.
 
 1. 논문(또는 테크 소식) 페이지의 카드뉴스 칸에서 **전체 받기**를 누르면 카드 이미지, 마지막 장 영상(`.mp4`, 만들 수 있을 때)와 `caption.txt`가 든 ZIP이 내려옵니다. 파일 이름의 번호가 올릴 순서입니다.

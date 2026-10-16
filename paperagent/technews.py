@@ -98,6 +98,7 @@ def fetch_media(item_id: int, context: dict, say=log.info) -> dict:
             key = f"tech/{item_id}/media/demo{ext}"
             storage.put(key, data)
             out["video"], out["video_url"] = key, url
+            out["video_note"] = (context.get("clip_notes") or {}).get(url, "")
             break
     say(f"  media: {len(out['images'])} picture(s){', a demo clip' if out['video'] else ''}")
     return out
@@ -115,7 +116,11 @@ def process_item(item: dict, say=log.info) -> tuple[bool, float]:
         if item.get("url") != db.get_tech(iid).get("url"):  # GeekNews: the original article
             db.update_tech(iid, url=item["url"])
         media = fetch_media(iid, context, say)
+        if media.get("video"):
+            context["clip"] = {"url": media["video_url"], "near": media.get("video_note", "")}
         review = agent.write_tech(item, context, meter=meter)
+        if media.get("video"):
+            say("  demo clip " + ("goes on the cards" if (review.get("demo") or {}).get("use_clip") else "left out (not what the post shows)"))
         review["_cost"] = meter.summary()
         db.update_tech(iid, media=media)
         item = db.get_tech(iid)

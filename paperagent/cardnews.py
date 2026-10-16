@@ -11,7 +11,9 @@ The slides are laid out in HTML/CSS (templates/cards/cards.html) and captured
 with headless Chromium through Playwright, so Korean typography (the bundled
 Pretendard font) stays crisp. Every slide is a still image except the closing
 one, which is also written as a short MP4 with the same animation on every post:
-its words rise into place one after another (video.py encodes the frames).
+its words rise into place one after another (video.py encodes the frames). A
+TECH post's demo slide is also a video when the project's own demo clip shows
+what the post is about.
 """
 import io
 import json
@@ -26,7 +28,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup, escape
 
-from . import config, storage, video
+from . import config, logos, storage, video
 
 log = logging.getLogger(__name__)
 PKG_DIR = Path(__file__).resolve().parent
@@ -268,15 +270,37 @@ def capture(html: str, out_dir: Path, videos=True):
                 path = out_dir / f"card_{i:02d}.png"
                 el.screenshot(path=str(path))
                 paths.append(str(path))
-            last = slides[-1] if slides else None
-            if videos and last is not None and last.get_attribute("data-video") == "outro" and video.available():
+            for i, el in enumerate(slides, start=1) if videos and video.available() else ():
+                src = el.get_attribute("data-video")
+                if not src:
+                    continue
                 try:
-                    clips[len(slides)] = str(_outro_video(page, last, len(slides), out_dir))
+                    clips[i] = str(_outro_video(page, el, i, out_dir) if src == "outro" else _clip_video(el, i, src, out_dir))
                 except Exception as exc:  # the still card is still there
-                    log.warning("closing video failed: %s", exc)
+                    log.warning("video for slide %s failed: %s", i, exc)
         finally:
             browser.close()
     return paths, clips
+
+
+def _clip_video(el, n, clip, out_dir: Path):
+    """A demo slide: the still card as the frame, the clip playing in its picture window."""
+    box = el.evaluate("""(s) => {
+        const w = s.querySelector('[data-window]'); if (!w) return null;
+        const a = s.getBoundingClientRect(), b = w.getBoundingClientRect();
+        return [b.left - a.left, b.top - a.top, b.width, b.height];
+    }""")
+    if not box or box[2] < 200 or box[3] < 150:
+        raise RuntimeError("no room for the clip")
+    frame, mask = out_dir / f"frame_{n:02d}.png", out_dir / f"mask_{n:02d}.png"
+    el.screenshot(path=str(frame))
+    el.evaluate("(s) => s.classList.add('mask-mode')")
+    el.screenshot(path=str(mask))
+    el.evaluate("(s) => s.classList.remove('mask-mode')")
+    out = video.compose_clip(frame, mask, clip, box, out_dir / f"card_{n:02d}.mp4")
+    frame.unlink(missing_ok=True)
+    mask.unlink(missing_ok=True)
+    return out
 
 
 def _outro_video(page, el, n, out_dir: Path):
@@ -434,21 +458,23 @@ def tech_slides(item, review, media, tmp: Path):
     tiles = tech_tiles(item)
     src_name = SOURCES.get(item["source"], {}).get("short", item["source"])
 
+    made = logos.maker_for(item, review)
+    maker = {"name": made["name"], "mark": logos.svg(made["logo"], 46) if made["logo"] else None} if made else None
     slides = [{"kind": "cover"}]
     what = review.get("what") or {}
     if what.get("points"):
         slides.append({"kind": "points", "label": "무엇인가요", "headline": what.get("headline"), "points": what["points"],
-                       "note_title": "왜 지금 화제일까", "note": what.get("why_now")})
+                       "note_title": "왜 지금 화제일까", "note": what.get("why_now"), "maker": maker})
     demo = review.get("demo") or {}
     show = photo(poster, "") if poster else photo(images[1] if len(images) > 1 else (images[0] if images else None))
     if show:
-        slides.append({"kind": "media", "label": "직접 보기", "headline": demo.get("headline") or review.get("title_ko"),
-                       "body": demo.get("body"), "figure": show})
+        s = {"kind": "media", "label": "직접 보기", "headline": demo.get("headline") or review.get("title_ko"),
+             "body": demo.get("body"), "figure": show}
+        if poster and demo.get("use_clip"):  # the project's own demo, and it shows what this post is about
+            s.update(label="직접 보기 · 실제 데모", video={"src": clip})
+        slides.append(s)
     if review.get("how"):
         slides.append({"kind": "steps", "label": "어떻게 작동하나요", "headline": "핵심만 짚어 보면", "steps": review["how"][:4]})
-    if tiles:
-        slides.append({"kind": "numbers", "label": "숫자로 보기", "headline": review.get("numbers_headline") or "얼마나 주목받고 있나요",
-                       "highlight": tiles[0]["value"], "highlight_label": tiles[0]["label"], "tiles": tiles[1:5]})
     so = review.get("so_what") or {}
     if so.get("items"):
         slides.append({"kind": "sowhat", "label": "그래서 나랑 무슨 상관?", "headline": so.get("headline"), "items": so["items"][:3]})
@@ -461,7 +487,7 @@ def tech_slides(item, review, media, tmp: Path):
 
     cover = {"headline": review.get("cover_headline"), "sub": review.get("cover_sub"),
              "topic": f"{src_name} · {review.get('category')}" if review.get("category") else src_name,
-             "image": photo(images[0]) if images else None, "stat": {"tiles": tiles[:3]} if tiles else {}}
+             "image": photo(images[0]) if images else None, "stat": {"tiles": tiles[:3]} if tiles else {}, "maker": maker}
     _attach_notes(slides, review, {"cover": [review.get("cover_headline"), review.get("cover_sub")]})
     return slides, cover
 

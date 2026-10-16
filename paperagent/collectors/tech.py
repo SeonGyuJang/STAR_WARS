@@ -240,6 +240,24 @@ _BADGE = re.compile(r"shields\.io|badge|travis-ci|codecov|circleci|github\.com/.
                     r"buymeacoffee|ko-fi|sponsor|trendshift|producthunt", re.I)
 
 
+def _near(text: str, pos: int, chars: int = 260) -> str:
+    """The plain text just before a position (the heading/sentence that introduces a clip)."""
+    before = text[max(0, pos - chars * 3):pos]
+    before = re.sub(r"<[^>]+>|!\[[^\]]*\]\([^)]*\)|\[([^\]]*)\]\([^)]*\)|https?://\S+", r"\1", before)
+    before = re.sub(r"[#*_`>|-]+", " ", before)
+    return re.sub(r"\s+", " ", before).strip()[-chars:]
+
+
+def clip_notes(text: str, base: str, videos) -> dict:
+    """{clip url: text just before it} so the writer can tell what each clip shows."""
+    notes = {}
+    for m in list(_IMG_MD.finditer(text)) + list(_SRC_HTML.finditer(text)) + list(_ASSET.finditer(text)):
+        u = urljoin(base, (m.group(1) if m.groups() else m.group(0)).strip())
+        if u in videos and u not in notes:
+            notes[u] = _near(text, m.start())
+    return notes
+
+
 def media_candidates(text: str, base: str):
     """Picture and clip URLs in a README / model card, in order, without badges.
     Returns (images, videos)."""
@@ -287,15 +305,17 @@ def _github_readme(full: str):
 
 
 def fetch_context(item: dict) -> dict:
-    """{text, images, videos} for writing the post: what the project or article says
-    and the pictures/clips it shows (best first)."""
+    """{text, images, videos, clip_notes} for writing the post: what the project or
+    article says, the pictures/clips it shows (best first) and the text next to
+    each clip (to judge whether it shows what the post is about)."""
     src, meta = item["source"], item.get("meta") or {}
-    text, images, videos = "", [], []
+    text, images, videos, notes = "", [], [], {}
     try:
         if src == "github":
             readme, base = _github_readme(item["title"])
             text = readme[:CONTEXT_CHARS]
             images, videos = media_candidates(readme, base.rsplit("/", 1)[0] + "/")
+            notes = clip_notes(readme, base.rsplit("/", 1)[0] + "/", videos)
             images.append(f"https://opengraph.githubassets.com/1/{item['title']}")
         elif src == "hf":
             kind = meta.get("kind", "model")
@@ -303,6 +323,7 @@ def fetch_context(item: dict) -> dict:
             card = http_get(item["url"] + "/raw/main/README.md", retries=1, timeout=30).text
             text = re.sub(r"^---.*?---\s*", "", card, flags=re.S)[:CONTEXT_CHARS]
             images, videos = media_candidates(card, base)
+            notes = clip_notes(card, base, videos)
             images.append(f"https://cdn-thumbnails.huggingface.co/social-thumbnails/{'spaces/' if kind == 'space' else ''}{item['title']}.png")
         else:
             pieces = [item.get("summary") or ""]
@@ -329,9 +350,10 @@ def fetch_context(item: dict) -> dict:
                 more, clips = media_candidates(html, page_url)
                 images += [u for u in more if u not in images][:4]
                 videos += [u for u in clips if u not in videos][:2]
+                notes.update(clip_notes(html, page_url, videos))
             text = "\n\n".join(p for p in pieces if p)[:CONTEXT_CHARS]
     except Exception as exc:  # write from what the listing said
         log.warning("context for %s failed: %s", item["uid"], exc)
         if not text:
             text = item.get("summary") or ""
-    return {"text": text, "images": images[:8], "videos": videos[:3]}
+    return {"text": text, "images": images[:8], "videos": videos[:3], "clip_notes": {u: notes.get(u, "") for u in videos[:3]}}

@@ -89,6 +89,13 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
 .cover .main { padding-top: calc(28px * var(--k)); }
 .chips { flex: none; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .chip { font-size: calc(25px * var(--k)); font-weight: 700; padding: 9px 18px; border-radius: 10px; background: var(--soft); color: var(--c); letter-spacing: .02em; }
+/* who made a TECH project: the company's own mark, as an identifying element */
+.maker { margin-left: auto; display: inline-flex; align-items: center; gap: 14px; font-size: calc(30px * var(--k)); }
+.maker b { font-weight: 700; letter-spacing: -0.02em; }
+.made-by { flex: none; margin-top: calc(26px * var(--k)); display: flex; align-items: center; gap: 14px; font-size: calc(28px * var(--k)); }
+.made-by span { color: var(--mute); font-weight: 600; margin-right: 6px; }
+.made-by b { font-weight: 700; }
+.made-by .logo-mark { width: calc(36px * var(--k)); height: calc(36px * var(--k)); }
 .chip.ghost { background: var(--well); color: var(--body); font-weight: 600; letter-spacing: 0; }
 .cover h1 { flex: none; margin-top: calc(34px * var(--k)); font-size: calc(102px * var(--k)); line-height: 1.12; font-weight: 700; letter-spacing: -0.05em; }
 .cover .lead { color: var(--body); font-size: calc(35px * var(--k)); margin-top: calc(26px * var(--k)); }
@@ -225,6 +232,11 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
 @keyframes rise { from { transform: translateY(110%); } to { transform: none; } }
 @keyframes fade-up { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
 @keyframes fade-in { from { opacity: 0; } }
+/* the mask for a demo-clip slide: white where the clip plays, black elsewhere */
+.mask-mode { background: #000 !important; }
+.mask-mode * { visibility: hidden !important; background: transparent !important; border-color: transparent !important; box-shadow: none !important; }
+.mask-mode [data-window] { visibility: visible !important; background: #fff !important; }
+.mask-mode [data-window] * { visibility: hidden !important; }
 
 /* while measuring, figures are out and the notes sit right under the text */
 .measuring .figure { display: none; }
@@ -236,8 +248,8 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
 {% macro bottom() %}<div class="bottom"><span class="id">{{ source_ref }}</span><b>{{ handle }}</b></div>{% endmacro %}
 {% macro label(n, text) %}<div class="label"><i>{{ '%02d' % (n - 1) }}</i>{{ text }}</div>{% endmacro %}
 {% macro bar(name, score, cls='') %}{% set score = score or 0 %}<div class="bar {{ cls }}"><span>{{ name }}</span><div class="track"><div class="fill" style="width: {{ (score * 10) | round | int }}%"></div></div><b>{{ score }}</b></div>{% endmacro %}
-{% macro figure(f) %}{% if f %}<div class="figure {{ 'photo' if f.photo }}">
-  <div class="img"><img src="{{ f.uri }}" alt=""></div>
+{% macro figure(f, window=False) %}{% if f %}<div class="figure {{ 'photo' if f.photo }}">
+  <div class="img" {{ 'data-window' if window }}><img src="{{ f.uri }}" alt=""></div>
   {% if f.caption and not f.photo %}<div class="cap">Figure {{ f.number }}. {{ f.caption | replace('Figure ' ~ f.number ~ ':', '') | replace('Figure ' ~ f.number ~ '.', '') | trim }}</div>{% endif %}
 </div>{% endif %}{% endmacro %}
 {% macro foot(notes) %}{% if notes %}<div class="foot">{% for t in notes %}<b>{{ t.term }}</b><span>{{ t.meaning }}</span>{% endfor %}</div>{% endif %}{% endmacro %}
@@ -247,7 +259,8 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
 <section class="slide cover">
   {{ band(n) }}
   <div class="main">
-    <div class="chips"><span class="chip">{{ theme.name }}</span>{% if cover.topic %}<span class="chip ghost">{{ cover.topic }}</span>{% endif %}</div>
+    <div class="chips"><span class="chip">{{ theme.name }}</span>{% if cover.topic %}<span class="chip ghost">{{ cover.topic }}</span>{% endif %}
+      {% if cover.maker %}<span class="maker">{{ cover.maker.mark or '' }}<b>{{ cover.maker.name }}</b></span>{% endif %}</div>
     <h1>{{ cover.headline | t }}</h1>
     {% if cover.sub %}<p class="lead">{{ cover.sub | t }}</p>{% endif %}
     {{ figure(cover.image) }}
@@ -272,6 +285,7 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
   <div class="main">
     {{ label(n, s.label) }}
     <h2>{{ s.headline | t }}</h2>
+    {% if s.maker %}<div class="made-by"><span>만든 곳</span>{{ s.maker.mark or '' }}<b>{{ s.maker.name }}</b></div>{% endif %}
     <ul class="points">{% for x in s.points[:3] %}<li><b>{{ '%02d' % loop.index }}</b><span>{{ x | t }}</span></li>{% endfor %}</ul>
     {% if s.figure %}{{ figure(s.figure) }}{% elif s.note %}<div class="note-box"><h4>{{ s.note_title }}</h4><p>{{ s.note | t }}</p></div>{% endif %}
     {{ foot(s.notes) }}
@@ -280,13 +294,13 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
 </section>
 
 {% elif s.kind == 'media' %}
-<section class="slide media">
+<section class="slide media" {% if s.video %}data-video="{{ s.video.src }}"{% endif %}>
   {{ band(n) }}
   <div class="main">
     {{ label(n, s.label) }}
     <h2>{{ s.headline | t }}</h2>
     {% if s.body %}<p class="lead">{{ s.body | t }}</p>{% endif %}
-    {{ figure(s.figure) }}
+    {{ figure(s.figure, window=s.video) }}
     {{ foot(s.notes) }}
   </div>
   {{ bottom() }}
@@ -440,6 +454,7 @@ function fit(slide) {
     } else {
       setK(k);
       f.remove();
+      slide.removeAttribute("data-video");
     }
   }
   slide.classList.remove("measuring");
@@ -459,7 +474,7 @@ function guard(slide, main) {
   if (!cut) return;
   const h = f.offsetHeight - cut - 2;
   if (h >= 260) f.style.height = h + "px";
-  else f.remove();
+  else { f.remove(); slide.removeAttribute("data-video"); }
 }
 document.fonts.ready.then(() => {
   const imgs = [...document.images].map((im) => im.complete ? null : new Promise((r) => { im.onload = im.onerror = r; }));

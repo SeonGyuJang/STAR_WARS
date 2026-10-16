@@ -72,8 +72,17 @@ def inject_globals():
         "running": pipeline.is_running(),
         "api": agent.api_status(),
         "tech_tiles": cardnews.tech_tiles,
+        "tech_maker": _tech_maker,
         "tech_source_names": {k: v["short"] for k, v in tech_sources.SOURCES.items()},
     }
+
+
+def _tech_maker(t):
+    """{name, mark} of the company behind a TECH post (mark: its official logo, or None)."""
+    from . import logos
+
+    made = logos.maker_for(t, t.get("review"))
+    return {"name": made["name"], "mark": logos.svg(made["logo"], 15) if made["logo"] else None} if made else None
 
 
 def _source_lookup():

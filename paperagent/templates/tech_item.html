@@ -12,6 +12,7 @@
 <header class="dhead tech">
   <div class="pmeta meta"><div>
     <span class="mi">{{ sbadge(t.source, source.short or t.source) }}</span>
+    {% set made = tech_maker(t) %}{% if made %}<span class="mi maker">{{ made.mark or '' }}{{ made.name }}</span>{% endif %}
     {% if r.category %}<span class="mi cat">{{ r.category }}</span>{% endif %}
     {% if t.reviewed_at %}<span class="mi">{{ t.reviewed_at | kst('%Y.%m.%d') }}</span>{% endif %}
   </div></div>

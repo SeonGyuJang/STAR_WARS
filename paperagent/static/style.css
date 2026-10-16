@@ -659,3 +659,6 @@ pre.cmd code { background: none; padding: 0; color: inherit; white-space: pre; f
 .carousel .dots i.vid { border-radius: 1px; width: 8px; }
 .dl a.vid { color: var(--tech); }
 .post-tip { margin-top: 8px; line-height: 1.6; }
+.meta .maker { display: inline-flex; align-items: center; gap: 5px; color: var(--ink); font-weight: 600; }
+.meta .maker .logo-mark { flex: none; }
+@media (prefers-color-scheme: dark) { .meta .maker .logo-mark path[fill="#000000"], .meta .maker .logo-mark path[fill="#111111"], .meta .maker .logo-mark path[fill="#191919"] { fill: #e6e6e6; } }

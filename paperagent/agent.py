@@ -660,9 +660,12 @@ TECH_SCHEMA = _obj({
     "what": _obj({"headline": _H,
                   "points": {**_str_list, "description": "Exactly 3 Korean sentences, each <= 75 chars: what it is, what it does, what is new about it"},
                   "why_now": {**_str, "description": "2 Korean sentences on why people are talking about it now, with the numbers given (<= 160 chars)"}}),
-    "demo": _obj({"headline": _H, "body": {**_str, "description": "1-2 Korean sentences describing what the picture/clip shows or what using it looks like (<= 110 chars)"}}),
+    "maker": {**_str, "description": "The company or organisation that made it, as the material names it (e.g. 'Meta', 'Apple', "
+                                    "'Google DeepMind', 'NVIDIA'); empty if it is not clearly stated or an individual made it"},
+    "demo": _obj({"headline": _H, "body": {**_str, "description": "1-2 Korean sentences describing what the picture/clip shows or what using it looks like (<= 110 chars)"},
+                  "use_clip": {"type": "boolean", "description": "true only if a demo clip is available and the text next to it shows it "
+                                                                  "demonstrates what this post and this slide describe; false otherwise"}}),
     "how": _rows("3-4 steps: how it works or how it is used", title=_L(16), detail=_L(85)),
-    "numbers_headline": _H,
     "so_what": _obj({
         "headline": _H,
         "items": _rows("Exactly 3 honest answers to '그래서 나랑 무슨 상관?': who benefits and how, what changes, what it costs or risks. No hype.",
@@ -699,12 +702,14 @@ def write_tech(item: dict, context: dict, meter: CostMeter | None = None) -> dic
     from .collectors import tech as tech_src
 
     source = tech_src.SOURCES.get(item["source"], {}).get("name", item["source"])
-    media = ("a demo clip" if context.get("videos") else "pictures" if context.get("images") else "nothing to show")
+    clip = context.get("clip")
+    media = (f"a demo clip (the text next to it in the source: \"{clip.get('near') or 'none'}\")" if clip
+             else "pictures" if context.get("images") else "nothing to show")
     prompt = (
         f"Source: {source}\nTitle: {item['title']}\nLink: {item.get('url')}\n"
         f"Numbers from the source: {json.dumps(item.get('meta') or {}, ensure_ascii=False)}\n"
         f"Listing text: {item.get('summary') or ''}\n"
-        f"The post will show: {media}.\n\n"
+        f"Available to show: {media}.\n\n"
         f"Material (README / article / model card, may be cut off):\n{context.get('text') or '(none)'}\n\nWrite every field."
     )
     data = _call("write", config.WRITER_MODEL, TECH_SYSTEM, prompt, TECH_SCHEMA,
