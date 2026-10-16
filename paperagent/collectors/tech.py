@@ -304,53 +304,111 @@ def _github_readme(full: str):
     return "", f"{RAW}/{full}/HEAD/"
 
 
+_GH_REPO = re.compile(r"^https?://(?:www\.)?github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?(?:[/?#].*)?$")
+_HF_PAGE = re.compile(r"^https?://huggingface\.co/(spaces/)?([\w.-]+/[\w.-]+)(?:[/?#].*)?$")
+_NOT_REPO = {"orgs", "topics", "trending", "collections", "sponsors", "marketplace", "features", "about", "settings", "login"}
+
+
+def github_repo(url: str):
+    """'owner/repo' for a GitHub repository link, else None."""
+    m = _GH_REPO.match(url or "")
+    return f"{m.group(1)}/{m.group(2)}" if m and m.group(1).lower() not in _NOT_REPO else None
+
+
+def _from_github(full: str):
+    readme, base = _github_readme(full)
+    base = base.rsplit("/", 1)[0] + "/"
+    images, videos = media_candidates(readme, base)
+    images.append(f"https://opengraph.githubassets.com/1/{full}")
+    return readme[:CONTEXT_CHARS], images, videos, clip_notes(readme, base, videos)
+
+
+def _from_hf(page_url: str, space: bool, rid: str):
+    base = page_url.rstrip("/") + "/resolve/main/"
+    card = http_get(page_url.rstrip("/") + "/raw/main/README.md", retries=1, timeout=30).text
+    images, videos = media_candidates(card, base)
+    images.append(f"https://cdn-thumbnails.huggingface.co/social-thumbnails/{'spaces/' if space else ''}{rid}.png")
+    return re.sub(r"^---.*?---\s*", "", card, flags=re.S)[:CONTEXT_CHARS], images, videos, clip_notes(card, base, videos)
+
+
+def _from_article(page_url: str):
+    html = http_get(page_url, retries=1, timeout=30).text
+    body, tags = _page_text(html)
+    images, videos = [], []
+    for key in ("og:image", "twitter:image"):
+        if tags.get(key):
+            images.append(urljoin(page_url, tags[key]))
+    for key in ("og:video", "og:video:url"):
+        if tags.get(key) and urlparse(tags[key]).path.lower().endswith((".mp4", ".webm", ".gif")):
+            videos.append(urljoin(page_url, tags[key]))
+    more, clips = media_candidates(html, page_url)
+    images += [u for u in more if u not in images][:4]
+    videos += [u for u in clips if u not in videos][:2]
+    return body, images, videos, clip_notes(html, page_url, videos)
+
+
+def read_source(url: str):
+    """(text, images, videos, clip notes) of whatever a link points to: a GitHub
+    repository is read through its README, a Hugging Face model/Space through its
+    card, anything else as an article page."""
+    full = github_repo(url)
+    if full:
+        return _from_github(full)
+    m = _HF_PAGE.match(url or "")
+    if m and m.group(2).split("/")[0] not in ("docs", "blog", "papers", "datasets", "learn"):
+        return _from_hf(url.split("?")[0].split("#")[0], bool(m.group(1)), m.group(2))
+    return _from_article(url)
+
+
+def geeknews_origin(html: str):
+    """(original link, the poster's Korean summary) of a GeekNews topic page. The
+    original is the title link at the top of the page; GeekNews itself only has
+    a short summary, no pictures or clips."""
+    soup = BeautifulSoup(html, "lxml")
+    origin = None
+    for sel in (".topictitle a[href]", ".topic_title a[href]", "div.topictitle > a", "h1 a[href]", "a.ud[href]"):
+        el = soup.select_one(sel)
+        if el and el.get("href", "").startswith("http") and "news.hada.io" not in el["href"]:
+            origin = el["href"]
+            break
+    body = soup.select_one("#topic_contents") or soup.select_one(".topic_contents") or soup.select_one("#topic_content")
+    if not origin:  # the first outside link above the summary
+        stop = body.sourceline if body is not None and body.sourceline else None
+        for a in soup.select("a[href^='http']"):
+            if "hada.io" in a["href"] or (stop and a.sourceline and a.sourceline > stop):
+                continue
+            origin = a["href"]
+            break
+    return origin, body.get_text("\n", strip=True) if body is not None else ""
+
+
 def fetch_context(item: dict) -> dict:
     """{text, images, videos, clip_notes} for writing the post: what the project or
     article says, the pictures/clips it shows (best first) and the text next to
-    each clip (to judge whether it shows what the post is about)."""
+    each clip (to judge whether it shows what the post is about).
+
+    GeekNews and Hacker News only point somewhere else, so the original is read:
+    the GeekNews topic page names it at the top (item["url"] is set to it)."""
     src, meta = item["source"], item.get("meta") or {}
     text, images, videos, notes = "", [], [], {}
     try:
         if src == "github":
-            readme, base = _github_readme(item["title"])
-            text = readme[:CONTEXT_CHARS]
-            images, videos = media_candidates(readme, base.rsplit("/", 1)[0] + "/")
-            notes = clip_notes(readme, base.rsplit("/", 1)[0] + "/", videos)
-            images.append(f"https://opengraph.githubassets.com/1/{item['title']}")
+            text, images, videos, notes = _from_github(item["title"])
         elif src == "hf":
-            kind = meta.get("kind", "model")
-            base = item["url"] + "/resolve/main/"
-            card = http_get(item["url"] + "/raw/main/README.md", retries=1, timeout=30).text
-            text = re.sub(r"^---.*?---\s*", "", card, flags=re.S)[:CONTEXT_CHARS]
-            images, videos = media_candidates(card, base)
-            notes = clip_notes(card, base, videos)
-            images.append(f"https://cdn-thumbnails.huggingface.co/social-thumbnails/{'spaces/' if kind == 'space' else ''}{item['title']}.png")
+            text, images, videos, notes = _from_hf(item["url"], meta.get("kind") == "space", item["title"])
         else:
             pieces = [item.get("summary") or ""]
             if src == "geeknews" and meta.get("discussion"):
-                topic_html = http_get(meta["discussion"], retries=1, timeout=30).text
-                soup = BeautifulSoup(topic_html, "lxml")
-                body = soup.select_one("#topic_contents") or soup.select_one(".topic_contents")
-                if body:
-                    pieces.append(body.get_text("\n", strip=True))
-                origin = soup.select_one(".topictitle a[href^='http']")
-                if origin and "news.hada.io" not in origin["href"]:
-                    item["url"] = origin["href"]
+                origin, summary = geeknews_origin(http_get(meta["discussion"], retries=1, timeout=30).text)
+                if summary:
+                    pieces.append(f"GeekNews 요약:\n{summary}")
+                if origin:
+                    item["url"] = origin
+                    meta["origin"] = origin
             page_url = item.get("url") or ""
             if page_url.startswith("http") and "news.ycombinator.com" not in page_url and "news.hada.io" not in page_url:
-                html = http_get(page_url, retries=1, timeout=30).text
-                body, tags = _page_text(html)
-                pieces.append(body)
-                for key in ("og:image", "twitter:image"):
-                    if tags.get(key):
-                        images.append(urljoin(page_url, tags[key]))
-                for key in ("og:video", "og:video:url"):
-                    if tags.get(key) and urlparse(tags[key]).path.lower().endswith((".mp4", ".webm", ".gif")):
-                        videos.append(urljoin(page_url, tags[key]))
-                more, clips = media_candidates(html, page_url)
-                images += [u for u in more if u not in images][:4]
-                videos += [u for u in clips if u not in videos][:2]
-                notes.update(clip_notes(html, page_url, videos))
+                body, images, videos, notes = read_source(page_url)
+                pieces.append(f"원문 ({page_url}):\n{body}")
             text = "\n\n".join(p for p in pieces if p)[:CONTEXT_CHARS]
     except Exception as exc:  # write from what the listing said
         log.warning("context for %s failed: %s", item["uid"], exc)

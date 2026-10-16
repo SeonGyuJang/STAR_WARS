@@ -207,16 +207,29 @@ def test_tech_settings_and_manual_pick(fresh_db):
     db.insert_tech({"uid": "hn:5", "source": "hn", "title": "Skipped but good", "url": "https://x", "meta": {}})
     tid = db.get_tech_by_uid("hn:5")["id"]
     db.update_tech(tid, status="skipped", interest=5, interest_reason="애매함")
-    assert "Skipped but good" in c.get("/tech").get_data(as_text=True)  # the admin can still pick it
+    queue = c.get("/queue?kind=tech").get_data(as_text=True)
+    assert "Skipped but good" in queue and "흥미도 미달" in queue and 'class="on"><span class="sdot s-tech">' in queue
+    assert "Skipped but good" not in c.get("/tech").get_data(as_text=True)  # the list shows finished posts only
+
+    # pick it for the next run: it goes first in the plan
+    c.post("/queue/tech", data={"_csrf": token, "item_id": str(tid), "when": "next"})
+    assert db.get_tech(tid)["status"] == "screened" and db.get_tech(tid)["priority"] == 1
+    plan = c.get("/queue?kind=tech").get_data(as_text=True)
+    assert plan.index("다음 실행에서 만들 소식") < plan.index("Skipped but good") and "직접 선택" in plan
+    # set it aside again
+    c.post("/queue/tech", data={"_csrf": token, "item_id": str(tid), "when": "skip"})
+    assert db.get_tech(tid)["status"] == "skipped" and db.get_tech(tid)["priority"] == -1
+    # make it now
     with mock.patch.object(pipeline, "run_in_background", return_value=True) as bg, \
             mock.patch("paperagent.agent.api_status", return_value={"ok": True}):
-        c.post("/tech/run", data={"_csrf": token, "item_id": str(tid)})
+        c.post("/queue/tech", data={"_csrf": token, "item_id": str(tid), "when": "now"})
     assert bg.call_args.kwargs == {"tech_only": True, "tech_ids": [tid]}
 
     visitor = app.test_client()
     visitor.environ_base["REMOTE_ADDR"] = "10.0.0.9"
-    assert "Skipped but good" not in visitor.get("/tech").get_data(as_text=True)
-    assert visitor.post("/tech/run", data={"_csrf": token}).status_code in (302, 400)
+    page = visitor.get("/queue?kind=tech").get_data(as_text=True)
+    assert "Skipped but good" in page and 'name="item_id"' not in page  # visitors see the queue, not the controls
+    assert visitor.post("/queue/tech", data={"_csrf": token, "item_id": str(tid)}).status_code in (302, 400)
 
 
 def test_context_from_readme_and_article():
@@ -273,3 +286,44 @@ def test_demo_clip_only_when_it_shows_the_post(tmp_path):
     slides, _ = cardnews.tech_slides(item, review, media, tmp_path)
     media_slide = next(s for s in slides if s["kind"] == "media")
     assert "video" not in media_slide and media_slide["figure"]  # a still from the clip instead
+
+
+GEEKNEWS_TOPIC = """<html><body><div class="topic">
+<div class="topictitle"><a href="https://github.com/facebookresearch/hoot" class="ud"><h1>오픈소스 음성 비서 Hoot 공개</h1></a>
+<span class="topicurl">(github.com/facebookresearch)</span></div>
+<div class="topicinfo">10 points by xguru 2시간전</div>
+<div id="topic_contents"><ul><li>로컬에서 도는 음성 비서</li><li>MIT 라이선스</li></ul></div>
+</div><a href="https://example.com/ad">광고</a></body></html>"""
+
+
+def test_geeknews_reads_the_original_it_points_to():
+    """GeekNews has only a short summary: the original (here a GitHub repo) is read for text, pictures and clips."""
+    readme = "# Hoot\nA local voice assistant.\n![screen](docs/screen.png)\n## Demo\nTalking to it:\n![demo](docs/demo.gif)"
+
+    def fake(url, **kw):
+        if url == "https://news.hada.io/topic?id=23456":
+            return Resp(text=GEEKNEWS_TOPIC)
+        if url == "https://raw.githubusercontent.com/facebookresearch/hoot/HEAD/README.md":
+            return Resp(text=readme)
+        raise RuntimeError(f"unexpected {url}")
+
+    item = {"uid": "geeknews:23456", "source": "geeknews", "title": "오픈소스 음성 비서 Hoot 공개",
+            "url": "https://news.hada.io/topic?id=23456", "summary": "로컬 음성 비서",
+            "meta": {"discussion": "https://news.hada.io/topic?id=23456"}}
+    with mock.patch.object(tech, "http_get", side_effect=fake):
+        ctx = tech.fetch_context(item)
+    assert item["url"] == "https://github.com/facebookresearch/hoot"  # the original, not the GeekNews page
+    assert "GeekNews 요약" in ctx["text"] and "MIT 라이선스" in ctx["text"] and "A local voice assistant" in ctx["text"]
+    assert ctx["images"][0] == "https://raw.githubusercontent.com/facebookresearch/hoot/HEAD/docs/screen.png"
+    assert ctx["videos"] == ["https://raw.githubusercontent.com/facebookresearch/hoot/HEAD/docs/demo.gif"]
+    assert "Talking to it" in ctx["clip_notes"][ctx["videos"][0]]
+    from paperagent import logos
+
+    assert logos.maker_for(item)["name"] == "Meta"  # the repository's organisation
+
+
+def test_geeknews_origin_without_the_usual_markup():
+    html = ('<html><body><nav><a href="https://news.hada.io/">GeekNews</a></nav><h2>제목</h2>'
+            '<p><a href="https://blog.example.com/post">원문</a></p><div id="topic_contents">요약</div>'
+            '<footer><a href="https://twitter.com/x">x</a></footer></body></html>')
+    assert tech.geeknews_origin(html) == ("https://blog.example.com/post", "요약")

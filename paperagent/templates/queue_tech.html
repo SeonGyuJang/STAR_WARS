@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, sbadge with context %}
+{% block title %}대기열 · 테크 소식 · {{ site_name }}{% endblock %}
+{% block content %}
+<section class="page-head"><div>
+  <h1>대기열</h1>
+  <p>GitHub Trending, Hacker News, GeekNews, Hugging Face에서 모은 소식은 모두 흥미도(0~10)를 판단합니다. 기준({{ settings.tech_min_interest }}점) 이상은
+     다음 실행 때 흥미도 순으로 {{ settings.tech_per_run }}개씩 카드뉴스로 만들고, 기준 미만은 <b>흥미도 미달</b>로 남겨 둡니다.{% if is_admin %} 미달 소식도 골라서 만들 수 있어요.{% endif %}</p>
+  {% set kind = 'tech' %}{% include "_queue_switch.html" %}
+</div></section>
+
+<section class="runbar card {{ 'running' if run else '' }}">
+  {% if run %}
+    <div class="rb-main"><span class="dot"></span><div><b>지금 실행 중</b>
+      <span class="muted small">{{ run.started_at | kst('%H:%M') }} 시작 · {{ {'collect': '논문 수집', 'screen': '관련도 판단', 'read': '정독·리뷰', 'trending': '트렌드 갱신', 'tech': '테크 소식 작성'}.get(run.progress.get('phase'), '준비') }} 단계</span></div></div>
+    <div class="rb-act">
+      <button type="button" class="btn ghost sm" data-console-open>진행 상황 보기</button>
+      {% if is_admin %}<form method="post" action="{{ url_for('web.run_stop') }}" data-confirm="실행을 강제 종료할까요?">{{ csrf() }}<button class="btn sm danger-btn">강제 종료</button></form>{% endif %}
+    </div>
+  {% else %}
+    <div class="rb-main"><span class="dot idle"></span><div><b>쉬는 중</b>
+      <span class="muted small">{% if next_run %}다음 자동 실행 {{ next_run | kst('%m.%d %H:%M') }} (논문 다음에 테크 소식을 만듭니다){% else %}자동 실행은 Heroku Scheduler가 맡습니다{% endif %}</span></div></div>
+    {% if is_admin %}<div class="rb-act">
+      <button type="button" class="btn ghost sm" data-console-open>지난 실행 보기</button>
+      <form method="post" action="{{ url_for('web.tech_run') }}">{{ csrf() }}<button class="btn sm">테크 소식만 지금 만들기</button></form>
+    </div>{% endif %}
+  {% endif %}
+</section>
+
+<section class="card panel plan" id="plan">
+  <div class="panel-h"><h2>{{ '이번 실행에서 만드는 소식' if plan_running else '다음 실행에서 만들 소식' }}</h2><span>{{ plan|length }}개</span></div>
+  <p class="desc">{% if plan_running %}이 순서대로 만들고 있습니다. 끝난 소식은 바로 테크 소식에 올라갑니다.
+    {% else %}직접 고른 소식을 먼저, 그다음 흥미도 {{ settings.tech_min_interest }}점 이상 중 높은 순으로 {{ settings.tech_per_run }}개를 만듭니다.{% endif %}</p>
+  {% if plan %}
+  <form method="post" action="{{ url_for('web.queue_tech_pick') }}">{{ csrf() }}
+  <ol class="plan-list">
+    {% for t in plan %}
+    <li class="{{ t.state }}">
+      <span class="no">{{ t.order }}</span>
+      <div class="pl-body">
+        <a class="t" href="{{ url_for('web.tech_detail', item_id=t.id) }}">{{ t.title }}</a>{% if (t.priority or 0) > 0 %}<span class="tag-manual">직접 선택</span>{% endif %}
+        <div class="sub meta"><div>{% if t.source %}<span class="mi">{{ sbadge(t.source, tech_source_names.get(t.source, t.source)) }}</span>{% endif %}<span class="mi">흥미도 {{ t.interest if t.interest is not none else '-' }}</span>{% if t.interest_reason %}<span class="mi">{{ t.interest_reason }}</span>{% endif %}</div></div>
+        {% if t.summary %}<details class="abs"><summary>소개 보기</summary><p>{{ t.summary }}</p></details>{% endif %}
+      </div>
+      <span class="pl-state">{{ {'done': '완료', 'failed': '실패', 'now': '만드는 중', 'wait': '대기', 'next': ''}[t.state] }}</span>
+      {% if is_admin and t.state == 'next' %}<button class="link small" name="item_id" value="{{ t.id }}" title="이번에는 만들지 않고 흥미도 미달로 보냅니다">만들지 않기</button>{% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  <input type="hidden" name="when" value="skip">
+  </form>
+  {% else %}<p class="empty-line">만들 소식이 없습니다. 다음 실행에서 새 소식을 모으면 여기에 나타납니다.</p>{% endif %}
+</section>
+
+<nav class="tabs src-tabs" aria-label="출처">
+  <a href="{{ url_for('web.queue', kind='tech') }}" class="{{ 'on' if not source }}">모든 출처</a>
+  {% for key, s in sources.items() %}<a href="{{ url_for('web.queue', kind='tech', source=key) }}" class="{{ 'on' if source == key }}"><span class="sdot s-{{ key }}"></span>{{ s.short }} <span>{{ by_source.get(key, 0) }}</span></a>{% endfor %}
+</nav>
+
+{% set sections = [
+  ('screened', '그 밖의 만들 차례', '흥미도 기준은 넘었지만 이번 차례에 들지 못한 소식입니다. 다음 실행부터 순서대로 만듭니다.', True),
+  ('skipped', '흥미도 미달', '흥미도가 ' ~ settings.tech_min_interest ~ '점 미만이거나 직접 뺀 소식입니다. 자동으로는 만들지 않습니다.', True),
+  ('new', '흥미도 판단 전', 'Claude API를 쓸 수 있을 때 다음 실행에서 판단합니다.', True),
+  ('error', '오류', '만드는 중 오류가 난 소식입니다. 다시 만들 수 있습니다.', True),
+] %}
+<div class="side">
+{% for status, title, desc, pickable in sections if lists[status] %}
+  <section class="card panel" id="{{ status }}" data-more="5">
+    <div class="panel-h"><h2>{{ title }}</h2><span>{{ lists[status]|length }}개</span></div>
+    <p class="desc">{{ desc }}</p>
+    {% set can_pick = is_admin and pickable %}
+    <form method="post" action="{{ url_for('web.queue_tech_pick') }}">{{ csrf() }}
+      {% for t in lists[status] %}
+        <div class="trow {{ 'pick' if can_pick }}">
+          {% if can_pick %}<input type="checkbox" name="item_id" value="{{ t.id }}" aria-label="{{ t.title }} 선택">{% endif %}
+          <span class="rank">{{ t.interest if t.interest is not none else '-' }}</span>
+          <div><a class="t" href="{{ url_for('web.tech_detail', item_id=t.id) }}">{{ t.title }}</a>{% if (t.priority or 0) > 0 %}<span class="tag-manual">직접 선택</span>{% elif (t.priority or 0) < 0 %}<span class="tag-manual off">직접 제외</span>{% endif %}
+            <div class="sub meta"><div><span class="mi">{{ sbadge(t.source, tech_source_names.get(t.source, t.source)) }}</span><span class="mi">{{ t.created_at | kst('%m.%d %H:%M') }} 수집</span>{% if t.url %}<span class="mi"><a href="{{ t.url }}" target="_blank" rel="noopener">원문 ↗</a></span>{% endif %}</div></div>
+            {% if t.interest_reason %}<div class="why"><b>흥미도 판단</b>{{ t.interest_reason }}</div>{% endif %}
+            {% if t.summary %}<details class="abs"><summary>소개 보기</summary><p>{{ t.summary }}</p></details>{% endif %}
+            {% if status == 'error' and t.error %}<details class="abs"><summary>오류 보기</summary><p>{{ t.error[:400] }}</p></details>{% endif %}
+          </div>
+        </div>
+      {% endfor %}
+      {% if can_pick %}
+      <div class="pick-bar">
+        <label><input type="checkbox" data-pick-all> 전체 선택</label>
+        <span class="sp"></span>
+        {% if status != 'skipped' %}<button class="btn ghost sm" name="when" value="skip">만들지 않기</button>{% endif %}
+        <button class="btn ghost sm" name="when" value="next">다음 실행 때 먼저 만들기</button>
+        <button class="btn sm" name="when" value="now">선택한 소식 지금 만들기</button>
+      </div>
+      {% endif %}
+    </form>
+  </section>
+{% else %}
+  <div class="card empty"><h3>{{ '이 출처에서 기다리는 소식이 없습니다' if source else '기다리는 소식이 없습니다' }}</h3>
+    <p>{% if is_admin %}위의 <b>테크 소식만 지금 만들기</b>를 누르면 네 곳에서 새 소식을 모읍니다.{% else %}다음 실행 때 새 소식을 모읍니다.{% endif %}</p></div>
+{% endfor %}
+</div>
+{% endblock %}

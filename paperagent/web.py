@@ -243,17 +243,21 @@ def _slides(kind, item):
 def tech_index():
     source = request.args.get("source") if request.args.get("source") in tech_sources.SOURCES else None
     search = request.args.get("q") or None
+    sort = request.args.get("sort") if request.args.get("sort") in ("recent", "interest") else "recent"
+    days = request.args.get("days", type=int)
     page = max(request.args.get("page", 1, type=int), 1)
     per_page = 24
-    items = db.query_tech(source=source, search=search, limit=per_page + 1, offset=(page - 1) * per_page)
+    items = db.query_tech(source=source, search=search, sort=sort, days=days, limit=per_page + 1, offset=(page - 1) * per_page)
     counts = db.tech_counts()
+    settings = db.pipeline_settings()
+    since_day = db.ago_iso(days=1)
     return render_template(
         "tech.html", items=items[:per_page], has_more=len(items) > per_page, page=page,
-        filters={"source": source, "q": search or ""},
-        filter_args={k: v for k, v in {"source": source, "q": search}.items() if v},
-        counts=counts, sources=tech_sources.SOURCES, settings=db.pipeline_settings(),
-        upcoming=db.tech_by_status("screened", limit=8),
-        skipped=db.tech_by_status("skipped", limit=30) if is_admin() else [],
+        filters={"source": source, "q": search or "", "sort": sort, "days": days},
+        filter_args={k: v for k, v in {"source": source, "q": search, "sort": sort if sort != "recent" else None, "days": days}.items() if v},
+        counts=counts, sources=tech_sources.SOURCES, settings=settings,
+        today=sum(1 for t in db.query_tech(limit=200) if (t.get("reviewed_at") or "") >= since_day),
+        upcoming=db.tech_next_targets(max(settings["tech_per_run"], 5))[:5],
         next_run=scheduler.next_run(),
     )
 
@@ -333,6 +337,8 @@ def trending_view():
 
 @bp.route("/queue")
 def queue():
+    if request.args.get("kind") == "tech":
+        return tech_queue()
     settings = db.pipeline_settings()
     threshold = settings["min_relevance"]
     db.apply_threshold(threshold)
@@ -365,8 +371,74 @@ def queue():
     lists["reading"] = [p for p in lists["reading"] if p["id"] not in planned]
     return render_template("queue.html", lists=lists, threshold=threshold, source=source, plan=plan,
                            plan_running=plan_running, run=run, max_reads=settings["max_full_reads"],
-                           next_run=scheduler.next_run(),
+                           next_run=scheduler.next_run(), counts=_queue_counts(),
                            source_nav=_source_nav(("screened", "reading", "error", "skipped", "new")))
+
+
+def _queue_counts():
+    """Items waiting on each side, for the 논문 | 테크 switch."""
+    papers = db.paper_counts()
+    tech = db.tech_counts()["status"]
+    return {"paper": sum(papers.get(k, 0) for k in ("screened", "reading", "new")),
+            "tech": sum(tech.get(k, 0) for k in ("screened", "new"))}
+
+
+def tech_queue():
+    """The TECH side of the queue: what the next run will make, and everything waiting."""
+    settings = db.pipeline_settings()
+    source = request.args.get("source") if request.args.get("source") in tech_sources.SOURCES else None
+    lists = {st: db.tech_by_status(st, limit=300, source=source) for st in ("screened", "error", "skipped", "new")}
+    active = db.active_run()
+    run = db.get_run(active["id"]) if active else None
+    progress = (run or {}).get("progress") or {}
+    if run and progress.get("tech_targets"):
+        plan = []
+        for t in progress["tech_targets"]:
+            item = db.get_tech(t["id"]) or {"id": t["id"], "title": t["title"], "source": ""}
+            state = ("done" if t["id"] in progress.get("tech_done", []) else "failed" if t["id"] in progress.get("tech_failed", [])
+                     else "now" if t["id"] == progress.get("tech_current") else "wait")
+            plan.append({**item, "state": state})
+        plan_running = True
+    else:
+        plan = [{**t, "state": "next"} for t in db.tech_next_targets(settings["tech_per_run"])]
+        plan_running = False
+    for i, t in enumerate(plan, start=1):
+        t["order"] = i
+    planned = {t["id"] for t in plan}
+    if source:
+        plan = [t for t in plan if t.get("source") == source]
+    lists["screened"] = [t for t in lists["screened"] if t["id"] not in planned]
+    by_source = {}
+    for st in ("screened", "error", "skipped", "new"):
+        for t in db.tech_by_status(st, limit=1000):
+            by_source[t["source"]] = by_source.get(t["source"], 0) + 1
+    return render_template("queue_tech.html", lists=lists, plan=plan, plan_running=plan_running, run=run,
+                           settings=settings, source=source, sources=tech_sources.SOURCES, by_source=by_source,
+                           next_run=scheduler.next_run(), counts=_queue_counts())
+
+
+@bp.route("/queue/tech", methods=["POST"])
+@admin_required
+def queue_tech_pick():
+    """Make picked TECH items now, put them first for the next run, or set them aside."""
+    ids = [int(i) for i in request.form.getlist("item_id") if i.isdigit()]
+    back = url_for("web.queue", kind="tech")
+    if not ids:
+        flash("만들 소식을 하나 이상 선택해 주세요.", "warn")
+        return redirect(back)
+    when = request.form.get("when")
+    if when == "skip":
+        flash(f"{db.skip_tech(ids)}개를 만들지 않기로 했습니다. '흥미도 미달'에서 언제든 다시 고를 수 있어요.", "ok")
+        return redirect(back)
+    n = db.queue_tech(ids)
+    if when == "now" and _api_ready_or_flash():
+        if pipeline.run_in_background("manual", tech_only=True, tech_ids=ids):
+            flash(f"선택한 {n}개로 테크 카드뉴스를 만들기 시작했습니다. 오른쪽 위에서 진행 상황을 볼 수 있어요.", "ok")
+        else:
+            flash(f"다른 실행이 진행 중이라 {n}개를 맨 앞에 넣었습니다. 다음 실행 때 가장 먼저 만듭니다.", "warn")
+    else:
+        flash(f"{n}개를 맨 앞에 넣었습니다. 다음 실행 때 가장 먼저 만듭니다.", "ok")
+    return redirect(back)
 
 
 def _api_ready_or_flash() -> bool:

@@ -496,10 +496,22 @@ def make_tech_media(tmp: Path):
     return banner_path, gif_path
 
 
+TECH_QUEUED = [
+    ("hn:demo-1", "hn", "Show HN: A spreadsheet that writes its own formulas (demo)", "screened", 8.0,
+     "누구나 써 볼 수 있는 AI 도구라 관심이 높음", {"points": 412, "comments": 133}),
+    ("geeknews:demo-2", "geeknews", "브라우저에서 바로 도는 오픈소스 음성 인식 (데모)", "screened", 7.5,
+     "설치 없이 써 볼 수 있어 일반 독자도 흥미로움", {}),
+    ("hf:model/demo/tiny-vision (demo)", "hf", "demo/tiny-vision", "skipped", 5.5,
+     "작은 개선이라 일반 독자에게는 설명이 어려움", {"likes": 210, "downloads": 9000}),
+    ("github:demo/dotfiles-sync", "github", "demo/dotfiles-sync", "new", None, None, {"stars": 640, "stars_today": 88}),
+]
+
+
 def clear_tech():
+    uids = [TECH_UID] + [q[0] for q in TECH_QUEUED]
     with db.engine().begin() as conn:
-        ids = [r[0] for r in conn.execute(select(db.tech_items.c.id).where(db.tech_items.c.uid == TECH_UID))]
-        conn.execute(delete(db.tech_items).where(db.tech_items.c.uid == TECH_UID))
+        ids = [r[0] for r in conn.execute(select(db.tech_items.c.id).where(db.tech_items.c.uid.in_(uids)))]
+        conn.execute(delete(db.tech_items).where(db.tech_items.c.uid.in_(uids)))
     for iid in ids:
         storage.delete_prefix(f"tech/{iid}/")
     return len(ids)
@@ -522,4 +534,8 @@ def seed_tech(render_cards=True):
         cards, videos = cardnews.render_tech_and_store(db.get_tech(iid), review)
     db.update_tech(iid, status="done", review=review, card_paths=cards, card_videos=videos, cost_usd=0.0,
                    reviewed_at=db.now_iso())
+    for uid, source, title, status, interest, reason, meta in TECH_QUEUED:
+        db.insert_tech({"uid": uid, "source": source, "title": title, "url": "https://example.com/demo",
+                        "summary": "가상의 데모 소식입니다.", "meta": meta})
+        db.update_tech(db.get_tech_by_uid(uid)["id"], status=status, interest=interest, interest_reason=reason)
     return iid

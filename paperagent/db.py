@@ -102,6 +102,8 @@ tech_items = Table(
     Column("interest", Float),
     Column("interest_reason", Text),
     Column("status", String(20), nullable=False, default="new", index=True),
+    # > 0 when an admin picked it to be made next; -1 when an admin set it aside
+    Column("priority", Integer, default=0),
     Column("review", Text),
     Column("card_paths", Text, nullable=False, default="[]"),
     Column("card_videos", Text),
@@ -803,25 +805,28 @@ def get_tech_by_uid(uid: str):
 
 
 def tech_by_status(status: str, limit: int = 200, source=None):
-    """Items in a state; screened ones best first, the rest newest first."""
+    """Items in a state; hand-picked ones first, then by interest (newest first among equals)."""
     q = select(tech_items).where(tech_items.c.status == status)
     if source:
         q = q.where(tech_items.c.source == source)
-    order = (tech_items.c.interest.desc().nulls_last(), tech_items.c.created_at.desc()) if status == "screened" \
-        else (tech_items.c.created_at.desc(),)
+    order = (func.coalesce(tech_items.c.priority, 0).desc(), tech_items.c.interest.desc().nulls_last(), tech_items.c.created_at.desc())
     with engine().connect() as conn:
         return _rows(conn.execute(q.order_by(*order).limit(limit)))
 
 
-def query_tech(source=None, search=None, limit=24, offset=0):
-    """Finished tech posts, newest first."""
+def query_tech(source=None, search=None, limit=24, offset=0, sort="recent", days=None):
+    """Finished tech posts: newest first, or the most interesting first (sort="interest")."""
+    made = func.coalesce(tech_items.c.reviewed_at, tech_items.c.updated_at)
     q = select(tech_items).where(tech_items.c.status == "done")
     if source:
         q = q.where(tech_items.c.source == source)
     if search:
         pat = f"%{search}%"
         q = q.where(tech_items.c.title.ilike(pat) | tech_items.c.summary.ilike(pat) | tech_items.c.review.ilike(pat))
-    q = q.order_by(func.coalesce(tech_items.c.reviewed_at, tech_items.c.updated_at).desc()).limit(limit).offset(offset)
+    if days:
+        q = q.where(made >= ago_iso(days=int(days)))
+    order = (tech_items.c.interest.desc().nulls_last(), made.desc()) if sort == "interest" else (made.desc(),)
+    q = q.order_by(*order).limit(limit).offset(offset)
     with engine().connect() as conn:
         return _rows(conn.execute(q))
 
@@ -833,3 +838,26 @@ def tech_counts():
         by_source = dict(conn.execute(select(tech_items.c.source, func.count()).where(tech_items.c.status == "done")
                                       .group_by(tech_items.c.source)).all())
     return {"status": by_status, "done_by_source": by_source}
+
+
+def tech_next_targets(n: int):
+    """What the next run will make: hand-picked items first, then the most interesting."""
+    return tech_by_status("screened", limit=max(n, 0)) if n > 0 else []
+
+
+def queue_tech(item_ids, priority: int = 1) -> int:
+    """Hand-pick items to be made next (also ones under the interest bar)."""
+    if not item_ids:
+        return 0
+    with engine().begin() as conn:
+        return conn.execute(update(tech_items).where(tech_items.c.id.in_(list(item_ids)), tech_items.c.status != "done")
+                            .values(status="screened", priority=priority, updated_at=now_iso())).rowcount
+
+
+def skip_tech(item_ids) -> int:
+    """Set items aside: they are not made unless picked again."""
+    if not item_ids:
+        return 0
+    with engine().begin() as conn:
+        return conn.execute(update(tech_items).where(tech_items.c.id.in_(list(item_ids)), tech_items.c.status != "done")
+                            .values(status="skipped", priority=-1, updated_at=now_iso())).rowcount

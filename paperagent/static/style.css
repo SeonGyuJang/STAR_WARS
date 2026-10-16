@@ -691,3 +691,12 @@ body.lb-open { overflow: hidden; }
   .lb-stage { padding: 0 8px 16px; }
   .lb-btn { width: 40px; height: 40px; font-size: 22px; top: auto; bottom: 22px; transform: none; }
 }
+
+/* ---------- queue: 논문 | 테크 switch ---------- */
+.seg { display: inline-flex; gap: 4px; margin-top: 16px; padding: 4px; border-radius: 10px; background: var(--well); }
+.seg a { display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px; border-radius: 7px; font-size: 14px; font-weight: 600; color: var(--body); }
+.seg a span:last-child { font-size: 12.5px; font-weight: 500; color: var(--mute); }
+.seg a.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
+.src-tabs { margin: 0 0 14px; border-bottom: 1px solid var(--line); }
+.kw-vlist li.off { opacity: .55; }
+.kw-vlist .t .sbadge { vertical-align: 0; }

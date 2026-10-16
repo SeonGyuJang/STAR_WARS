@@ -113,8 +113,8 @@ def process_item(item: dict, say=log.info) -> tuple[bool, float]:
     try:
         stage("download")
         context = sources.fetch_context(item)
-        if item.get("url") != db.get_tech(iid).get("url"):  # GeekNews: the original article
-            db.update_tech(iid, url=item["url"])
+        if item.get("url") != db.get_tech(iid).get("url"):  # GeekNews: the original it points to
+            db.update_tech(iid, url=item["url"], meta=item.get("meta"))
         media = fetch_media(iid, context, say)
         if media.get("video"):
             context["clip"] = {"url": media["video_url"], "near": media.get("video_note", "")}
@@ -131,7 +131,7 @@ def process_item(item: dict, say=log.info) -> tuple[bool, float]:
             say(f"  rendered {len(cards)} cards" + (f" + {len(videos)} video" if videos else ""))
         except Exception as exc:
             say(f"  card rendering failed: {exc}")
-        db.update_tech(iid, status="done", review=review, card_paths=cards, card_videos=videos,
+        db.update_tech(iid, status="done", review=review, card_paths=cards, card_videos=videos, priority=0,
                        cost_usd=meter.total_usd, reviewed_at=db.now_iso(), error=None)
         say(f"  written · ${meter.total_usd:.3f}")
         return True, meter.total_usd
@@ -164,14 +164,18 @@ def run_stage(settings, say=log.info, meter=None, item_ids=None) -> dict:
         targets = [t for t in (db.get_tech(i) for i in item_ids) if t]
     else:
         stats.update(collect_and_screen(settings, say, meter))
-        targets = db.tech_by_status("screened", limit=settings["tech_per_run"])
-    if hasattr(say, "update"):
-        say.update(phase="tech", stage="테크 소식 작성 중",
-                   tech_targets=[{"id": t["id"], "title": t["title"]} for t in targets])
+        targets = db.tech_next_targets(settings["tech_per_run"])
+    update = getattr(say, "update", lambda **kw: None)
+    done, failed = [], []
+    update(phase="tech", stage="테크 소식 작성 중", tech_targets=[{"id": t["id"], "title": t["title"]} for t in targets],
+           tech_done=done, tech_failed=failed, tech_current=None)
     for t in targets:
+        update(tech_current=t["id"])
         ok, cost = process_item(t, say)
+        (done if ok else failed).append(t["id"])
         stats["tech_done" if ok else "tech_failed"] += 1
         stats["tech_cost_usd"] += cost
+        update(tech_done=done, tech_failed=failed, tech_current=None)
     return stats
 
 
