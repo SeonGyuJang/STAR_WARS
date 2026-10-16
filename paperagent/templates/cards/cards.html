@@ -216,6 +216,7 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
 .outro .claim { margin: 88px 72px 0; font-size: 54px; line-height: 1.32; font-weight: 700; letter-spacing: -0.035em; }
 .outro .cta { margin: 30px 72px 0; font-size: 31px; line-height: 1.6; color: #a3a3a3; }
 .outro .cta b { color: #fff; font-weight: 600; }
+.outro .cta.handle { margin-top: 1.6em; }
 .outro .cta em { font-style: normal; color: #fff; font-weight: 600; }
 .outro .bottom { border-top-color: #2a2a2a; color: #6b6b6b; }
 .outro .bottom b { color: #a3a3a3; }
@@ -390,7 +391,8 @@ h2 { flex: none; margin-top: calc(22px * var(--k)); font-size: calc(76px * var(-
     {% for initial, rest in acronym[4:] %}<div style="grid-column: 2; grid-row: {{ loop.index }}"><b>{{ initial }}</b>{{ rest }}</div>{% endfor %}
   </div>
   <p class="claim">{{ theme.claim | th }}</p>
-  <p class="cta">원문 링크와 전체 리뷰는 <b>프로필 링크</b>에서 볼 수 있어요.<br>논문은 <em>PAPER</em>, 테크 소식은 <em>TECH</em>로 올라옵니다. <b>{{ handle }}</b></p>
+  <p class="cta">원문 링크와 전체 리뷰는 <b>프로필 링크</b>에서 볼 수 있어요.<br>논문은 <em>PAPER</em>, 테크 소식은 <em>TECH</em>로 올라옵니다.</p>
+  <p class="cta handle"><b>{{ handle }}</b></p>
   <div style="flex: 1"></div>
   {{ bottom() }}
 </section>
