@@ -236,36 +236,6 @@ document.querySelectorAll("[data-pick-all]").forEach((box) => {
   });
 });
 
-// Instagram mark: the checkbox left of a card. Checked -> the box goes away and the
-// card turns green. Undoing it is done from the 인스타에 올린 논문 tab.
-document.querySelectorAll("form[data-ig]").forEach((form) => {
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    form.classList.add("busy");
-    try {
-      const r = await fetch(form.action, { method: "POST", body: new FormData(form), headers: { Accept: "application/json" } });
-      if (!r.ok) throw new Error(r.status);
-      const s = await r.json();
-      const item = form.closest(".pitem");
-      if (item && s.posted) {
-        form.classList.add("gone");
-        setTimeout(() => form.remove(), 260);
-        item.classList.add("posted");
-        const ribbon = item.querySelector(".ig-ribbon");
-        ribbon.querySelector("[data-ig-date]").textContent = `· ${s.label}`;
-        ribbon.hidden = false;
-      } else {
-        location.reload(); // e.g. on the paper page
-      }
-      document.querySelectorAll("[data-ig-count]").forEach((el) => (el.textContent = s.counts[el.dataset.igCount]));
-    } catch {
-      form.submit(); // fall back to a normal post
-    } finally {
-      form.classList.remove("busy");
-    }
-  });
-});
-
 // After an undo, the paper is shown (and briefly highlighted) on the main list
 (() => {
   const hl = new URLSearchParams(location.search).get("hl");
@@ -299,60 +269,3 @@ document.querySelectorAll("[data-upload]").forEach((form) => {
   form.addEventListener("submit", () => { btn.disabled = true; btn.textContent = "올리는 중…"; });
 });
 
-// "인스타에 바로 올리기": post through the API in the background and follow it
-document.querySelectorAll("[data-ig-pub]").forEach((box) => {
-  const form = box.querySelector("[data-ig-pub-form]");
-  const msg = box.querySelector("[data-ig-pub-msg]");
-  let timer = null;
-
-  const show = (s) => {
-    box.dataset.state = s.status || "";
-    form.hidden = s.status === "publishing" || s.status === "posted";
-    form.querySelector("button").textContent = s.status === "error" ? "다시 시도" : "인스타에 바로 올리기";
-    msg.replaceChildren();
-    if (s.status === "publishing") {
-      const sp = document.createElement("span"); sp.className = "spin";
-      msg.append(sp, "인스타그램에 올리는 중…");
-    } else if (s.status === "posted") {
-      const a = document.createElement("a");
-      a.href = s.permalink || "#"; a.target = "_blank"; a.rel = "noopener"; a.textContent = "게시 완료 · 인스타에서 보기 ↗";
-      msg.append(a);
-      const item = box.closest(".pitem");
-      if (item) { // the list card turns green, like a manual check
-        item.classList.add("posted");
-        item.querySelector(".ig-check")?.remove();
-        const ribbon = item.querySelector(".ig-ribbon");
-        if (ribbon) ribbon.hidden = false;
-      }
-    } else if (s.status === "error") {
-      const e = document.createElement("span"); e.className = "err"; e.textContent = s.error || "게시하지 못했습니다";
-      msg.append(e);
-    }
-  };
-
-  const poll = () => {
-    clearInterval(timer);
-    timer = setInterval(async () => {
-      try {
-        const s = await (await fetch(box.dataset.statusUrl, { headers: { Accept: "application/json" } })).json();
-        show(s);
-        if (s.status !== "publishing") clearInterval(timer);
-      } catch { /* try again */ }
-    }, 3000);
-  };
-
-  form.addEventListener("submit", async (e) => {
-    if (e.defaultPrevented) return; // the confirm dialog was cancelled
-    e.preventDefault();
-    show({ status: "publishing" });
-    try {
-      const r = await fetch(form.action, { method: "POST", body: new FormData(form), headers: { Accept: "application/json" } });
-      const s = await r.json();
-      if (!s.ok) return show({ status: "error", error: s.error });
-      poll();
-    } catch {
-      show({ status: "error", error: "서버에 연결하지 못했습니다" });
-    }
-  });
-  if (box.dataset.state === "publishing") poll();
-});

@@ -11,28 +11,3 @@
   {% if cats %}<optgroup label="arXiv 분야">{% for s in cats %}<option value="{{ s.id }}" {{ 'selected' if current and current.id == s.id }}>{{ s.name }} ({{ s.count }})</option>{% endfor %}</optgroup>{% endif %}
 </select>
 {% endmacro %}
-{% macro ig_check(p) %}
-<form method="post" action="{{ url_for('web.toggle_instagram', paper_id=p.id) }}" class="ig-check" data-ig>
-  <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="posted" value="1">
-  <button type="submit" aria-label="인스타 업로드 완료로 표시: {{ (p.review or {}).title_ko or p.title }}" title="인스타에 올렸다면 체크하세요"><span></span></button>
-</form>
-{% endmacro %}
-{% macro ig_cancel(p) %}
-<form method="post" action="{{ url_for('web.toggle_instagram', paper_id=p.id) }}" class="inline" data-confirm="인스타 업로드 표시를 취소할까요? 이 논문은 다시 업로드 전 목록으로 돌아갑니다.">
-  <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="posted" value="0"><input type="hidden" name="back" value="main">
-  <button class="link small ig-cancel">업로드 취소</button>
-</form>
-{% endmacro %}
-{# post the card news to Instagram through the API; shows progress and the result #}
-{% macro ig_publish(p, compact=False) %}{% set st = p.instagram_status %}
-<div class="ig-pub {{ 'compact' if compact }}" data-ig-pub data-status-url="{{ url_for('web.instagram_status', paper_id=p.id) }}" data-state="{{ st or '' }}">
-  <form method="post" action="{{ url_for('web.instagram_publish', paper_id=p.id) }}" data-ig-pub-form {{ 'hidden' if st in ('publishing', 'posted') }}
-        data-confirm="카드뉴스 {{ (p.card_paths or [])|length }}장과 캡션으로 인스타그램에 게시할까요? 게시 후에는 인스타그램 앱에서만 지울 수 있습니다.">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-    <button class="btn {{ 'sm ghost' if compact else 'sm' }} ig-btn">{{ '다시 시도' if st == 'error' else '인스타에 바로 올리기' }}</button>
-  </form>
-  <span class="ig-pub-state" data-ig-pub-msg>{% if st == 'publishing' %}<span class="spin" aria-hidden="true"></span>인스타그램에 올리는 중…
-    {% elif st == 'posted' and p.instagram_permalink %}<a href="{{ p.instagram_permalink }}" target="_blank" rel="noopener">인스타에서 보기 ↗</a>
-    {% elif st == 'error' %}<span class="err">{{ p.instagram_error }}</span>{% endif %}</span>
-</div>
-{% endmacro %}

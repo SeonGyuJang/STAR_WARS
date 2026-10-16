@@ -71,13 +71,6 @@ papers = Table(
     Column("cost_usd", Float),
     # when the review finished (what "최신순" on the dashboard follows)
     Column("reviewed_at", String(32), index=True),
-    # when the admin marked the card news as posted on Instagram (None = not yet)
-    Column("instagram_posted_at", String(32)),
-    # posting through the API: publishing / posted / error, and what Instagram returned
-    Column("instagram_status", String(20)),
-    Column("instagram_error", Text),
-    Column("instagram_media_id", String(64)),
-    Column("instagram_permalink", Text),
     # > 0 when an admin picked the paper by hand (read first, even if below the relevance threshold);
     # -1 when an admin set it aside (stays under 관련도 미달 whatever its relevance)
     Column("priority", Integer, default=0),
@@ -409,22 +402,6 @@ def insert_paper(p: dict) -> bool:
         return result.first() is not None
 
 
-def set_instagram_posted(paper_id: int, posted: bool):
-    """Mark (or unmark) a paper's card news as posted on Instagram. Returns the new time or None."""
-    when = now_iso() if posted else None
-    with engine().begin() as conn:
-        conn.execute(update(papers).where(papers.c.id == paper_id).values(instagram_posted_at=when))
-    return when
-
-
-def instagram_counts():
-    with engine().connect() as conn:
-        posted = conn.execute(select(func.count()).select_from(papers)
-                              .where(papers.c.status == "done", papers.c.instagram_posted_at.is_not(None))).scalar()
-        total = conn.execute(select(func.count()).select_from(papers).where(papers.c.status == "done")).scalar()
-    return {"posted": posted, "pending": total - posted}
-
-
 def set_citation_count(paper_id: int, count: int):
     """Citation refreshes touch every reviewed paper each run; they are not edits,
     so updated_at stays as it was."""
@@ -493,7 +470,6 @@ _LATEST = func.coalesce(papers.c.reviewed_at, papers.c.created_at)
 
 _ORDERS = {
     "recent": (_LATEST.desc(), papers.c.id.desc()),
-    "posted": (papers.c.instagram_posted_at.desc(), _LATEST.desc()),
     "score": (papers.c.score_overall.desc(), _LATEST.desc()),
     "relevance": (func.coalesce(papers.c.priority, 0).desc(), papers.c.relevance.desc(), papers.c.created_at.desc()),
 }
@@ -553,13 +529,8 @@ def keyword_counts():
     return counts
 
 
-def query_papers(status="done", keyword=None, search=None, sort="recent", days=None, limit=60, offset=0, source=None,
-                 instagram=None):
+def query_papers(status="done", keyword=None, search=None, sort="recent", days=None, limit=60, offset=0, source=None):
     q = select(papers).where(papers.c.status == status)
-    if instagram == "posted":
-        q = q.where(papers.c.instagram_posted_at.is_not(None))
-    elif instagram == "pending":
-        q = q.where(papers.c.instagram_posted_at.is_(None))
     if source:
         q = q.where(source_filter(source))
     if keyword:

@@ -414,48 +414,18 @@ def test_old_reviews_get_their_real_review_time(fresh_db):
     assert db.get_paper(a)["updated_at"] == before and db.get_paper(a)["citation_count"] == 12
 
 
-def test_instagram_posted_mark_and_list(fresh_db):
-    import re as _re
-
+def test_no_instagram_features_left(fresh_db):
+    """Posting to Instagram was removed; the caption and ZIP stay for manual posting."""
     from paperagent import create_app, db
 
-    for uid, title in (("arxiv:p1", "Posted paper"), ("arxiv:p2", "Not posted paper")):
-        db.insert_paper({"uid": uid, "source_kind": "arxiv", "title": title})
-        db.update_paper(db.get_paper_by_uid(uid)["id"], status="done", score_overall=7, reviewed_at=db.now_iso())
+    db.insert_paper({"uid": "arxiv:p1", "source_kind": "arxiv", "title": "A paper"})
     pid = db.get_paper_by_uid("arxiv:p1")["id"]
+    db.update_paper(pid, status="done", score_overall=7, reviewed_at=db.now_iso())
     app = create_app(start_scheduler=False)
     admin = app.test_client()
     admin.environ_base["REMOTE_ADDR"] = "127.0.0.1"
-    token = _re.search(r'name="csrf-token" content="([^"]+)"', admin.get("/").get_data(as_text=True)).group(1)
-    assert "인스타 업로드 완료" in admin.get("/").get_data(as_text=True)  # the button, for the admin
-
-    # the page's script posts with Accept: application/json and updates in place
-    r = admin.post(f"/paper/{pid}/instagram", data={"_csrf": token, "posted": "1"}, headers={"Accept": "application/json"})
-    assert r.get_json()["posted"] is True and r.get_json()["counts"] == {"posted": 1, "pending": 1}
-    assert db.get_paper(pid)["instagram_posted_at"]
-
-    posted = admin.get("/?ig=posted").get_data(as_text=True)
-    assert "Posted paper" in posted and "Not posted paper" not in posted
-    pending = admin.get("/?ig=pending").get_data(as_text=True)
-    assert "Not posted paper" in pending and "Posted paper" not in pending
-
-    # visitors see the posted list and a badge, but not the button or the 'not yet' list
-    visitor = app.test_client()
-    visitor.environ_base["REMOTE_ADDR"] = "10.0.0.9"
-    html = visitor.get("/?ig=posted").get_data(as_text=True)
-    assert "Posted paper" in html and "인스타 게시" in html and "아직 안 올림" not in html and "data-ig>" not in html
-    assert "Not posted paper" in visitor.get("/?ig=pending").get_data(as_text=True)  # ignored -> everything
-    assert visitor.post(f"/paper/{pid}/instagram", data={"_csrf": token}).status_code in (302, 400)  # refused
-    assert db.get_paper(pid)["instagram_posted_at"]
-
-    # posted cards are green with no checkbox; the undo button is only on the posted tab
-    main = admin.get("/").get_data(as_text=True)
-    card = main[main.index(f'id="p-{pid}"'):main.index("</article>", main.index(f'id="p-{pid}"'))]
-    assert 'class="pitem posted"' in main and "data-ig>" not in card and "업로드 취소" not in card
-    assert "업로드 취소" in posted
-    # undoing it sends the admin back to the main list, at that paper
-    r = admin.post(f"/paper/{pid}/instagram", data={"_csrf": token, "posted": "0", "back": "main"})
-    assert r.status_code == 302 and r.headers["Location"].endswith(f"/?hl={pid}#p-{pid}")
-    assert db.get_paper(pid)["instagram_posted_at"] is None
-    main = admin.get(f"/?hl={pid}").get_data(as_text=True)
-    assert 'class="pitem posted"' not in main and "인스타 업로드를 취소했습니다" in main
+    for path in ("/", f"/paper/{pid}", "/settings"):
+        html = admin.get(path).get_data(as_text=True)
+        assert "인스타 업로드" not in html and "인스타그램 연결" not in html and "data-ig" not in html
+    assert admin.post(f"/paper/{pid}/instagram").status_code in (400, 404, 405)
+    assert "instagram_posted_at" not in db.get_paper(pid)

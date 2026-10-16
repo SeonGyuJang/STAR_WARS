@@ -19,20 +19,14 @@
 <div class="layout">
   <div>
     <div class="tabbar">
-    <nav class="tabs" aria-label="논문 보기">
-      <a href="{{ url_for('web.index', **(filter_args | dict_without('ig', 'sort', 'page'))) }}" class="{{ 'on' if not filters.ig }}">전체 <span>{{ counts.get('done', 0) }}</span></a>
-      <a href="{{ url_for('web.index', ig='posted', **(filter_args | dict_without('ig', 'sort', 'page'))) }}" class="{{ 'on' if filters.ig == 'posted' }}">인스타에 올린 논문 <span data-ig-count="posted">{{ ig_counts.posted }}</span></a>
-      {% if is_admin %}<a href="{{ url_for('web.index', ig='pending', **(filter_args | dict_without('ig', 'sort', 'page'))) }}" class="{{ 'on' if filters.ig == 'pending' }}">아직 안 올림 <span data-ig-count="pending">{{ ig_counts.pending }}</span></a>{% endif %}
-    </nav>
-    <select name="sort" form="filters" onchange="this.form.submit()" aria-label="정렬" class="sort-select">
-        {% if filters.ig == 'posted' %}<option value="posted" {{ 'selected' if filters.sort == 'posted' }}>최근 업로드순</option>{% endif %}
+      <h2 class="list-title">분석한 논문 <span>{{ counts.get('done', 0) }}</span></h2>
+      <select name="sort" form="filters" onchange="this.form.submit()" aria-label="정렬" class="sort-select">
         <option value="recent" {{ 'selected' if filters.sort == 'recent' }}>최근 분석순</option>
         <option value="score" {{ 'selected' if filters.sort == 'score' }}>평점순</option>
         <option value="relevance" {{ 'selected' if filters.sort == 'relevance' }}>관련도순</option>
       </select>
     </div>
     <form class="toolbar" method="get" id="filters">
-      {% if filters.ig %}<input type="hidden" name="ig" value="{{ filters.ig }}">{% endif %}
       <input type="search" name="q" value="{{ filters.q }}" placeholder="검색 ( / )" aria-label="검색" data-search>
       {{ source_select(source_nav, filters.source) }}
       <select name="keyword" onchange="this.form.submit()" aria-label="키워드">
@@ -45,19 +39,13 @@
       </select>
     </form>
 
-    {% if is_admin and papers and filters.ig != 'posted' %}<p class="list-hint"><span class="hint-box" aria-hidden="true"></span><span>인스타에 올렸다면 왼쪽 칸을 체크하세요. 취소는 <a href="{{ url_for('web.index', ig='posted') }}">인스타에 올린 논문</a> 탭에서 할 수 있어요.</span></p>{% endif %}
-    <div class="plist {{ 'admin' if is_admin }}">
+    <div class="plist">
     {% for p in papers %}{% include "_paper_card.html" %}
     {% else %}
       <div class="card empty">
         {% if filters.source %}
         <h3>이 출처에서 리뷰한 논문이 아직 없습니다</h3>
         <p>모은 논문은 관련도 순으로 읽습니다. <a href="{{ url_for('web.queue', source=filters.source.id) }}">대기열에서 이 출처의 논문</a>을 확인해 보세요.</p>
-        {% elif filters.ig == 'posted' and not (filters.q or filters.keyword or filters.days) %}
-        <h3>아직 인스타에 올린 논문이 없습니다</h3>
-        <p>{% if is_admin %}카드뉴스를 올린 뒤 논문 카드의 <b>인스타 업로드 완료</b>를 누르면 여기에 모입니다.{% else %}인스타에 소개한 논문이 이곳에 모입니다.{% endif %}</p>
-        {% elif filters.ig == 'pending' and not (filters.q or filters.keyword or filters.days) %}
-        <h3>모든 논문을 인스타에 올렸습니다</h3>
         {% elif filters.q or filters.keyword or filters.days %}
         <h3>조건에 맞는 논문이 없습니다</h3>
         <p>검색어나 필터를 바꿔 보세요.</p>
