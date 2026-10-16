@@ -419,11 +419,14 @@ function fit(slide) {
   const f = slide.querySelector(".figure");
   if (f) {
     const kind = slide.classList.contains("media") ? "media" : slide.classList.contains("cover") ? "cover" : "other";
-    const need = MIN_FIGURE[kind] || 300;
+    const need = MIN_FIGURE[kind] || 280;
     let kk = k;
     const gap = () => 36 * kk;
     while (room() - gap() < need && kk > Math.max(0.74, k - 0.16)) { kk = +(kk - 0.02).toFixed(2); setK(kk); }
-    const avail = room() - gap();
+    // keep clear space between the figure and what follows it (the score
+    // box or the footnotes), so the two never touch or overlap
+    const after = f.nextElementSibling && f.nextElementSibling.offsetParent !== null ? 28 * kk : 0;
+    const avail = room() - gap() - after;
     if (avail >= need) {
       slide.classList.remove("measuring");
       const img = f.querySelector("img");
@@ -440,6 +443,23 @@ function fit(slide) {
     }
   }
   slide.classList.remove("measuring");
+  guard(slide, main);
+}
+// Last check on the finished layout: if the figure still runs into the next
+// block or the slide overflows, shrink the figure; drop it if it gets too small.
+function guard(slide, main) {
+  const f = slide.querySelector(".figure");
+  if (!f) return;
+  const k = +getComputedStyle(slide).getPropertyValue("--k") || 1;
+  const next = f.nextElementSibling;
+  const fb = f.getBoundingClientRect().bottom;
+  const limit = next ? next.getBoundingClientRect().top - 24 * k : main.getBoundingClientRect().bottom;
+  const overflow = Math.max(0, ...[...main.children].map((c) => c.offsetTop + c.offsetHeight)) - main.clientHeight;
+  const cut = Math.ceil(Math.max(fb - limit, overflow, 0));
+  if (!cut) return;
+  const h = f.offsetHeight - cut - 2;
+  if (h >= 260) f.style.height = h + "px";
+  else f.remove();
 }
 document.fonts.ready.then(() => {
   const imgs = [...document.images].map((im) => im.complete ? null : new Promise((r) => { im.onload = im.onerror = r; }));

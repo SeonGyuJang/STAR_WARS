@@ -121,3 +121,33 @@ def test_closing_slide_video(sample_pdf, tmp_path):
     from PIL import ImageChops, ImageStat
 
     assert ImageStat.Stat(ImageChops.difference(frames[1], still)).mean[0] < 3
+
+
+def test_figures_never_touch_the_footnotes(sample_pdf, tmp_path):
+    """Crowded slides (long footnotes next to a figure): the figure keeps clear of the notes and nothing spills out."""
+    from playwright.sync_api import sync_playwright
+
+    figs = pdfs.extract_figures(sample_pdf, tmp_path / "figs")
+    review = copy.deepcopy(demo.SAMPLE_REVIEW)
+    card = review["card"]
+    card["terms"] = card["terms"] + [{"term": "Self-Consistency", "meaning": "같은 질문에 답을 여러 번 만든 뒤 가장 많이 나온 답을 고르는 방식"}]
+    card["results"]["highlight_label"] = "MATH* 정답률 상승, 파라미터* 7B, Self-Consistency* 대비"
+    card["problem"]["figure_number"], card["results"]["figure_number"] = 2, 0
+    card["problem"]["points"] = [p + " 파라미터* 기준으로도 같습니다." for p in card["problem"]["points"]]
+    path = tmp_path / "cards.html"
+    path.write_text(cardnews.build_html({"uid": "arxiv:1", "title": "T", "url": "https://x"}, review, figs), encoding="utf-8")
+    with sync_playwright() as p:
+        browser = cardnews._launch(p)
+        page = browser.new_page(viewport={"width": 1080, "height": 1350})
+        page.goto(path.as_uri())
+        page.wait_for_selector("body[data-ready='1']")
+        rows = page.evaluate("""() => [...document.querySelectorAll('.slide')].map((s) => {
+            const r = (e) => e && e.getBoundingClientRect(), f = s.querySelector('.figure'), m = s.querySelector('.main');
+            const next = f && f.nextElementSibling;
+            return {gap: f && next ? r(next).top - r(f).bottom : null,
+                    spill: m ? Math.max(0, ...[...m.children].map((c) => r(c).bottom)) - r(m).bottom : 0};
+        })""")
+        browser.close()
+    assert any(r["gap"] is not None for r in rows)
+    assert all(r["gap"] is None or r["gap"] >= 18 for r in rows), rows
+    assert all(r["spill"] <= 1 for r in rows), rows
