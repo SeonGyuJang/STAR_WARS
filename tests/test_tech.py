@@ -407,12 +407,15 @@ def test_tech_read_again(fresh_db):
 
     db.insert_tech({"uid": "hn:7", "source": "hn", "title": "A post", "url": "https://x", "meta": {}})
     tid = db.get_tech_by_uid("hn:7")["id"]
-    db.update_tech(tid, status="done", review={"title_ko": "글", "one_liner": "한 줄", "summary": "요약", "caption": "c"})
+    db.update_tech(tid, status="done", review={"title_ko": "글", "one_liner": "한 줄", "summary": "요약", "caption": "c",
+                                               "_read": [{"label": "원문 (https://x)", "chars": 12345}],
+                                               "_unread": [{"label": "GitHub 저장소 acme/x", "why": "HTTP 404 (raw.githubusercontent.com)"}]})
     app = create_app(start_scheduler=False)
     c = app.test_client()
     c.environ_base["REMOTE_ADDR"] = "127.0.0.1"
     page = c.get(f"/tech/{tid}").get_data(as_text=True)
     assert "다시 읽기" in page and f"/tech/{tid}/reprocess" in page
+    assert "읽은 자료" in page and "12,345자" in page and "못 읽음 · HTTP 404" in page  # what the post was written from
     token = re.search(r'name="csrf-token" content="([^"]+)"', page).group(1)
     with mock.patch.object(pipeline, "run_in_background", return_value=True) as bg, \
             mock.patch("paperagent.agent.api_status", return_value={"ok": True}):
@@ -421,3 +424,119 @@ def test_tech_read_again(fresh_db):
     visitor = app.test_client()
     visitor.environ_base["REMOTE_ADDR"] = "10.0.0.9"
     assert "다시 읽기" not in visitor.get(f"/tech/{tid}").get_data(as_text=True)
+
+
+def _hn_api(story_id, kids, comments):
+    """Fake Hacker News API answers for a story and its comments."""
+    pages = {f"{tech.HN_API}/item/{story_id}.json": {"id": story_id, "kids": kids}}
+    pages.update({f"{tech.HN_API}/item/{k}.json": c for k, c in zip(kids, comments)})
+    return pages
+
+
+def test_hacker_news_reads_the_linked_article_not_just_the_listing():
+    """Hacker News only carries a title: the article it links to is read (asked for like a browser, since many sites turn
+    bots away), even when the story sits in plain <div>s among menus and teasers; readers' comments come after it."""
+    article = """<html><head><meta property="og:image" content="/og.png"></head><body>
+      <div class="menu"><a href="/">Home</a> <a href="/blog">Blog</a></div>
+      <div class="teaser"><p>Subscribe to our newsletter for weekly updates.</p></div>
+      <div class="wrap"><div class="story">
+        <h2>Why we rewrote our database in Rust</h2>
+        <p>Last year our write path spent 40 percent of its time in garbage collection pauses under load.</p>
+        <p>After the rewrite, p99 latency fell from 180 ms to 12 ms on the same hardware, and memory use halved.</p>
+        <p>The migration took nine months and was done table by table behind a feature flag.</p>
+        <ul><li>Zero downtime during the cut-over</li><li>Open-sourced the storage engine as quarry</li></ul>
+      </div></div><footer>© 2026</footer></body></html>"""
+    seen = {}
+    api = _hn_api(4242, [1, 2, 3], [{"text": "Nine months seems fast for a rewrite."}, {"deleted": True},
+                                     {"text": "Did they benchmark against tuning the GC first?"}])
+
+    def fake(url, **kw):
+        if url == "https://db.example.com/rust-rewrite":
+            seen["headers"] = kw.get("headers")
+            return Resp(text=article, headers={"Content-Type": "text/html"})
+        if url in api:
+            return Resp(json=api[url])
+        raise RuntimeError(f"unexpected {url}")
+
+    item = {"uid": "hn:4242", "source": "hn", "title": "Why we rewrote our database in Rust",
+            "url": "https://db.example.com/rust-rewrite", "summary": "", "meta": {"points": 640}}
+    with mock.patch.object(tech, "http_get", side_effect=fake):
+        ctx = tech.fetch_context(item)
+    text = ctx["text"]
+    assert "Mozilla/5.0" in seen["headers"]["User-Agent"]
+    assert "p99 latency fell from 180 ms to 12 ms" in text and "table by table" in text and "Zero downtime" in text
+    assert "Subscribe to our newsletter" not in text and "Home" not in text.split("Hacker News 댓글")[0]
+    assert text.index("원문 (https://db.example.com/rust-rewrite)") < text.index("Hacker News 댓글")
+    assert "tuning the GC" in text and ctx["images"][0] == "https://db.example.com/og.png"
+    assert ctx["original_chars"] > 300 and ctx["failed"] == []
+    assert [label for label, _ in ctx["read"]] == ["원문 (https://db.example.com/rust-rewrite)", "Hacker News 댓글"]
+
+
+def test_original_drawn_by_javascript_is_rendered():
+    shell = '<html><body><div id="root"></div><script src="/app.js"></script></body></html>'
+    rendered = "<html><body><main>" + "".join(f"<p>Paragraph {i}: the new compiler cuts build times by half.</p>" for i in range(30)) \
+               + "</main></body></html>"
+
+    def fake(url, **kw):
+        if url == "https://app.example.com/post":
+            return Resp(text=shell, headers={"Content-Type": "text/html"})
+        raise RuntimeError("no comments")
+
+    item = {"uid": "hn:5", "source": "hn", "title": "New compiler", "url": "https://app.example.com/post", "summary": "", "meta": {}}
+    with mock.patch.object(tech, "http_get", side_effect=fake), \
+            mock.patch.object(tech, "render_page", return_value=rendered) as render:
+        ctx = tech.fetch_context(item)
+    render.assert_called_once_with("https://app.example.com/post")
+    assert "cuts build times by half" in ctx["text"] and ctx["original_chars"] > 800
+
+
+def test_original_that_is_a_pdf():
+    import fitz
+
+    doc = fitz.open()
+    doc.new_page().insert_text((72, 72), "Quarry: a storage engine. Code at https://github.com/acme/quarry")
+    pdf = doc.tobytes()
+
+    def fake(url, **kw):
+        if url == "https://acme.example.com/paper.pdf":
+            return Resp(content=pdf, headers={"Content-Type": "application/pdf"})
+        if url == "https://raw.githubusercontent.com/acme/quarry/HEAD/README.md":
+            return Resp(text="# quarry\nEmbedded storage engine.")
+        raise RuntimeError("down")
+
+    item = {"uid": "hn:6", "source": "hn", "title": "Quarry", "url": "https://acme.example.com/paper.pdf", "summary": "", "meta": {}}
+    with mock.patch.object(tech, "http_get", side_effect=fake):
+        ctx = tech.fetch_context(item)
+    assert "Quarry: a storage engine" in ctx["text"] and "Embedded storage engine" in ctx["text"]
+    assert item["meta"]["repo"] == "https://github.com/acme/quarry"
+
+
+def test_no_hollow_post_when_the_original_cannot_be_read(fresh_db):
+    """An original that cannot be read leaves only the title and comments: the item is marked with the reason
+    (to read again later) instead of becoming card news about nothing."""
+    from paperagent import agent, technews
+
+    db = fresh_db
+    db.insert_tech({"uid": "hn:8", "source": "hn", "title": "Blocked article", "url": "https://blocked.example.com/a", "meta": {}})
+    item = db.get_tech_by_uid("hn:8")
+    api = _hn_api(8, [1], [{"text": "Interesting."}])
+
+    def fake(url, **kw):
+        if url in api:
+            return Resp(json=api[url])
+        import requests
+
+        resp = mock.Mock(status_code=403, url=url)
+        raise requests.HTTPError("403", response=resp)
+
+    lines = []
+    with mock.patch.object(tech, "http_get", side_effect=fake), mock.patch.object(agent, "write_tech") as write:
+        ok, _ = technews.process_item(item, say=lines.append)
+    assert not ok and not write.called
+    after = db.get_tech(item["id"])
+    assert after["status"] == "error" and "원문을 읽지 못해" in after["error"] and "HTTP 403 (blocked.example.com)" in after["error"]
+    assert any("could not read 원문" in line for line in lines)
+    # GeekNews still has its Korean summary when the original is down: that is enough to write from
+    assert technews.enough_material({"original_chars": 0, "read": [("GeekNews 요약", 900)]})
+    assert not technews.enough_material({"original_chars": 0, "read": [("Hacker News 댓글", 5000)]})
+    assert technews.enough_material({"original_chars": None, "read": []})  # Ask HN: the post itself is the material

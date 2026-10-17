@@ -284,19 +284,103 @@ def media_candidates(text: str, base: str):
     return images, videos
 
 
+_TEXT_TAGS = ["h1", "h2", "h3", "h4", "p", "li", "pre", "blockquote", "figcaption", "td"]
+
+
+def _content_root(soup):
+    """The element holding the article: <article>/<main> when they hold most of
+    the page's paragraphs, else the block whose paragraphs add up to the most
+    text (many blogs and news sites wrap the story in plain <div>s)."""
+    total = sum(len(p.get_text(" ", strip=True)) for p in soup.find_all("p")) or 1
+    for sel in ("article", "main", "[role=main]", "#content", ".post-content", ".entry-content", ".article-body"):
+        for el in soup.select(sel):
+            if sum(len(p.get_text(" ", strip=True)) for p in el.find_all("p")) >= total * 0.5:
+                return el
+    scores = {}
+    for p in soup.find_all("p"):
+        n = len(p.get_text(" ", strip=True))
+        if n < 25:
+            continue
+        for depth, el in enumerate((p.parent, p.parent.parent if p.parent else None)):
+            if el is not None:
+                scores[id(el)] = (scores.get(id(el), (0, el))[0] + n / (depth + 1), el)
+    if scores:
+        return max(scores.values(), key=lambda v: v[0])[1]
+    return soup.body or soup
+
+
 def _page_text(html: str, limit: int = CONTEXT_CHARS):
     soup = BeautifulSoup(html, "lxml")
     meta = {}
-    for prop in ("og:image", "twitter:image", "og:description", "description", "og:video", "og:video:url"):
+    for prop in ("og:image", "twitter:image", "og:description", "description", "og:title", "og:video", "og:video:url"):
         tag = soup.find("meta", attrs={"property": prop}) or soup.find("meta", attrs={"name": prop})
         if tag and tag.get("content"):
             meta[prop] = tag["content"]
-    for t in soup(["script", "style", "nav", "header", "footer", "aside", "form", "noscript"]):
+    for t in soup(["script", "style", "nav", "header", "footer", "aside", "form", "noscript", "svg", "iframe"]):
         t.decompose()
-    root = soup.find("article") or soup.find("main") or soup.body or soup
-    paras = [p.get_text(" ", strip=True) for p in root.find_all(["h1", "h2", "h3", "p", "li", "pre"])]
-    text = "\n".join(p for p in paras if len(p) > 1)
+    root = _content_root(soup)
+    seen, paras = set(), []
+    for el in root.find_all(_TEXT_TAGS):
+        if el.find_parent(_TEXT_TAGS) is not None:  # a <p> inside an <li>: counted once
+            continue
+        t = el.get_text(" ", strip=True)
+        if len(t) > 1 and t not in seen:
+            seen.add(t)
+            paras.append(t)
+    text = "\n".join(paras)
+    if len(text) < 200:  # no paragraphs to speak of: all the visible text
+        body = soup.body or soup
+        text = re.sub(r"\n\s*\n+", "\n", body.get_text("\n", strip=True))
+    desc = meta.get("og:description") or meta.get("description") or ""
+    if desc and desc[:80] not in text:
+        text = f"{desc}\n{text}"
     return text[:limit], meta
+
+
+# Many sites turn away an unknown bot (403) or serve it a stub; an article is
+# read the way a browser asks for it.
+BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/pdf;q=0.8,*/*;q=0.7",
+    "Accept-Language": "en-US,en;q=0.9,ko;q=0.8",
+}
+MIN_ARTICLE_CHARS = 800  # less than this from the HTML: the page is drawn by JavaScript, render it
+
+
+def _pdf_text(data: bytes, limit: int = CONTEXT_CHARS) -> str:
+    import fitz
+
+    with fitz.open(stream=data, filetype="pdf") as doc:
+        out = []
+        for page in doc:
+            out.append(page.get_text())
+            if sum(map(len, out)) > limit:
+                break
+    return re.sub(r"[ \t]+", " ", "\n".join(out)).strip()[:limit]
+
+
+def render_page(url: str):
+    """The page's HTML after its JavaScript has run (headless Chromium), or None."""
+    try:
+        from playwright.sync_api import sync_playwright
+
+        from .. import cardnews
+
+        with sync_playwright() as p:
+            browser = cardnews._launch(p)
+            try:
+                page = browser.new_page(user_agent=BROWSER_HEADERS["User-Agent"], locale="en-US")
+                page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                try:
+                    page.wait_for_load_state("networkidle", timeout=8000)
+                except Exception:
+                    pass
+                return page.content()
+            finally:
+                browser.close()
+    except Exception as exc:
+        log.warning("rendering %s failed: %s", url, exc)
+        return None
 
 
 def _github_readme(full: str):
@@ -361,8 +445,19 @@ def repo_links(html: str, skip=()) -> list[str]:
 
 
 def _from_article(page_url: str):
-    html = http_get(page_url, retries=1, timeout=30).text
+    resp = http_get(page_url, retries=2, timeout=30, headers=BROWSER_HEADERS)
+    ctype = (resp.headers.get("Content-Type") or "").lower()
+    if "pdf" in ctype or resp.content[:5] == b"%PDF-":  # papers, reports, slides
+        text = _pdf_text(resp.content)
+        return text, [], [], {}, repo_links_text(text)
+    html = resp.text
     body, tags = _page_text(html)
+    if len(body) < MIN_ARTICLE_CHARS:
+        rendered = render_page(page_url)
+        if rendered:
+            again, more_tags = _page_text(rendered)
+            if len(again) > len(body):
+                html, body, tags = rendered, again, {**tags, **more_tags}
     images, videos = [], []
     for key in ("og:image", "twitter:image"):
         if tags.get(key):
@@ -374,6 +469,25 @@ def _from_article(page_url: str):
     images += [u for u in more if u not in images][:6]
     videos += [u for u in clips if u not in videos][:2]
     return body, images, videos, clip_notes(html, page_url, videos), repo_links(html)
+
+
+def hn_comments(story_id, limit: int = 8, chars: int = 6000) -> str:
+    """The top comments of a Hacker News story: what readers add or question."""
+    it = http_get(f"{HN_API}/item/{story_id}.json", retries=1, timeout=20).json() or {}
+    out, total = [], 0
+    for kid in (it.get("kids") or [])[:limit * 2]:
+        try:
+            c = http_get(f"{HN_API}/item/{kid}.json", retries=1, timeout=20).json() or {}
+        except Exception:
+            continue
+        if c.get("deleted") or c.get("dead") or not c.get("text"):
+            continue
+        t = BeautifulSoup(c["text"], "lxml").get_text(" ", strip=True)
+        out.append(f"- {t[:900]}")
+        total += len(out[-1])
+        if len(out) >= limit or total > chars:
+            break
+    return "\n".join(out)[:chars]
 
 
 def read_source(url: str):
@@ -425,14 +539,23 @@ def fetch_context(item: dict) -> dict:
     names it at the top; item["url"] becomes that original), and, when that
     original is an article about a project, the project's GitHub repository
     (README, pictures, demo clips) - from the article's links or the GeekNews
-    summary's. The writer gets the news summary and all the originals together."""
-    src, meta = item["source"], item.get("meta") or {}
+    summary's. The writer gets the news summary and all the originals together.
+
+    Also returns what was read ("read": [(label, chars)]), what could not be
+    ("failed": [(label, reason)]) and how much of the original came through
+    ("original_chars"), so a post is never written from the news listing alone
+    without anyone noticing."""
+    item["meta"] = item.get("meta") or {}  # the original and repository found are noted on the item
+    src, meta = item["source"], item["meta"]
     pieces, images, videos, notes = [], [], [], {}
+    read, failed = [], []
+    original = {"chars": None}  # None: the item has no separate original
 
     def add(label, got):
         body, imgs, clips, clip_notes_ = got[:4]
         if body:
             pieces.append(f"{label}:\n{body}")
+            read.append((label, len(body)))
         images.extend(u for u in imgs if u not in images)
         videos.extend(u for u in clips if u not in videos)
         notes.update(clip_notes_)
@@ -449,6 +572,7 @@ def fetch_context(item: dict) -> dict:
                     meta["repo"] = f"https://github.com/{linked[0]}"
                 except Exception as exc:
                     log.warning("repository %s of %s failed: %s", linked[0], item["uid"], exc)
+                    failed.append((f"GitHub 저장소 {linked[0]}", short_error(exc)))
         else:
             name = SOURCES.get(src, {}).get("name", src)
             if item.get("summary"):
@@ -459,6 +583,7 @@ def fetch_context(item: dict) -> dict:
                 origin, summary = geeknews_origin(topic_html)
                 if summary:
                     pieces.append(f"GeekNews 요약 (원문을 소개한 글):\n{summary}")
+                    read.append(("GeekNews 요약", len(summary)))
                     body = BeautifulSoup(topic_html, "lxml").select_one("#topic_contents, .topic_contents, #topic_content")
                     linked += repo_links(body.decode() if body is not None else "")
                 if origin:
@@ -466,10 +591,14 @@ def fetch_context(item: dict) -> dict:
                     meta["origin"] = origin
             page_url = item.get("url") or ""
             if page_url.startswith("http") and "news.ycombinator.com" not in page_url and "news.hada.io" not in page_url:
+                original["chars"] = 0
                 try:
-                    linked += add(f"원문 ({page_url})", read_source(page_url))
+                    got = read_source(page_url)
+                    original["chars"] = len(got[0] or "")
+                    linked += add(f"원문 ({page_url})", got)
                 except Exception as exc:
                     log.warning("original %s of %s failed: %s", page_url, item["uid"], exc)
+                    failed.append((f"원문 {page_url}", short_error(exc)))
             # the project behind an article: its repository has the pictures and demos
             here = github_repo(page_url)
             repo = next((r for r in linked if not here or r.lower() != here.lower()), None)
@@ -479,7 +608,18 @@ def fetch_context(item: dict) -> dict:
                     meta["repo"] = f"https://github.com/{repo}"
                 except Exception as exc:
                     log.warning("repository %s of %s failed: %s", repo, item["uid"], exc)
+                    failed.append((f"GitHub 저장소 {repo}", short_error(exc)))
+            if src == "hn" and str(item.get("uid", "")).startswith("hn:"):  # readers' notes, after the original
+                try:
+                    talk = hn_comments(item["uid"].split(":", 1)[1])
+                    if talk:
+                        pieces.append(f"Hacker News 댓글 (참고용 독자 반응, 사실은 원문 우선):\n{talk}")
+                        read.append(("Hacker News 댓글", len(talk)))
+                except Exception as exc:
+                    log.warning("comments of %s failed: %s", item["uid"], short_error(exc))
     except Exception as exc:  # write from what the listing said
         log.warning("context for %s failed: %s", item["uid"], short_error(exc))
+        failed.append((SOURCES.get(src, {}).get("name", src), short_error(exc)))
     text = "\n\n".join(pieces)[:TOTAL_CHARS] or (item.get("summary") or "")
-    return {"text": text, "images": images[:8], "videos": videos[:3], "clip_notes": {u: notes.get(u, "") for u in videos[:3]}}
+    return {"text": text, "images": images[:8], "videos": videos[:3], "clip_notes": {u: notes.get(u, "") for u in videos[:3]},
+            "read": read, "failed": failed, "original_chars": original["chars"]}

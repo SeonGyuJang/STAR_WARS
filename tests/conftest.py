@@ -30,7 +30,7 @@ def no_network(monkeypatch):
     import requests
 
     from paperagent import collectors
-    from paperagent.collectors import arxiv
+    from paperagent.collectors import arxiv, tech
 
     def offline(*a, **k):
         raise requests.ConnectionError("network disabled in tests")
@@ -39,6 +39,7 @@ def no_network(monkeypatch):
     monkeypatch.setattr(collectors.time, "sleep", lambda s: None)
     monkeypatch.setattr(arxiv, "REQUEST_GAP_SECONDS", 0)
     monkeypatch.setattr(arxiv, "_busy_until", 0.0)
+    monkeypatch.setattr(tech, "render_page", lambda url: None)  # no headless browser for article pages
 
 
 @pytest.fixture(scope="session")

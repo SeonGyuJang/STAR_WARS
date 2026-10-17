@@ -696,6 +696,8 @@ Audience: people with no engineering background who are curious about technology
 - Mark unavoidable technical words with * right after the word (e.g. "API*") and define them in `terms` (at most 4).
 - The material can hold several parts: the news site's summary (GeekNews, Hacker News) and the original it points to (an article, a
   GitHub README, a model card). Read all of them; take facts, features and numbers from the original first and use the summary for context.
+  Build the post around what the original says (what was made or found, how it works, results), not around the news listing.
+- Hacker News comments, when given, are readers' reactions: use them at most for caveats or open questions, never as facts.
 - Use only facts in the material and the numbers given. Never invent features, benchmarks, prices, dates or commands. If something is unknown, leave it out.
 - Say what numbers mean (e.g. "하루 만에 GitHub 스타 2,300개 - 그만큼 많은 개발자가 관심을 표시했다는 뜻").
 - Caveats are constructive ("~는 아직 초기 단계라 보완이 필요해 보입니다").

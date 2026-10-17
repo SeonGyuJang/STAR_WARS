@@ -105,6 +105,20 @@ def fetch_media(item_id: int, context: dict, say=log.info) -> dict:
     return out
 
 
+MIN_MATERIAL_CHARS = 600
+
+
+def enough_material(context: dict) -> bool:
+    """False when a news item points at an original that could not be read and
+    nothing else of substance came through (only the listing and readers'
+    comments): such a post would say nothing."""
+    if context.get("original_chars") is None or context["original_chars"] >= 300:
+        return True
+    substance = sum(chars for label, chars in context.get("read") or []
+                    if not label.startswith(("Hacker News 댓글", "원문 (")))
+    return substance >= MIN_MATERIAL_CHARS
+
+
 def process_item(item: dict, say=log.info) -> tuple[bool, float]:
     """Write and render one TECH post. Returns (ok, cost_usd)."""
     iid = item["id"]
@@ -114,9 +128,16 @@ def process_item(item: dict, say=log.info) -> tuple[bool, float]:
     try:
         stage("download")
         context = sources.fetch_context(item)
-        read = [line.split(":")[0] for line in context["text"].split("\n\n") if line.endswith(":") is False and ":\n" in line]
-        say(f"  read {len(context['text']):,} chars from: " + (", ".join(read) or "the listing only"))
-        if item.get("url") != db.get_tech(iid).get("url"):  # GeekNews: the original it points to
+        read, failed = context.get("read") or [], context.get("failed") or []
+        say("  read: " + (", ".join(f"{label} {chars:,}자" for label, chars in read) or "the listing only"))
+        for label, why in failed:
+            say(f"  could not read {label}: {why}")
+        if not enough_material(context):
+            raise ValueError("원문을 읽지 못해 쓸 내용이 없습니다 ("
+                             + ("; ".join(f"{label}: {why}" for label, why in failed) or "원문에서 본문을 찾지 못함")
+                             + "). 뉴스 목록의 제목만으로는 카드뉴스를 만들지 않습니다. 잠시 뒤 '다시 읽기'를 눌러 주세요.")
+        saved = db.get_tech(iid)
+        if item.get("url") != saved.get("url") or item.get("meta") != saved.get("meta"):  # the original / repository found
             db.update_tech(iid, url=item["url"], meta=item.get("meta"))
         media = fetch_media(iid, context, say)
         if media.get("video"):
@@ -125,6 +146,8 @@ def process_item(item: dict, say=log.info) -> tuple[bool, float]:
         if media.get("video"):
             say("  demo clip " + ("goes on the cards" if (review.get("demo") or {}).get("use_clip") else "left out (not what the post shows)"))
         review["_cost"] = meter.summary()
+        review["_read"] = [{"label": label, "chars": chars} for label, chars in read]
+        review["_unread"] = [{"label": label, "why": why} for label, why in failed]
         db.update_tech(iid, media=media)
         item = db.get_tech(iid)
         cards, videos = [], {}
