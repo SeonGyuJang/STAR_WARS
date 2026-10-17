@@ -1,3 +1,4 @@
+import pytest
 from unittest import mock
 
 from conftest import FIXTURES
@@ -66,3 +67,59 @@ def test_openalex_falls_back_to_arxiv_pdf():
     p = openalex.work_to_paper(work)
     assert p["pdf_url"] == "https://arxiv.org/pdf/2401.00001"
     assert p["uid"] == "openalex:W9"
+
+
+ARXIV_RSS = """<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0"><channel><title>cs.CL updates on arXiv.org</title>
+<item><title>Self-Verification for Large Language Models</title><link>https://arxiv.org/abs/2610.01234</link>
+<description>arXiv:2610.01234v1 Announce Type: new
+Abstract: We study large language model reasoning with a verification loop.</description>
+<guid isPermaLink="false">oai:arXiv.org:2610.01234v1</guid><category>cs.CL</category><category>cs.AI</category>
+<pubDate>Fri, 16 Oct 2026 00:00:00 -0400</pubDate><dc:creator>Ana Kim, Ben Lee</dc:creator></item>
+<item><title>An old paper, revised</title><link>https://arxiv.org/abs/2401.00001</link>
+<description>arXiv:2401.00001v3 Announce Type: replace
+Abstract: Large language model things.</description><category>cs.CL</category>
+<pubDate>Fri, 16 Oct 2026 00:00:00 -0400</pubDate><dc:creator>X</dc:creator></item>
+</channel></rss>"""
+
+
+def test_arxiv_rss_feed():
+    papers = arxiv.parse_rss(ARXIV_RSS)
+    assert [p["uid"] for p in papers] == ["arxiv:2610.01234"]  # replacements of old papers left out
+    p = papers[0]
+    assert p["abstract"].startswith("We study large language model") and p["authors"] == ["Ana Kim", "Ben Lee"]
+    assert p["categories"] == ["cs.CL", "cs.AI"] and p["pdf_url"] == "https://arxiv.org/pdf/2610.01234"
+
+
+def test_arxiv_busy_is_retried_after_the_wait_it_asks_for():
+    import requests
+
+    def busy(status, after=None):
+        resp = mock.Mock(status_code=status, headers={"Retry-After": after} if after else {})
+        return requests.HTTPError(f"{status}", response=resp)
+
+    ok = mock.Mock(text="<feed></feed>")
+    with mock.patch.object(arxiv, "http_get", side_effect=[busy(429, "7"), busy(503), ok]) as get, \
+            mock.patch.object(arxiv.time, "sleep") as sleep:
+        arxiv.fetch_categories(["cs.CL", "cs.AI"], ["llm"])
+    assert get.call_count == 3 and [c.args[0] for c in sleep.call_args_list if c.args[0] > 1] == [7, 45]  # the wait arXiv asked for, then the 2nd default wait
+    q = get.call_args.kwargs["params"]["search_query"]
+    assert q.startswith("(cat:cs.CL OR cat:cs.AI) AND") and "all:llm" in q  # one request for both categories
+    with mock.patch.object(arxiv, "http_get", side_effect=[busy(429)] * 3), mock.patch.object(arxiv.time, "sleep"):
+        with pytest.raises(arxiv.ArxivBusy):
+            arxiv.fetch_categories(["cs.CL"], ["llm"])
+
+
+def test_collect_falls_back_to_rss_when_the_api_is_busy(fresh_db):
+    from paperagent import pipeline
+
+    log = []
+    rss = mock.Mock(text=ARXIV_RSS)
+    with mock.patch.object(pipeline.arxiv, "fetch_categories", side_effect=arxiv.ArxivBusy("arXiv API is busy (429)")), \
+            mock.patch.object(arxiv, "http_get", return_value=rss), \
+            mock.patch.object(pipeline, "resolve_journals"), \
+            mock.patch.object(pipeline.db, "list_sources", side_effect=lambda kind=None, enabled_only=False:
+                              [{"id": 1, "kind": "arxiv", "value": "cs.CL", "name": "arXiv · cs.CL", "enabled": 1}] if kind == "arxiv" else []):
+        new = pipeline.collect(["large language model"], fresh_db.pipeline_settings(), log.append)
+    assert new == 1 and fresh_db.get_paper_by_uid("arxiv:2610.01234")["source_id"] == 1
+    assert any("RSS" in line for line in log) and not any("RSS failed" in line for line in log)

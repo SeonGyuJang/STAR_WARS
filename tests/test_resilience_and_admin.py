@@ -78,7 +78,7 @@ def test_tracked_citations_need_no_claude(fresh_db):
 
 def _run_with(client_side_effect=None, key="test-key"):
     with mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": key}), \
-         mock.patch.object(pipeline.arxiv, "fetch_category", return_value=[_paper("arxiv:2610.00002")]), \
+         mock.patch.object(pipeline.arxiv, "fetch_categories", return_value=[_paper("arxiv:2610.00002")]), \
          mock.patch.object(pipeline.openalex, "resolve_source", return_value=None), \
          mock.patch.object(pipeline.trending, "refresh_all") as refresh, \
          mock.patch.object(agent, "client", side_effect=client_side_effect):

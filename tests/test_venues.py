@@ -78,7 +78,7 @@ def test_neurips_added_by_name_is_collected(fresh_db):
     say = []
     with mock.patch.object(venues.openalex, "search_sources", return_value=[]), \
          mock.patch.object(venues.arxiv, "http_get", return_value=mock.Mock(text=feed)), \
-         mock.patch.object(pipeline.arxiv, "fetch_category", return_value=[]):
+         mock.patch.object(pipeline.arxiv, "fetch_categories", return_value=[]):
         pipeline.resolve_journals(say.append)
         new = pipeline.collect(KEYWORDS, db.pipeline_settings(), say.append)
     assert new == 1

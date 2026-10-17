@@ -144,7 +144,7 @@ def _full_run(fresh_db, sample_pdf, tmp_path):
     payloads[id(agent.SCREEN_SCHEMA)] = {"results": [{"index": 0, "relevance": 9, "reason": "핵심 주제"}]}
     client = _fake_client(by_schema=payloads)
 
-    with mock.patch.object(pipeline.arxiv, "fetch_category", return_value=[_paper()]), \
+    with mock.patch.object(pipeline.arxiv, "fetch_categories", return_value=[_paper()]), \
          mock.patch.object(pipeline.openalex, "resolve_source", return_value=None), \
          mock.patch.object(pipeline.pdfs, "download_pdf", side_effect=fake_download), \
          mock.patch.object(pipeline.trending, "refresh_all"), \

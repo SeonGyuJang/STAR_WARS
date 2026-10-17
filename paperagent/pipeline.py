@@ -113,12 +113,26 @@ def resolve_journals(say):
 
 def collect(keywords, settings, say):
     new = 0
-    for src in db.list_sources(kind="arxiv", enabled_only=True):
-        try:
-            found = arxiv.fetch_category(src["value"], keywords, settings["lookback_days"], settings["max_per_source"])
+    cats = db.list_sources(kind="arxiv", enabled_only=True)
+    per_cat = {src["id"]: [] for src in cats}
+    if cats:
+        try:  # one request for every category (arXiv limits how often a server may ask)
+            found = arxiv.fetch_categories([c["value"] for c in cats], keywords, settings["lookback_days"], settings["max_per_source"])
+            for p in found:  # each paper goes to the first configured category it is in (its main one first)
+                order = [p.get("primary_category")] + list(p.get("categories") or [])
+                src = next((c for name in order for c in cats if c["value"] == name), cats[0])
+                if len(per_cat[src["id"]]) < settings["max_per_source"]:
+                    per_cat[src["id"]].append(p)
+            say(f"arXiv: {len(found)} matched in {len(cats)} categories (one request)")
         except Exception as exc:
-            say(f"arXiv {src['value']} failed: {exc}")
-            continue
+            say(f"arXiv API unavailable ({exc}); using the daily RSS feeds instead")
+            for src in cats:
+                try:
+                    per_cat[src["id"]] = arxiv.fetch_rss(src["value"], keywords, settings["lookback_days"])[: settings["max_per_source"]]
+                except Exception as rss_exc:
+                    say(f"arXiv {src['value']} RSS failed: {rss_exc}")
+    for src in cats:
+        found = per_cat[src["id"]]
         added = sum(db.insert_paper({**p, "source_id": src["id"],
                                      "source_name": f"arXiv · {p.get('primary_category') or src['value']}"}) for p in found)
         new += added
