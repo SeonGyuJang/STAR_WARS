@@ -12,8 +12,9 @@
 </select>
 {% endmacro %}
 {# the card news of a post: carousel (a video slide plays in place), downloads, caption #}
-{% macro cards_panel(slides, zip_url, caption, rerender_url=None, theme='paper') %}
+{% macro cards_panel(slides, zip_url, caption, rerender_url=None, theme='paper', rendering=False) %}
 <section class="card cards-panel {{ theme }}" id="cards">
+  {% if rendering %}<p class="rendering" data-reload="12"><span class="spin" aria-hidden="true"></span>카드뉴스를 다시 만드는 중입니다. 끝나면 자동으로 새로고침됩니다.</p>{% endif %}
   <div class="score-top"><h3>카드뉴스 {% if slides %}<span class="count">{{ slides | length }}장{% if slides | selectattr('mp4') | list %} · 영상 포함{% endif %}</span>{% endif %}</h3>
     {% if slides %}<a class="small strong" href="{{ zip_url }}">전체 받기 (ZIP)</a>{% endif %}</div>
   {% if slides %}

@@ -101,7 +101,7 @@
       <div class="relevance">관심 주제 관련도 {{ p.relevance }} · {{ p.relevance_reason }}{% if p.cost_usd is not none %}<br>리뷰 비용 ${{ '%.3f' % p.cost_usd }}{% endif %}</div>
     </section>
 
-    {{ cards_panel(slides, url_for('web.file_cards_zip', paper_id=p.id), caption, url_for('web.rerender', paper_id=p.id)) }}
+    {{ cards_panel(slides, url_for('web.file_cards_zip', paper_id=p.id), caption, url_for('web.rerender', paper_id=p.id), rendering=rendering) }}
   </aside>
 </div>
 {% endif %}

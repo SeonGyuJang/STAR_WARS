@@ -19,7 +19,7 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 
 from .. import config
-from . import http_get
+from . import http_get, short_error
 
 log = logging.getLogger(__name__)
 
@@ -190,12 +190,13 @@ def geeknews(limit: int = 15):
 # --- Hugging Face ----------------------------------------------------------------
 
 def hugging_face(limit: int = 12):
-    out = []
+    out, errors = [], []
     for kind, path in (("model", "models"), ("space", "spaces")):
         try:
             rows = http_get(f"{HF_API}/{path}", params={"sort": "trendingScore", "direction": -1, "limit": limit}, retries=2).json()
         except Exception as exc:
-            log.warning("Hugging Face %s failed: %s", path, exc)
+            log.warning("Hugging Face %s failed: %s", path, short_error(exc))
+            errors.append(exc)
             continue
         for r in rows[: limit // 2 + 1]:
             rid = r.get("id") or r.get("modelId")
@@ -208,6 +209,8 @@ def hugging_face(limit: int = 12):
                 "meta": {"kind": kind, "likes": r.get("likes"), "downloads": r.get("downloads"),
                          "task": r.get("pipeline_tag"), "sdk": r.get("sdk"), "trending": r.get("trendingScore")},
             })
+    if len(errors) == 2:  # both lists failed: report it as a failure, not as "0 items"
+        raise errors[-1]
     out.sort(key=lambda x: x["meta"].get("trending") or 0, reverse=True)
     return out[:limit]
 
@@ -227,7 +230,7 @@ def collect(sources, limit: int = 15, say=log.info):
             say(f"{SOURCES[key]['name']}: {len(items)} items")
             out.extend(items)
         except Exception as exc:
-            say(f"{SOURCES[key]['name']} failed: {exc}")
+            say(f"{SOURCES[key]['name']} failed: {short_error(exc)}")
     return out
 
 
@@ -477,6 +480,6 @@ def fetch_context(item: dict) -> dict:
                 except Exception as exc:
                     log.warning("repository %s of %s failed: %s", repo, item["uid"], exc)
     except Exception as exc:  # write from what the listing said
-        log.warning("context for %s failed: %s", item["uid"], exc)
+        log.warning("context for %s failed: %s", item["uid"], short_error(exc))
     text = "\n\n".join(pieces)[:TOTAL_CHARS] or (item.get("summary") or "")
     return {"text": text, "images": images[:8], "videos": videos[:3], "clip_notes": {u: notes.get(u, "") for u in videos[:3]}}

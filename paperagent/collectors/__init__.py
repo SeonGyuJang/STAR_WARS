@@ -1,6 +1,7 @@
 """Shared HTTP helper and keyword matching for the collectors."""
 import re
 import time
+from urllib.parse import urlparse
 
 import requests
 
@@ -28,6 +29,25 @@ def _request(method, url, retries=3, timeout=60, **kwargs):
             if attempt + 1 < retries:
                 time.sleep(3 * (2 ** attempt))
     raise last_exc
+
+
+def short_error(exc) -> str:
+    """A network failure in a few words for the run log ('HTTP 429 (export.arxiv.org)',
+    'could not connect (api.openalex.org)'), instead of a URL-long exception."""
+    resp = getattr(exc, "response", None)
+    req = getattr(exc, "request", None)
+    url = getattr(resp, "url", None) or getattr(req, "url", None) or ""
+    host = urlparse(url).netloc if isinstance(url, str) else ""
+    where = f" ({host})" if host else ""
+    status = getattr(resp, "status_code", None)
+    if isinstance(status, int):
+        return f"HTTP {status}{where}"
+    if isinstance(exc, requests.Timeout):
+        return f"timed out{where}"
+    if isinstance(exc, requests.ConnectionError):
+        return f"could not connect{where}"
+    text = re.sub(r"https?://\S+", lambda m: urlparse(m.group(0)).netloc, str(exc))
+    return text[:200]
 
 
 def http_get(url, params=None, retries=3, timeout=60, **kwargs):

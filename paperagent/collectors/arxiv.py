@@ -50,8 +50,17 @@ class ArxivBusy(RuntimeError):
     """arXiv kept answering 429/503."""
 
 
+BUSY_PAUSE_SECONDS = 600
+_busy_until = 0.0
+
+
 def api_get(params):
-    """One arXiv API request: spaced out, and retried when arXiv says it is busy."""
+    """One arXiv API request: spaced out, and retried when arXiv says it is busy.
+    After arXiv has refused all retries, further requests are skipped for 10
+    minutes instead of each waiting again (journal/conference sources ask too)."""
+    global _busy_until
+    if time.monotonic() < _busy_until:
+        raise ArxivBusy("arXiv API is busy - skipped for now (it refused the last requests)")
     waits = list(RETRY_WAITS)
     while True:
         _throttle()
@@ -62,6 +71,7 @@ def api_get(params):
             if status not in (429, 503):
                 raise
             if not waits:
+                _busy_until = time.monotonic() + BUSY_PAUSE_SECONDS
                 raise ArxivBusy(f"arXiv API is busy ({status}) - too many requests from this server") from exc
             after = (exc.response.headers or {}).get("Retry-After") if exc.response is not None else None
             wait = min(int(after), 120) if after and str(after).isdigit() else waits[0]

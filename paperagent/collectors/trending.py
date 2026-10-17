@@ -10,7 +10,7 @@ import logging
 from datetime import date, timedelta
 
 from .. import config, db
-from . import http_get, http_post, openalex
+from . import http_get, http_post, openalex, short_error
 
 log = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ def active_research(keywords, per_keyword: int = 6):
         try:
             works = openalex.search_works(kw, since, per_page=per_keyword)
         except Exception as exc:  # one keyword failing shouldn't drop the rest
-            log.warning("OpenAlex active search failed for %s: %s", kw, exc)
+            log.warning("OpenAlex active search failed for %s: %s", kw, short_error(exc))
             continue
         for w in works:
             if w["uid"] in seen:
@@ -79,7 +79,7 @@ def citation_surge(keywords, per_keyword: int = 25):
         try:
             works = openalex.search_works(kw, since, per_page=per_keyword, extra_filter="cited_by_count:>10")
         except Exception as exc:
-            log.warning("OpenAlex surge search failed for %s: %s", kw, exc)
+            log.warning("OpenAlex surge search failed for %s: %s", kw, short_error(exc))
             continue
         for w in works:
             if w["uid"] in seen:
@@ -154,4 +154,4 @@ def refresh_all(keywords, logger=log.info):
             db.save_trending(kind, data)
             logger(f"trending/{kind}: {len(data)} items")
         except Exception as exc:
-            logger(f"trending/{kind} failed: {exc}")
+            logger(f"trending/{kind} failed: {short_error(exc)}")

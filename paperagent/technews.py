@@ -183,8 +183,9 @@ def run_stage(settings, say=log.info, meter=None, item_ids=None) -> dict:
 
 
 def build_caption(item, review) -> str:
-    card_like = {"caption": review["caption"], "hashtags": review.get("hashtags")}
-    body = cardnews._HASHTAG.sub("", review["caption"].replace("\\n", "\n")).strip()
+    text = review.get("caption") or review.get("summary") or review.get("one_liner") or ""
+    card_like = {"caption": text, "hashtags": review.get("hashtags")}
+    body = cardnews._HASHTAG.sub("", text.replace("\\n", "\n")).strip()
     src = sources.SOURCES.get(item["source"], {}).get("name", item["source"])
     return (f"{body}\n\n🔗 {item.get('url') or ''}\n📡 출처: {src}\n\n"
             + " ".join(cardnews.hashtags(card_like, base=cardnews.TECH_BASE_HASHTAGS)))

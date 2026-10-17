@@ -219,7 +219,7 @@ def paper_detail(paper_id):
         caption = cardnews.build_caption(p, p["review"])
     figures = [f for f in (p.get("review") or {}).get("_figures", []) if f.get("key")]
     return render_template("paper.html", p=p, r=p.get("review") or {}, caption=caption, figures=figures,
-                           share_url=request.url, slides=_slides("paper", p))
+                           share_url=request.url, slides=_slides("paper", p), rendering=_render_state(("paper", paper_id)))
 
 
 def _slides(kind, item):
@@ -268,6 +268,7 @@ def tech_detail(item_id):
     r = t.get("review") or {}
     caption = technews.build_caption(t, r) if t["status"] == "done" and r.get("caption") else None
     return render_template("tech_item.html", t=t, r=r, caption=caption, slides=_slides("tech", t), share_url=request.url,
+                           rendering=_render_state(("tech", item_id)),
                            tiles=cardnews.tech_tiles(t), source=tech_sources.SOURCES.get(t["source"], {}))
 
 
@@ -304,11 +305,10 @@ def tech_reprocess(item_id):
 @bp.route("/tech/<int:item_id>/rerender", methods=["POST"])
 @admin_required
 def tech_rerender(item_id):
-    try:
-        technews.rerender(item_id)
-        flash("카드뉴스를 다시 만들었습니다.", "ok")
-    except Exception as exc:
-        flash(f"카드뉴스 생성 실패: {exc}", "error")
+    if not db.get_tech(item_id):
+        abort(404)
+    started = _render_in_background(("tech", item_id), technews.rerender, item_id)
+    flash("카드뉴스를 다시 만들고 있습니다. 30초~1분 뒤 자동으로 새로고침됩니다." if started else "이미 만드는 중입니다.", "ok")
     return redirect(url_for("web.tech_detail", item_id=item_id) + "#cards")
 
 
@@ -839,14 +839,48 @@ def reprocess(paper_id):
     return redirect(url_for("web.paper_detail", paper_id=paper_id))
 
 
+# Card rendering (10 slides plus the closing video) can take longer than the
+# 30 seconds Heroku's router waits for a response, so it runs in the background;
+# the page shows that it is being made and reloads itself.
+_rendering = set()
+_render_errors = {}
+_render_lock = threading.Lock()
+
+
+def _render_in_background(key, fn, item_id) -> bool:
+    with _render_lock:
+        if key in _rendering:
+            return False
+        _rendering.add(key)
+        _render_errors.pop(key, None)
+
+    def work():
+        try:
+            fn(item_id)
+        except Exception as exc:  # shown on the page next time
+            _render_errors[key] = str(exc)[:300]
+        finally:
+            _rendering.discard(key)
+
+    threading.Thread(target=work, daemon=True).start()
+    return True
+
+
+def _render_state(key):
+    """(being made now?, last error) for a post's cards; the error is shown once."""
+    err = _render_errors.pop(key, None)
+    if err:
+        flash(f"카드뉴스 생성 실패: {err}", "error")
+    return key in _rendering
+
+
 @bp.route("/paper/<int:paper_id>/rerender", methods=["POST"])
 @admin_required
 def rerender(paper_id):
-    try:
-        pipeline.rerender_cards(paper_id)
-        flash("카드뉴스를 다시 만들었습니다.", "ok")
-    except Exception as exc:
-        flash(f"카드뉴스 생성 실패: {exc}", "error")
+    if not db.get_paper(paper_id):
+        abort(404)
+    started = _render_in_background(("paper", paper_id), pipeline.rerender_cards, paper_id)
+    flash("카드뉴스를 다시 만들고 있습니다. 30초~1분 뒤 자동으로 새로고침됩니다." if started else "이미 만드는 중입니다.", "ok")
     return redirect(url_for("web.paper_detail", paper_id=paper_id) + "#cards")
 
 

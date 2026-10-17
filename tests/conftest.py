@@ -38,6 +38,7 @@ def no_network(monkeypatch):
     monkeypatch.setattr(collectors._session, "request", offline)
     monkeypatch.setattr(collectors.time, "sleep", lambda s: None)
     monkeypatch.setattr(arxiv, "REQUEST_GAP_SECONDS", 0)
+    monkeypatch.setattr(arxiv, "_busy_until", 0.0)
 
 
 @pytest.fixture(scope="session")

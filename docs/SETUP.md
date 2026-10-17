@@ -273,6 +273,7 @@ heroku pg:backups:download                                        # 내려받기
 | `400`에 credit / billing 관련 메시지 | 크레딧이나 결제 수단이 없습니다. 콘솔 결제 메뉴를 확인하세요. |
 | `429` / `rate_limit_error` | 요청이 몰렸습니다. 자동으로 재시도합니다. 자주 나오면 "한 번에 정독할 논문" 수를 줄이세요. |
 | `card rendering failed: Could not launch Chromium` | 로컬: `python -m playwright install chromium`을 다시 실행. Heroku: `heroku buildpacks` 순서(chrome-for-testing → python)를 확인한 뒤 다시 배포. |
+| `arXiv API unavailable (HTTP 429 ...)` 또는 `arXiv API is busy` | arXiv는 같은 서버에서 너무 자주 요청하면 429로 막습니다(Heroku는 여러 앱이 IP를 함께 써서 더 자주 생깁니다). 이제 한 번 실행에 arXiv 분야 전체를 **요청 1번**으로 묻고, 429가 오면 arXiv가 알려 준 시간(없으면 15초, 45초)만큼 기다렸다 다시 묻습니다. 그래도 막히면 **arXiv RSS 피드**(rss.arxiv.org)로 그날 새 논문을 대신 가져오고, 10분 동안은 arXiv API에 다시 묻지 않습니다. 저널·학회의 arXiv 검색만 이번 실행에서 건너뛰고 다음 실행에 다시 시도하니 따로 할 일은 없습니다. |
 | `arXiv ... failed: 503` | arXiv가 잠시 과부하 상태입니다. 다음 실행 때 다시 가져옵니다. |
 | 저널 논문이 모두 "초록만 읽음" | 오픈액세스 PDF가 없는 논문입니다. 정상 동작입니다. |
 | 업로드한 PDF의 제목이 이상함 | PDF 안의 정보로 제목을 추측합니다. 올릴 때 제목 칸에 직접 적으면 그 제목을 씁니다. 업로드한 PDF는 리뷰가 끝나면 서버에서 지웁니다. |

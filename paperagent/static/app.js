@@ -359,3 +359,8 @@ document.querySelectorAll("[data-upload]").forEach((form) => {
   form.addEventListener("submit", () => { btn.disabled = true; btn.textContent = "올리는 중…"; });
 });
 
+
+// Cards being re-made in the background: reload until they are done
+document.querySelectorAll("[data-reload]").forEach((el) => {
+  setTimeout(() => location.reload(), (parseInt(el.dataset.reload, 10) || 12) * 1000);
+});

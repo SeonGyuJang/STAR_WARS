@@ -349,12 +349,16 @@ def hashtags(card: dict, base=None) -> list[str]:
 
 
 def build_caption(paper, review):
-    card = review["card"]
-    body = _HASHTAG.sub("", card["caption"].replace("\\n", "\n")).strip()
+    """The Instagram caption. Works for incomplete reviews too (no card copy yet, no scores)."""
+    card = review.get("card") or {}
+    text = card.get("caption") or review.get("tldr") or review.get("one_liner") or ""
+    body = _HASHTAG.sub("", text.replace("\\n", "\n")).strip()
     link = paper.get("url") or ""
-    return (f"{body}\n\n📄 원문: {paper['title']}\n🔗 {link}\n"
-            f"⭐ 평점 {review['overall_score']}/10 (방법론 {review['methodology_score']} · 참신성 {review['novelty_score']})\n\n"
-            + " ".join(hashtags(card)))
+    score = ""
+    if review.get("overall_score") is not None:
+        score = (f"⭐ 평점 {review['overall_score']}/10 (방법론 {review.get('methodology_score', '-')} · "
+                 f"참신성 {review.get('novelty_score', '-')})\n")
+    return f"{body}\n\n📄 원문: {paper['title']}\n🔗 {link}\n{score}\n" + " ".join(hashtags(card))
 
 
 def store(prefix: str, paths, clips, caption: str):

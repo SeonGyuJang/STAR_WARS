@@ -69,7 +69,7 @@
       {% else %}<p class="small muted">출처에서 공개한 수치가 없습니다.</p>{% endif %}
       <div class="relevance">관심도 {{ t.interest }} · {{ t.interest_reason }}{% if t.cost_usd is not none %}<br>작성 비용 ${{ '%.3f' % t.cost_usd }}{% endif %}</div>
     </section>
-    {{ cards_panel(slides, url_for('web.file_tech_zip', item_id=t.id), caption, url_for('web.tech_rerender', item_id=t.id), 'tech') }}
+    {{ cards_panel(slides, url_for('web.file_tech_zip', item_id=t.id), caption, url_for('web.tech_rerender', item_id=t.id), 'tech', rendering) }}
   </aside>
 </div>
 {% endif %}

@@ -123,3 +123,28 @@ def test_collect_falls_back_to_rss_when_the_api_is_busy(fresh_db):
         new = pipeline.collect(["large language model"], fresh_db.pipeline_settings(), log.append)
     assert new == 1 and fresh_db.get_paper_by_uid("arxiv:2610.01234")["source_id"] == 1
     assert any("RSS" in line for line in log) and not any("RSS failed" in line for line in log)
+
+
+def test_once_arxiv_is_busy_the_run_stops_asking_for_a_while():
+    import requests
+
+    busy = requests.HTTPError("429", response=mock.Mock(status_code=429, headers={}))
+    with mock.patch.object(arxiv, "http_get", side_effect=[busy] * 3) as get, mock.patch.object(arxiv.time, "sleep"):
+        with pytest.raises(arxiv.ArxivBusy):
+            arxiv.fetch_categories(["cs.CL"], ["llm"])
+        with pytest.raises(arxiv.ArxivBusy):  # a journal/conference source asking right after: no new request, no waiting
+            arxiv.fetch_by_ids(["2610.01234"])
+    assert get.call_count == 3
+
+
+def test_short_error_messages():
+    import requests
+
+    from paperagent.collectors import short_error
+
+    err = requests.ConnectionError("HTTPSConnectionPool(host='api.openalex.org', port=443): Max retries exceeded with url: /works?x=1")
+    err.request = requests.Request("GET", "https://api.openalex.org/works?search=x").prepare()
+    assert short_error(err) == "could not connect (api.openalex.org)"
+    resp = requests.Response()
+    resp.status_code, resp.url = 429, "https://export.arxiv.org/api/query?search_query=very-long"
+    assert short_error(requests.HTTPError("429", response=resp)) == "HTTP 429 (export.arxiv.org)"

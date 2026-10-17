@@ -9,7 +9,7 @@ from pathlib import Path
 import anthropic
 
 from . import agent, cardnews, config, db, pdfs, storage, technews
-from .collectors import arxiv, match_keywords, openalex, trending, venues
+from .collectors import arxiv, match_keywords, openalex, short_error, trending, venues
 
 log = logging.getLogger(__name__)
 _start_lock = threading.Lock()  # makes "nothing running? then start" atomic within this process
@@ -97,7 +97,7 @@ def resolve_journals(say):
         try:
             hit = venues.best_openalex_match(known) if known else openalex.resolve_source(src["name"])
         except Exception as exc:
-            say(f"journal lookup failed for {src['name']}: {exc}")
+            say(f"journal lookup failed for {src['name']}: {short_error(exc)}")
             continue
         meta["openalex_checked"] = True
         if hit:
@@ -125,12 +125,12 @@ def collect(keywords, settings, say):
                     per_cat[src["id"]].append(p)
             say(f"arXiv: {len(found)} matched in {len(cats)} categories (one request)")
         except Exception as exc:
-            say(f"arXiv API unavailable ({exc}); using the daily RSS feeds instead")
+            say(f"arXiv API unavailable ({short_error(exc)}); using the daily RSS feeds instead")
             for src in cats:
                 try:
                     per_cat[src["id"]] = arxiv.fetch_rss(src["value"], keywords, settings["lookback_days"])[: settings["max_per_source"]]
                 except Exception as rss_exc:
-                    say(f"arXiv {src['value']} RSS failed: {rss_exc}")
+                    say(f"arXiv {src['value']} RSS failed: {short_error(rss_exc)}")
     for src in cats:
         found = per_cat[src["id"]]
         added = sum(db.insert_paper({**p, "source_id": src["id"],
@@ -147,14 +147,14 @@ def collect(keywords, settings, say):
                 found += hits
                 notes.append(f"OpenAlex {len(hits)}")
             except Exception as exc:
-                notes.append(f"OpenAlex failed: {exc}")
+                notes.append(f"OpenAlex failed: {short_error(exc)}")
         if meta["arxiv_terms"]:
             try:
                 hits = venues.fetch_arxiv(src["name"], meta["arxiv_terms"], keywords, days, settings["max_per_source"])
                 found += hits
                 notes.append(f"arXiv {len(hits)}")
             except Exception as exc:
-                notes.append(f"arXiv failed: {exc}")
+                notes.append(f"arXiv failed: {short_error(exc)}")
         if not notes:
             say(f"{src['name']}: no way to collect yet (not in OpenAlex, no arXiv names)")
             continue
