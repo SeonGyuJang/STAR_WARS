@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import csrf, sbadge with context %}
+{% from "_macros.html" import csrf, sbadge, tech_days_select with context %}
 {% block title %}테크 소식 · {{ site_name }}{% endblock %}
 {% block content %}
 <section class="hero tech">
@@ -14,7 +14,7 @@
     <div><b>{{ counts.status.get('done', 0) }}</b><span>누적 카드뉴스</span></div>
     <div><b>{{ counts.status.get('screened', 0) }}</b><span>만들 차례</span></div>
     {% if next_run %}<div><b>{{ next_run | kst('%H:%M') }}</b><span>다음 실행 · {{ next_run | kst('%m.%d') }}</span></div>{% endif %}
-    {% if is_admin %}<form method="post" action="{{ url_for('web.tech_run') }}">{{ csrf() }}<button class="btn invert" {{ 'disabled' if running }}>{{ '실행 중' if running else '지금 만들기' }}</button></form>{% endif %}
+    {% if is_admin %}<form method="post" action="{{ url_for('web.tech_run') }}" class="run-days">{{ csrf() }}{{ tech_days_select(settings) }}<button class="btn invert" {{ 'disabled' if running }}>{{ '실행 중' if running else '지금 만들기' }}</button></form>{% endif %}
   </div>
 </section>
 

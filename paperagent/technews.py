@@ -24,7 +24,9 @@ MAX_VIDEO_BYTES = 25 * 1024 * 1024
 
 def collect_and_screen(settings, say=log.info, meter=None) -> dict:
     """New items in, rated, and those below the bar set aside. AI errors propagate."""
-    items = sources.collect(settings["tech_sources"], say=say)
+    days = settings.get("tech_lookback_days", 1)
+    say(f"tech: collecting the last {days} day(s), up to {settings.get('tech_max_per_source', 15)} per source")
+    items = sources.collect(settings["tech_sources"], settings.get("tech_max_per_source", 15), say=say, days=days)
     new = sum(1 for it in items if db.insert_tech(it))
     say(f"tech: {new} new of {len(items)} items")
     pending = db.tech_by_status("new")

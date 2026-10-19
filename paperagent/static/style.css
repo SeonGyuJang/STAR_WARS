@@ -708,3 +708,7 @@ body.lb-open { overflow: hidden; }
 .read-card li span { overflow-wrap: anywhere; color: var(--ink); }
 .read-card li b { white-space: nowrap; font-weight: 600; color: var(--mute); }
 .read-card li.bad b { color: #b42318; white-space: normal; text-align: right; }
+
+.run-days { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.run-days .days-select { height: 34px; padding: 0 28px 0 10px; font-size: 13px; border-radius: 8px; max-width: 150px; }
+.hero .run-days .days-select { background-color: rgba(255,255,255,.92); color: #171717; border: 0; }

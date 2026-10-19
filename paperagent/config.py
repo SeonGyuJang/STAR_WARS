@@ -90,6 +90,8 @@ DEFAULT_MIN_RELEVANCE = _env_float("MIN_RELEVANCE", 7.0)
 # TECH card news: how many posts per run, and how interesting an item must be (0-10)
 DEFAULT_TECH_PER_RUN = _env_int("TECH_PER_RUN", 2)
 DEFAULT_TECH_MIN_INTEREST = _env_float("TECH_MIN_INTEREST", 7.0)
+DEFAULT_TECH_LOOKBACK_DAYS = _env_int("TECH_LOOKBACK_DAYS", 1)  # how far back to collect (1 = today, 7 = this week)
+DEFAULT_TECH_MAX_PER_SOURCE = _env_int("TECH_MAX_PER_SOURCE", 15)
 DEFAULT_TECH_SOURCES = [s.strip() for s in os.environ.get("TECH_SOURCES", "github,hn,geeknews,hf").split(",") if s.strip()]
 # In-process scheduler. Off by default on Heroku, where the Heroku Scheduler
 # add-on runs `python -m paperagent run --if-due` instead.

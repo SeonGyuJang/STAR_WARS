@@ -276,11 +276,14 @@ def tech_detail(item_id):
 @admin_required
 def tech_run():
     ids = [i for i in request.form.getlist("item_id", type=int) if db.get_tech(i)]
+    days = request.form.get("days", type=int)
+    days = min(max(days, 1), 30) if days else None  # this run only; empty = the setting
     if not _api_ready_or_flash():
         return redirect(request.referrer or url_for("web.tech_index"))
-    if pipeline.run_in_background("manual", tech_only=True, tech_ids=ids or None):
+    if pipeline.run_in_background("manual", tech_only=True, tech_ids=ids or None, tech_days=days):
+        span = f"최근 {days}일" if days else f"최근 {db.pipeline_settings()['tech_lookback_days']}일"
         flash(f"선택한 {len(ids)}개로 테크 카드뉴스를 만드는 중입니다." if ids else
-              "테크 소식을 모아 카드뉴스를 만드는 중입니다. 오른쪽 위 진행 상황에서 볼 수 있어요.", "ok")
+              f"{span} 테크 소식을 모아 카드뉴스를 만드는 중입니다. 오른쪽 위 진행 상황에서 볼 수 있어요.", "ok")
     else:
         flash("다른 실행이 진행 중입니다. 끝난 뒤 다시 눌러 주세요.", "warn")
     return redirect(request.referrer or url_for("web.tech_index"))
@@ -720,11 +723,15 @@ def save_tech_settings():
     try:
         per_run = min(max(int(f["tech_per_run"]), 0), 10)
         min_interest = min(max(float(f["tech_min_interest"]), 0.0), 10.0)
+        lookback = min(max(int(f.get("tech_lookback_days") or 1), 1), 30)
+        per_source = min(max(int(f.get("tech_max_per_source") or 15), 5), 100)
     except (KeyError, ValueError):
         flash("숫자를 확인해 주세요.", "error")
         return redirect(url_for("web.settings") + "#tech")
     db.set_setting("tech_per_run", per_run)
     db.set_setting("tech_min_interest", min_interest)
+    db.set_setting("tech_lookback_days", lookback)
+    db.set_setting("tech_max_per_source", per_source)
     db.set_setting("tech_sources", [k for k in tech_sources.SOURCES if f.get(f"src_{k}")])
     flash("테크 소식 설정을 저장했습니다." + (" 실행마다 만드는 수가 0이라 정기 실행에서는 만들지 않습니다." if per_run == 0 else ""), "ok")
     return redirect(url_for("web.settings") + "#tech")

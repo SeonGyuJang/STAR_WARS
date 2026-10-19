@@ -13,7 +13,8 @@ the model card and finds pictures and demo clips (media_candidates).
 """
 import logging
 import re
-from datetime import date, timedelta
+import time
+from datetime import date, datetime, timedelta
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
@@ -34,7 +35,9 @@ GITHUB_TRENDING = "https://github.com/trending"
 GITHUB_API = "https://api.github.com"
 RAW = "https://raw.githubusercontent.com"
 HN_API = "https://hacker-news.firebaseio.com/v0"
+HN_SEARCH = "https://hn.algolia.com/api/v1/search"  # Hacker News search: the best stories of any period
 GEEKNEWS_FEEDS = ["https://news.hada.io/rss/news", "https://feeds.feedburner.com/geeknews-feed"]
+GEEKNEWS_PAST = "https://news.hada.io/past"  # ?day=YYYY-MM-DD: that day's topics
 HF_API = "https://huggingface.co/api"
 CONTEXT_CHARS = 40000  # per source read (README, article, model card)
 TOTAL_CHARS = 90000  # everything handed to the writer for one post
@@ -88,15 +91,23 @@ def parse_github_trending(html: str, limit: int = 15):
     return out
 
 
-def github_trending(limit: int = 15):
+def trending_range(days: int) -> str:
+    """GitHub Trending only has three ranges: today, this week, this month."""
+    return "daily" if days <= 1 else "weekly" if days <= 7 else "monthly"
+
+
+def github_trending(limit: int = 15, days: int = 1):
+    since = trending_range(days)
     try:
-        items = parse_github_trending(http_get(GITHUB_TRENDING, params={"since": "daily"}, retries=2).text, limit)
+        items = parse_github_trending(http_get(GITHUB_TRENDING, params={"since": since}, retries=2).text, limit)
         if items:
+            for it in items:
+                it["meta"]["range"] = since
             return items
         log.warning("GitHub Trending page had no repository rows; using the search API")
     except Exception as exc:
         log.warning("GitHub Trending page failed (%s); using the search API", exc)
-    return github_search(limit)
+    return github_search(limit, days)
 
 
 def _gh_headers():
@@ -106,9 +117,10 @@ def _gh_headers():
     return h
 
 
-def github_search(limit: int = 15):
-    """Most-starred repositories created in the last week - close to 'trending'."""
-    since = (date.today() - timedelta(days=7)).isoformat()
+def github_search(limit: int = 15, days: int = 7):
+    """Most-starred repositories created in the period (at least a week: a day-old
+    repository has few stars yet) - close to 'trending'."""
+    since = (date.today() - timedelta(days=max(days, 7))).isoformat()
     data = http_get(f"{GITHUB_API}/search/repositories", params={"q": f"created:>{since}", "sort": "stars", "order": "desc",
                                                                    "per_page": limit}, headers=_gh_headers(), retries=2).json()
     out = []
@@ -117,15 +129,45 @@ def github_search(limit: int = 15):
             "uid": f"github:{r['full_name'].lower()}", "source": "github", "title": r["full_name"], "url": r["html_url"],
             "summary": r.get("description") or "",
             "meta": {"stars": r.get("stargazers_count"), "forks": r.get("forks_count"), "language": r.get("language"),
-                     "topics": r.get("topics", [])[:6], "new_this_week": True},
+                     "topics": r.get("topics", [])[:6], "new_this_week": days <= 7},
         })
     return out
 
 
 # --- Hacker News -----------------------------------------------------------------
 
-def hacker_news(limit: int = 15, min_points: int = 120, scan: int = 40):
+def _hn_item(i, it):
+    discussion = f"https://news.ycombinator.com/item?id={i}"
+    text = BeautifulSoup(it.get("text") or it.get("story_text") or "", "lxml").get_text(" ", strip=True)
+    return {
+        "uid": f"hn:{i}", "source": "hn", "title": it.get("title") or "", "url": it.get("url") or discussion,
+        "summary": text[:600],
+        "meta": {"points": it.get("score", it.get("points")), "comments": it.get("descendants", it.get("num_comments")),
+                 "author": it.get("by", it.get("author")), "discussion": discussion,
+                 "time": it.get("time", it.get("created_at_i"))},
+    }
+
+
+def hacker_news(limit: int = 15, days: int = 1, min_points: int = 120, scan: int = 40):
+    """Today's front page; for a longer period, the period's highest-voted stories
+    (Hacker News search), with the front page and best list as a fallback."""
+    since = time.time() - days * 86400
+    if days > 1:
+        try:
+            data = http_get(HN_SEARCH, params={"tags": "story", "numericFilters": f"created_at_i>{int(since)},points>={min_points}",
+                                               "hitsPerPage": min(max(limit * 3, 30), 200)}, retries=2, timeout=30).json()
+            hits = sorted(data.get("hits") or [], key=lambda h: h.get("points") or 0, reverse=True)
+            out = [_hn_item(h["objectID"], h) for h in hits if h.get("objectID") and h.get("title")]
+            if out:
+                return out[:limit]
+        except Exception as exc:
+            log.warning("Hacker News search failed (%s); using the front page and best stories", short_error(exc))
     ids = http_get(f"{HN_API}/topstories.json", retries=2).json()[:scan]
+    if days > 1:  # the best list reaches back a few days
+        try:
+            ids += [i for i in http_get(f"{HN_API}/beststories.json", retries=1).json()[:scan * 2] if i not in ids]
+        except Exception:
+            pass
     out = []
     for i in ids:
         try:
@@ -134,17 +176,13 @@ def hacker_news(limit: int = 15, min_points: int = 120, scan: int = 40):
             continue
         if it.get("type") != "story" or it.get("dead") or it.get("deleted") or (it.get("score") or 0) < min_points:
             continue
-        discussion = f"https://news.ycombinator.com/item?id={i}"
-        text = BeautifulSoup(it.get("text") or "", "lxml").get_text(" ", strip=True)
-        out.append({
-            "uid": f"hn:{i}", "source": "hn", "title": it.get("title") or "", "url": it.get("url") or discussion,
-            "summary": text[:600],
-            "meta": {"points": it.get("score"), "comments": it.get("descendants"), "author": it.get("by"),
-                     "discussion": discussion, "time": it.get("time")},
-        })
-        if len(out) >= limit:
+        if days > 1 and (it.get("time") or since) < since:
+            continue
+        out.append(_hn_item(i, it))
+        if len(out) >= limit and days <= 1:
             break
-    return out
+    out.sort(key=lambda x: x["meta"]["points"] or 0, reverse=True)
+    return out[:limit]
 
 
 # --- GeekNews --------------------------------------------------------------------
@@ -178,35 +216,107 @@ def parse_geeknews_feed(xml: str, limit: int = 15):
     return out
 
 
-def geeknews(limit: int = 15):
-    last = None
+def _published(text):
+    """A feed date (ISO 8601 or RFC 822) as a timestamp, or None."""
+    from email.utils import parsedate_to_datetime
+
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        try:
+            return parsedate_to_datetime(text).timestamp()
+        except (TypeError, ValueError):
+            return None
+
+
+def parse_geeknews_list(html: str, day: str | None = None):
+    """Topics on a GeekNews list page (front page, /past?day=...): title, the
+    original it links to, the short description and points."""
+    soup = BeautifulSoup(html, "lxml")
+    rows = soup.find_all(class_="topic_row") or [t.parent for t in soup.find_all(class_="topictitle")]
+    out, seen = [], set()
+    for row in rows:
+        link = row.find("a", href=re.compile(r"topic\?id=(\d+)"))
+        m = re.search(r"topic\?id=(\d+)", link["href"]) if link else None
+        if not m or m.group(1) in seen:
+            continue
+        seen.add(m.group(1))
+        head = row.find(class_="topictitle")
+        title_el = (head.find("h1") or head) if head else link
+        title = title_el.get_text(" ", strip=True)
+        origin = head.find("a", href=True) if head else None
+        desc = row.find(class_="topicdesc")
+        info = row.find(class_="topicinfo")
+        points = _int(info.find(id=re.compile(r"^tp")).get_text()) if info and info.find(id=re.compile(r"^tp")) else None
+        topic = f"https://news.hada.io/topic?id={m.group(1)}"
+        links = [origin["href"]] if origin is not None and _outside(origin["href"]) else []
+        if title:
+            out.append({"uid": f"geeknews:{m.group(1)}", "source": "geeknews", "title": title, "url": topic,
+                        "summary": desc.get_text(" ", strip=True)[:4000] if desc else "",
+                        "meta": {"discussion": topic, "published": day, "points": points, "links": links}})
+    return out
+
+
+def geeknews(limit: int = 15, days: int = 1):
+    """The feed has the latest topics; a longer period also reads each day's
+    list (/past?day=...), best voted first."""
+    since = time.time() - days * 86400
+    items, last = [], None
     for feed in GEEKNEWS_FEEDS:
         try:
-            items = parse_geeknews_feed(http_get(feed, retries=2).text, limit)
+            items = parse_geeknews_feed(http_get(feed, retries=2).text, 100)
             if items:
-                return items
+                break
         except Exception as exc:
             last = exc
-    if last:
+    items = [it for it in items if (_published(it["meta"].get("published")) or time.time()) >= since]
+    if days > 1:
+        found = {it["uid"]: it for it in items}
+        for back in range(1, days + 1):
+            day = (date.today() - timedelta(days=back)).isoformat()
+            try:
+                html, _, _ = fetch_page(f"{GEEKNEWS_PAST}?day={day}")
+            except Exception as exc:
+                log.warning("GeekNews list of %s failed: %s", day, short_error(exc))
+                if back == 1:  # closed to us: the feed is all there is
+                    break
+                continue
+            for it in parse_geeknews_list(html, day):
+                if it["uid"] not in found:
+                    found[it["uid"]] = it
+                elif not found[it["uid"]]["meta"].get("points"):
+                    found[it["uid"]]["meta"]["points"] = it["meta"]["points"]
+        items = sorted(found.values(), key=lambda x: x["meta"].get("points") or 0, reverse=True)
+    if not items and last:
         raise last
-    return []
+    return items[:limit]
 
 
 # --- Hugging Face ----------------------------------------------------------------
 
-def hugging_face(limit: int = 12):
+def hugging_face(limit: int = 12, days: int = 1):
+    """Trending models and Spaces. The trending score already sums up the last
+    days' likes; for a period, what has not been touched in it is left out."""
+    since = time.time() - max(days, 7) * 86400
     out, errors = [], []
     for kind, path in (("model", "models"), ("space", "spaces")):
         try:
-            rows = http_get(f"{HF_API}/{path}", params={"sort": "trendingScore", "direction": -1, "limit": limit}, retries=2).json()
+            rows = http_get(f"{HF_API}/{path}", params={"sort": "trendingScore", "direction": -1, "limit": limit * 2}, retries=2).json()
         except Exception as exc:
             log.warning("Hugging Face %s failed: %s", path, short_error(exc))
             errors.append(exc)
             continue
-        for r in rows[: limit // 2 + 1]:
+        kept = 0
+        for r in rows:
             rid = r.get("id") or r.get("modelId")
-            if not rid:
+            if not rid or kept > limit // 2:
                 continue
+            touched = _published(r.get("lastModified") or r.get("createdAt"))
+            if touched and touched < since:
+                continue
+            kept += 1
             base = "https://huggingface.co/" + (f"spaces/{rid}" if kind == "space" else rid)
             out.append({
                 "uid": f"hf:{kind}/{rid.lower()}", "source": "hf", "title": rid, "url": base,
@@ -223,15 +333,16 @@ def hugging_face(limit: int = 12):
 COLLECTORS = {"github": github_trending, "hn": hacker_news, "geeknews": geeknews, "hf": hugging_face}
 
 
-def collect(sources, limit: int = 15, say=log.info):
-    """Items from the enabled sources; a source that fails is reported and skipped."""
+def collect(sources, limit: int = 15, say=log.info, days: int = 1):
+    """Items of the last `days` days from the enabled sources; a source that fails
+    is reported and skipped."""
     out = []
     for key in sources:
         fn = COLLECTORS.get(key)
         if not fn:
             continue
         try:
-            items = fn(limit)
+            items = fn(limit, days)
             say(f"{SOURCES[key]['name']}: {len(items)} items")
             out.extend(items)
         except Exception as exc:

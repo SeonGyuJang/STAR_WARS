@@ -353,6 +353,8 @@ def pipeline_settings() -> dict:
         "tech_per_run": get_setting("tech_per_run", config.DEFAULT_TECH_PER_RUN),
         "tech_min_interest": get_setting("tech_min_interest", config.DEFAULT_TECH_MIN_INTEREST),
         "tech_sources": get_setting("tech_sources", config.DEFAULT_TECH_SOURCES),
+        "tech_lookback_days": get_setting("tech_lookback_days", config.DEFAULT_TECH_LOOKBACK_DAYS),
+        "tech_max_per_source": get_setting("tech_max_per_source", config.DEFAULT_TECH_MAX_PER_SOURCE),
     }
 
 

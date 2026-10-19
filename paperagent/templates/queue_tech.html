@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import csrf, sbadge with context %}
+{% from "_macros.html" import csrf, sbadge, tech_days_select with context %}
 {% block title %}대기열 · 테크 소식 · {{ site_name }}{% endblock %}
 {% block content %}
 <section class="page-head"><div>
@@ -22,7 +22,7 @@
       <span class="muted small">{% if next_run %}다음 자동 실행 {{ next_run | kst('%m.%d %H:%M') }} (논문 다음에 테크 소식을 만듭니다){% else %}자동 실행은 Heroku Scheduler가 맡습니다{% endif %}</span></div></div>
     {% if is_admin %}<div class="rb-act">
       <button type="button" class="btn ghost sm" data-console-open>지난 실행 보기</button>
-      <form method="post" action="{{ url_for('web.tech_run') }}">{{ csrf() }}<button class="btn sm">테크 소식만 지금 만들기</button></form>
+      <form method="post" action="{{ url_for('web.tech_run') }}" class="run-days">{{ csrf() }}{{ tech_days_select(settings) }}<button class="btn sm">테크 소식만 지금 만들기</button></form>
     </div>{% endif %}
   {% endif %}
 </section>

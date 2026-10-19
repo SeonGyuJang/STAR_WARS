@@ -349,7 +349,7 @@ def add_uploaded_pdf(data: bytes, filename: str = "", title: str = "") -> tuple[
     return pid, True
 
 
-def run(trigger: str = "schedule", paper_ids=None, tech_only=False, tech_ids=None):
+def run(trigger: str = "schedule", paper_ids=None, tech_only=False, tech_ids=None, tech_days=None):
     """One full cycle. Returns the run id, or None if a run is already in progress.
 
     Collecting papers and refreshing the trend panels need no Claude API, so
@@ -359,7 +359,8 @@ def run(trigger: str = "schedule", paper_ids=None, tech_only=False, tech_ids=Non
     time from the dashboard (강제 종료).
 
     After the papers, the run also makes TECH posts from trending projects and
-    tech news (technews.py). tech_only=True runs just that part."""
+    tech news (technews.py). tech_only=True runs just that part; tech_days
+    collects that many days of tech news this once instead of the setting."""
     with _start_lock:
         if db.active_run() is not None:  # running here or in another dyno/process
             return None
@@ -444,6 +445,8 @@ def run(trigger: str = "schedule", paper_ids=None, tech_only=False, tech_ids=Non
             try:
                 say.update(phase="tech", stage="테크 소식 모으는 중", current=None)
                 agent.ensure_api()
+                if tech_days:
+                    settings = {**settings, "tech_lookback_days": tech_days}
                 tech = technews.run_stage(settings, say, meter, item_ids=tech_ids)
                 stats["tech_done"], stats["tech_failed"] = tech["tech_done"], tech["tech_failed"]
                 stats["cost_usd"] += tech["tech_cost_usd"]
@@ -485,9 +488,11 @@ def refresh_trending_only(say=log.info):
     trending.refresh_all(keywords, logger=say)
 
 
-def run_in_background(trigger="manual", paper_ids=None, tech_only=False, tech_ids=None) -> bool:
+def run_in_background(trigger="manual", paper_ids=None, tech_only=False, tech_ids=None, tech_days=None) -> bool:
     if is_running():
         return False
-    threading.Thread(target=run, kwargs={"trigger": trigger, "paper_ids": paper_ids, "tech_only": tech_only,
-                                         "tech_ids": tech_ids}, daemon=True).start()
+    kwargs = {"trigger": trigger, "paper_ids": paper_ids, "tech_only": tech_only, "tech_ids": tech_ids}
+    if tech_days:
+        kwargs["tech_days"] = tech_days
+    threading.Thread(target=run, kwargs=kwargs, daemon=True).start()
     return True

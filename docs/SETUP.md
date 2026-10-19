@@ -95,6 +95,8 @@ WRITER_MODEL=claude-haiku-5-5  # 한국어 문장이 약간 단조로워질 수 
 | `CARD_TECH_BASE_HASHTAGS` | | `#IT,#테크,#개발자` | 테크 카드뉴스 캡션에 항상 붙는 해시태그 |
 | `TECH_SOURCES` | | `github,hn,geeknews,hf` | 테크 소식을 가져올 곳의 처음 값 (이후에는 **설정 → 테크 소식**에서 바꿉니다) |
 | `TECH_PER_RUN` | | `2` | 실행마다 만드는 테크 카드뉴스 수의 처음 값. 0이면 정기 실행에서 만들지 않습니다 |
+| `TECH_LOOKBACK_DAYS` | | `1` | 테크 소식 수집 기간(일)의 처음 값. 1=오늘, 7=일주일, 최대 30. 설정 화면에서 바꿀 수 있습니다 |
+| `TECH_MAX_PER_SOURCE` | | `15` | 출처마다 모을 테크 소식 수의 처음 값 (5~100) |
 | `TECH_MIN_INTEREST` | | `7` | 테크 소식을 카드뉴스로 만들 최소 흥미도(0~10)의 처음 값 |
 | `GITHUB_TOKEN` | | | 선택. GitHub Trending 페이지를 못 읽을 때 쓰는 GitHub 검색 API의 호출 한도를 늘립니다 (권한 없는 토큰이면 충분) |
 | `VIDEO_CARDS` | | `1` | `0`이면 마지막 장 영상(MP4)을 만들지 않고 모두 이미지 카드로 만듭니다 |

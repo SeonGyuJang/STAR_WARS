@@ -755,3 +755,185 @@ def test_the_failing_run_again(fresh_db):
     assert all("\n" not in line.strip() for line in lines)  # every log line is one line
     done = db.get_tech_by_uid("hn:70")["review"]
     assert done["_read"][0]["label"].startswith("원문") and done["_read"][0]["chars"] > 300
+
+
+# --- collecting a period (a week, or whatever the settings say) ----------------------------------------------------
+
+def test_github_trending_range_follows_the_period():
+    asked = []
+
+    def fake(url, params=None, **kw):
+        asked.append(params["since"])
+        return Resp(text=(FIX / "github_trending.html").read_text())
+
+    with mock.patch.object(tech, "http_get", side_effect=fake):
+        for days in (1, 7, 30):
+            items = tech.github_trending(5, days)
+    assert asked == ["daily", "weekly", "monthly"] and items[0]["meta"]["range"] == "monthly"
+    assert [tech.trending_range(d) for d in (1, 2, 7, 8)] == ["daily", "weekly", "weekly", "monthly"]
+
+
+def test_hacker_news_week_uses_the_period_best_stories():
+    import time as _time
+
+    now = int(_time.time())
+    hits = [{"objectID": "1", "title": "Older but big", "url": "https://a.example", "points": 900, "num_comments": 300,
+             "author": "x", "created_at_i": now - 5 * 86400},
+            {"objectID": "2", "title": "Yesterday", "url": "https://b.example", "points": 400, "num_comments": 50,
+             "author": "y", "created_at_i": now - 86400}]
+    asked = {}
+
+    def fake(url, params=None, **kw):
+        if url == tech.HN_SEARCH:
+            asked.update(params)
+            return Resp(json={"hits": list(reversed(hits))})
+        raise RuntimeError(url)
+
+    with mock.patch.object(tech, "http_get", side_effect=fake):
+        items = tech.hacker_news(10, days=7)
+    since = int(asked["numericFilters"].split(",")[0].split(">")[1])
+    assert abs(since - (now - 7 * 86400)) < 60 and "points>=120" in asked["numericFilters"]
+    assert [i["uid"] for i in items] == ["hn:1", "hn:2"]  # best voted first
+    assert items[0]["meta"] == {"points": 900, "comments": 300, "author": "x",
+                                "discussion": "https://news.ycombinator.com/item?id=1", "time": now - 5 * 86400}
+
+
+def test_hacker_news_week_falls_back_to_best_stories_within_the_period():
+    import time as _time
+
+    now = int(_time.time())
+    stories = {1: {"type": "story", "title": "Fresh", "score": 300, "time": now - 2 * 86400, "url": "https://f.example"},
+               2: {"type": "story", "title": "Too old", "score": 999, "time": now - 20 * 86400, "url": "https://o.example"},
+               3: {"type": "story", "title": "Best of the week", "score": 700, "time": now - 6 * 86400, "url": "https://w.example"}}
+
+    def fake(url, params=None, **kw):
+        if url == tech.HN_SEARCH:
+            raise RuntimeError("search down")
+        if url.endswith("/topstories.json"):
+            return Resp(json=[1, 2])
+        if url.endswith("/beststories.json"):
+            return Resp(json=[3, 1])
+        return Resp(json=stories[int(url.rsplit("/", 1)[1].split(".")[0])])
+
+    with mock.patch.object(tech, "http_get", side_effect=fake):
+        items = tech.hacker_news(10, days=7)
+    assert [i["title"] for i in items] == ["Best of the week", "Fresh"]
+
+
+GN_PAST = """<html><body>
+<div class="topic_row"><div class="topictitle"><a href="https://blog.example.com/week1" rel="nofollow"><h1>지난주 화제 1</h1></a>
+  <span class="topicurl">(blog.example.com)</span></div>
+  <div class="topicdesc"><a href="topic?id=501" class="c99 breakall">요약 하나</a></div>
+  <div class="topicinfo"><span id="tp501">88</span> points by a 2일전 | <a href="topic?id=501&go=comments">댓글 3개</a></div></div>
+<div class="topic_row"><div class="topictitle"><a href="https://github.com/acme/tool"><h1>지난주 화제 2</h1></a></div>
+  <div class="topicdesc"><a href="topic?id=502">요약 둘</a></div>
+  <div class="topicinfo"><span id="tp502">140</span> points</div></div>
+</body></html>"""
+
+
+def test_geeknews_list_page_is_parsed():
+    items = tech.parse_geeknews_list(GN_PAST, "2026-10-15")
+    assert [(i["uid"], i["title"], i["meta"]["points"]) for i in items] == [("geeknews:501", "지난주 화제 1", 88),
+                                                                            ("geeknews:502", "지난주 화제 2", 140)]
+    assert items[0]["meta"]["links"] == ["https://blog.example.com/week1"] and items[0]["summary"] == "요약 하나"
+    assert items[0]["url"] == "https://news.hada.io/topic?id=501"
+
+
+def test_geeknews_week_reads_each_day_and_ranks_by_points():
+    days_asked = []
+
+    def fake(url, params=None, **kw):
+        if "rss" in url or "feedburner" in url:
+            return Resp(text=(FIX / "geeknews.xml").read_text())
+        if url.startswith(tech.GEEKNEWS_PAST):
+            day = url.split("day=")[1]
+            days_asked.append(day)
+            return Resp(text=GN_PAST if len(days_asked) == 2 else "<html></html>")
+        raise RuntimeError(url)
+
+    with mock.patch.object(tech, "http_get", side_effect=fake), mock.patch.object(tech, "_published", return_value=None):
+        items = tech.geeknews(10, days=7)
+    assert len(days_asked) == 7
+    assert [i["uid"] for i in items][:2] == ["geeknews:502", "geeknews:501"]  # best voted first
+    assert "geeknews:23456" in [i["uid"] for i in items]  # the feed's topic is kept too
+
+
+def test_geeknews_period_keeps_only_recent_feed_topics_when_the_site_is_closed():
+    import requests
+
+    def fake(url, params=None, **kw):
+        if "rss" in url:
+            return Resp(text=(FIX / "geeknews.xml").read_text())
+        raise requests.HTTPError("403", response=mock.Mock(status_code=403, url=url))
+
+    with mock.patch.object(tech, "http_get", side_effect=fake), mock.patch.object(tech, "render_page", return_value=None):
+        week = tech.geeknews(10, days=7)
+        with mock.patch.object(tech.time, "time", return_value=tech._published("2026-12-30T00:00:00+09:00")):
+            later = tech.geeknews(10, days=7)
+    assert [i["uid"] for i in week] == ["geeknews:23456"]  # the past lists are closed: the feed alone
+    assert later == []  # published 2026-10-16: not within a week of 12-30
+
+
+def test_hugging_face_period_leaves_out_untouched_items():
+    import time as _time
+
+    fresh = _time.strftime("%Y-%m-%dT%H:%M:%S.000Z", _time.gmtime(_time.time() - 3 * 86400))
+    rows = [{"id": "acme/new", "likes": 50, "trendingScore": 90, "lastModified": fresh},
+            {"id": "acme/stale", "likes": 900, "trendingScore": 80, "lastModified": "2024-01-01T00:00:00.000Z"}]
+
+    def fake(url, params=None, **kw):
+        return Resp(json=rows if url.endswith("/models") else [])
+
+    with mock.patch.object(tech, "http_get", side_effect=fake):
+        items = tech.hugging_face(10, days=7)
+    assert [i["title"] for i in items] == ["acme/new"]
+
+
+def test_collect_passes_the_period_to_every_source():
+    got = {}
+    fakes = {k: (lambda key: lambda limit, days: got.setdefault(key, (limit, days)) and [])(k) for k in tech.COLLECTORS}
+    with mock.patch.dict(tech.COLLECTORS, fakes):
+        tech.collect(list(tech.COLLECTORS), 25, say=lambda *a: None, days=7)
+    assert got == {k: (25, 7) for k in tech.COLLECTORS}
+
+
+def test_tech_period_settings_and_one_off_run(fresh_db):
+    from paperagent import create_app, db, pipeline, technews
+
+    app = create_app(start_scheduler=False)
+    c = app.test_client()
+    c.environ_base["REMOTE_ADDR"] = "127.0.0.1"
+    page = c.get("/settings").get_data(as_text=True)
+    assert 'name="tech_lookback_days"' in page and 'name="tech_max_per_source"' in page
+    token = re.search(r'name="csrf-token" content="([^"]+)"', page).group(1)
+    c.post("/settings/tech", data={"_csrf": token, "tech_per_run": "2", "tech_min_interest": "7", "tech_lookback_days": "7",
+                                   "tech_max_per_source": "30", "src_hn": "1"})
+    s = db.pipeline_settings()
+    assert s["tech_lookback_days"] == 7 and s["tech_max_per_source"] == 30
+    c.post("/settings/tech", data={"_csrf": token, "tech_per_run": "2", "tech_min_interest": "7", "tech_lookback_days": "99",
+                                   "tech_max_per_source": "1", "src_hn": "1"})
+    s = db.pipeline_settings()
+    assert s["tech_lookback_days"] == 30 and s["tech_max_per_source"] == 5  # kept within bounds
+
+    for url in ("/tech", "/queue?kind=tech"):
+        html = c.get(url).get_data(as_text=True)
+        assert 'name="days"' in html and "설정대로 · 30일" in html and ">일주일<" in html
+    with mock.patch.object(pipeline, "run_in_background", return_value=True) as bg, \
+            mock.patch("paperagent.agent.api_status", return_value={"ok": True}):
+        c.post("/tech/run", data={"_csrf": token, "days": "7"})
+        assert bg.call_args.kwargs["tech_days"] == 7
+        c.post("/tech/run", data={"_csrf": token, "days": ""})
+        assert bg.call_args.kwargs["tech_days"] is None
+
+    # the run uses the one-off period instead of the setting
+    seen = {}
+    with mock.patch.object(technews, "run_stage", side_effect=lambda settings, *a, **k: seen.update(settings) or
+                           {"tech_new": 0, "tech_done": 0, "tech_failed": 0, "tech_cost_usd": 0.0}), \
+            mock.patch("paperagent.agent.ensure_api"):
+        pipeline.run("manual", tech_only=True, tech_days=7)
+    assert seen["tech_lookback_days"] == 7
+
+    lines = []
+    with mock.patch.object(tech, "collect", return_value=[]) as col:
+        technews.collect_and_screen({**s, "tech_lookback_days": 7}, say=lines.append)
+    assert col.call_args.kwargs["days"] == 7 and col.call_args.args[1] == 5 and "last 7 day(s)" in lines[0]
