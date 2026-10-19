@@ -40,7 +40,7 @@ def collect_and_screen(settings, say=log.info, meter=None) -> dict:
 
 
 def _download(url: str, limit: int):
-    resp = http_get(url, retries=1, timeout=40, stream=True)
+    resp = http_get(url, retries=1, timeout=40, stream=True, headers=sources.BROWSER_HEADERS)
     data = bytearray()
     for chunk in resp.iter_content(64 * 1024):
         data += chunk
@@ -136,6 +136,8 @@ def process_item(item: dict, say=log.info) -> tuple[bool, float]:
             raise ValueError("원문을 읽지 못해 쓸 내용이 없습니다 ("
                              + ("; ".join(f"{label}: {why}" for label, why in failed) or "원문에서 본문을 찾지 못함")
                              + "). 뉴스 목록의 제목만으로는 카드뉴스를 만들지 않습니다. 잠시 뒤 '다시 읽기'를 눌러 주세요.")
+        if context.get("original_chars") is not None and context["original_chars"] < 300:
+            say("  the original could not be read: writing from the GeekNews summary (written from the original)")
         saved = db.get_tech(iid)
         if item.get("url") != saved.get("url") or item.get("meta") != saved.get("meta"):  # the original / repository found
             db.update_tech(iid, url=item["url"], meta=item.get("meta"))

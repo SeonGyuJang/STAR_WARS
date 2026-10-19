@@ -540,3 +540,218 @@ def test_no_hollow_post_when_the_original_cannot_be_read(fresh_db):
     assert technews.enough_material({"original_chars": 0, "read": [("GeekNews 요약", 900)]})
     assert not technews.enough_material({"original_chars": 0, "read": [("Hacker News 댓글", 5000)]})
     assert technews.enough_material({"original_chars": None, "read": []})  # Ask HN: the post itself is the material
+
+
+ARXIV_ABS = """<html><head><meta name="citation_title" content="Hybrid Reasoning Agents">
+<meta name="citation_author" content="Kim, Ana"><meta name="citation_author" content="Lee, Ben">
+<meta name="citation_abstract" content="Agents that think in latent space and act through text cut tool-use errors by 31%.">
+</head><body><blockquote class="abstract">Abstract: ignored when the meta tag is there</blockquote></body></html>"""
+ARXIV_HTML = """<html><body><div class="ltx_page_main"><article class="ltx_document">
+<h1 class="ltx_title">Hybrid Reasoning Agents</h1>
+<section><h2>1 Introduction</h2><p>Language agents usually reason in text, which is slow and verbose for planning steps.</p>
+<p>We let the model plan in its hidden states and only write text when it calls a tool or answers.</p></section>
+<figure class="ltx_figure"><img src="x1.png" alt="overview"><figcaption>Figure 1: Overview of the agent loop.</figcaption></figure>
+<section><h2>4 Results</h2><p>On WebArena the success rate rises from 38.2% to 46.9% while using 3x fewer tokens.</p></section>
+</article></div></body></html>"""
+
+
+def test_hacker_news_link_to_an_arxiv_paper():
+    """The run that failed: an HN story pointing at arxiv.org/abs. The paper's abstract and full text (HTML version) are
+    read, with its figures for the cards."""
+    seen = []
+
+    def fake(url, **kw):
+        seen.append(url)
+        if url == "https://arxiv.org/abs/2610.18861":
+            return Resp(text=ARXIV_ABS, headers={"Content-Type": "text/html"})
+        if url == "https://arxiv.org/html/2610.18861":
+            return Resp(text=ARXIV_HTML, headers={"Content-Type": "text/html"})
+        if url.startswith(tech.HN_API):
+            return Resp(json={"kids": []})
+        raise RuntimeError(f"unexpected {url}")
+
+    item = {"uid": "hn:70", "source": "hn", "title": "Hybrid Reasoning Agents: LLM agents that think in latent space, act through text",
+            "url": "https://arxiv.org/abs/2610.18861", "summary": "", "meta": {"points": 300}}
+    with mock.patch.object(tech, "http_get", side_effect=fake):
+        ctx = tech.fetch_context(item)
+    text = ctx["text"]
+    assert ctx["failed"] == [] and ctx["original_chars"] > 300
+    assert "논문 제목: Hybrid Reasoning Agents" in text and "저자: Kim, Ana, Lee, Ben" in text and "31%" in text
+    assert "38.2% to 46.9%" in text and "hidden states" in text
+    assert ctx["images"] == ["https://arxiv.org/html/2610.18861/x1.png"]
+    from paperagent import technews
+
+    assert technews.enough_material(ctx)
+
+
+def test_arxiv_without_an_html_version_reads_the_pdf():
+    import fitz
+
+    doc = fitz.open()
+    doc.new_page().insert_text((72, 72), "We let the model plan in its hidden states.")
+    pdf = doc.tobytes()
+
+    def fake(url, **kw):
+        if url == "https://arxiv.org/abs/2610.18861":
+            return Resp(text=ARXIV_ABS)
+        if url == "https://arxiv.org/pdf/2610.18861":
+            return Resp(content=pdf, headers={"Content-Type": "application/pdf"})
+        raise RuntimeError("404")
+
+    with mock.patch.object(tech, "http_get", side_effect=fake):
+        text, images, *_ = tech.read_source("https://arxiv.org/pdf/2610.18861v2")
+    assert "31%" in text and "plan in its hidden states" in text and images == []
+
+
+def test_reading_never_depends_on_css_selectors(monkeypatch):
+    """The live run failed inside the CSS selector library ('Invalid character ... article'). Page reading, the GitHub
+    Trending page and GeekNews topics are read without CSS selectors, so such a failure cannot stop them."""
+    from bs4.element import Tag
+
+    def broken(*a, **k):
+        raise ValueError("Invalid character 'a' position 0")
+
+    monkeypatch.setattr(Tag, "select", broken)
+    monkeypatch.setattr(Tag, "select_one", broken)
+    text, _ = tech._page_text(ARXIV_HTML)
+    assert "46.9%" in text
+    assert tech.parse_github_trending((FIX / "github_trending.html").read_text())  # still parsed
+    origin, summary = tech.geeknews_origin('<div class="topictitle"><a href="https://blog.example.com/x">t</a></div>'
+                                           '<div id="topic_contents"><p>요약 내용</p></div>')
+    assert origin == "https://blog.example.com/x" and "요약 내용" in summary
+
+
+def test_short_error_is_one_line():
+    from paperagent.collectors import short_error
+
+    assert short_error(ValueError("Invalid character 'a' position 0\n  line 1:\narticle\n^")) == \
+        "Invalid character 'a' position 0 line 1: article ^"
+
+
+GN_FEED = """<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom"><entry>
+<title>T3 Code - 여러 AI 코딩 에이전트를 관리하는 앱</title>
+<link rel="alternate" type="text/html" href="https://news.hada.io/topic?id=96"/><id>https://news.hada.io/topic?id=96</id>
+<content type="html">&lt;p&gt;&lt;a href="https://t3.codes/"&gt;T3 Code&lt;/a&gt;는 여러 코딩 에이전트를 한 화면에서 관리하는 앱.&lt;/p&gt;
+&lt;p&gt;저장소: &lt;a href="https://github.com/pingdotgg/t3code"&gt;GitHub&lt;/a&gt;&lt;/p&gt;</content></entry></feed>"""
+
+
+def test_geeknews_topic_closed_to_us_still_reaches_the_original():
+    """news.hada.io answered 403 in the live run. The topic page is then opened in a headless browser; if that fails too,
+    the feed's copy of the summary and the links in it lead to the original and its repository."""
+    item = tech.parse_geeknews_feed(GN_FEED)[0]
+    assert item["meta"]["links"] == ["https://t3.codes/", "https://github.com/pingdotgg/t3code"]
+    landing = "<html><body><main>" + "".join(f"<p>T3 Code runs Claude Code, Codex and others side by side ({i}).</p>"
+                                             for i in range(20)) + "</main></body></html>"
+
+    def fake(url, **kw):
+        if url == "https://news.hada.io/topic?id=96":
+            import requests
+
+            raise requests.HTTPError("403", response=mock.Mock(status_code=403, url=url))
+        if url == "https://t3.codes/":
+            return Resp(text=landing, headers={"Content-Type": "text/html"})
+        if url == "https://raw.githubusercontent.com/pingdotgg/t3code/HEAD/README.md":
+            return Resp(text="# T3 Code\nA desktop and mobile app for coding agents.\n![shot](docs/shot.png)")
+        raise RuntimeError(f"unexpected {url}")
+
+    with mock.patch.object(tech, "http_get", side_effect=fake), mock.patch.object(tech, "render_page", return_value=None) as render:
+        ctx = tech.fetch_context(item)
+    render.assert_called_once_with("https://news.hada.io/topic?id=96")  # tried a real browser first
+    assert ctx["failed"] == [("GeekNews 글", "HTTP 403 (news.hada.io)")]
+    assert "여러 코딩 에이전트" in ctx["text"] and "side by side" in ctx["text"] and "desktop and mobile app" in ctx["text"]
+    assert item["url"] == "https://t3.codes/" and item["meta"]["repo"] == "https://github.com/pingdotgg/t3code"
+    assert ctx["original_chars"] > 300 and "https://raw.githubusercontent.com/pingdotgg/t3code/HEAD/docs/shot.png" in ctx["images"]
+
+
+def test_geeknews_topic_opened_in_a_browser_when_refused():
+    topic = """<html><body><div class="topictitle"><a href="https://blog.example.com/md5">원문</a></div>
+      <div id="topic_contents"><p>""" + "에이전트가 수정했다고 답했지만 파일은 그대로였던 사례. " * 30 + "</p></div></body></html>"
+    article = "<html><body><article>" + "<p>The agent said it fixed the file, but the checksum never changed.</p>" * 20 + "</article></body></html>"
+
+    def fake(url, **kw):
+        if "hada.io" in url:
+            import requests
+
+            raise requests.HTTPError("403", response=mock.Mock(status_code=403, url=url))
+        if url == "https://blog.example.com/md5":
+            return Resp(text=article)
+        raise RuntimeError(f"unexpected {url}")
+
+    item = {"uid": "geeknews:99", "source": "geeknews", "title": "md5", "url": "https://news.hada.io/topic?id=99", "summary": "",
+            "meta": {"discussion": "https://news.hada.io/topic?id=99"}}
+    with mock.patch.object(tech, "http_get", side_effect=fake), mock.patch.object(tech, "render_page", return_value=topic):
+        ctx = tech.fetch_context(item)
+    assert ctx["failed"] == [] and "checksum never changed" in ctx["text"] and "그대로였던 사례" in ctx["text"]
+    assert item["url"] == "https://blog.example.com/md5"
+
+
+def test_geeknews_with_nothing_but_a_short_feed_summary_is_not_written(fresh_db):
+    from paperagent import agent, technews
+
+    db = fresh_db
+    db.insert_tech({"uid": "geeknews:62", "source": "geeknews", "title": "Ultramarine 1 Flash", "url": "https://news.hada.io/topic?id=62",
+                    "summary": "금융, 법률용 오픈 모델", "meta": {"discussion": "https://news.hada.io/topic?id=62", "links": []}})
+    item = db.get_tech_by_uid("geeknews:62")
+
+    def fake(url, **kw):
+        import requests
+
+        raise requests.HTTPError("403", response=mock.Mock(status_code=403, url=url))
+
+    with mock.patch.object(tech, "http_get", side_effect=fake), mock.patch.object(agent, "write_tech") as write:
+        ok, _ = technews.process_item(item, say=lambda *a: None)
+    assert not ok and not write.called
+    assert "원문을 읽지 못해" in db.get_tech(item["id"])["error"] and "HTTP 403 (news.hada.io)" in db.get_tech(item["id"])["error"]
+
+
+def test_the_failing_run_again(fresh_db):
+    """The run from the report, replayed: the arXiv story is written from the paper, the GeekNews post whose topic page
+    is closed is written from the original its feed links to, and the one with nothing readable is held back."""
+    from paperagent import agent, demo, technews
+
+    db = fresh_db
+    hn = {"uid": "hn:70", "source": "hn", "title": "Hybrid Reasoning Agents", "url": "https://arxiv.org/abs/2610.18861",
+          "summary": "", "meta": {"points": 300}}
+    gn = tech.parse_geeknews_feed(GN_FEED)[0]
+    weak = {"uid": "geeknews:62", "source": "geeknews", "title": "Ultramarine 1 Flash", "url": "https://news.hada.io/topic?id=62",
+            "summary": "금융용 오픈 모델", "meta": {"discussion": "https://news.hada.io/topic?id=62", "links": []}}
+    for it in (hn, gn, weak):
+        db.insert_tech(it)
+    landing = "<html><body><main>" + "<p>T3 Code runs several coding agents side by side on desktop and phone.</p>" * 20 + "</main></body></html>"
+
+    def fake(url, **kw):
+        import requests
+
+        pages = {"https://arxiv.org/abs/2610.18861": ARXIV_ABS, "https://arxiv.org/html/2610.18861": ARXIV_HTML,
+                 "https://t3.codes/": landing,
+                 "https://raw.githubusercontent.com/pingdotgg/t3code/HEAD/README.md": "# T3 Code\nCoding agents app."}
+        if url in pages:
+            return Resp(text=pages[url], headers={"Content-Type": "text/html"})
+        if url.startswith(tech.HN_API):
+            return Resp(json={"kids": []})
+        if "hada.io" in url:
+            raise requests.HTTPError("403", response=mock.Mock(status_code=403, url=url))
+        raise requests.ConnectionError(f"no {url}")
+
+    written = []
+
+    def write(item, context, meter=None):
+        written.append((item["uid"], context["text"]))
+        return copy.deepcopy(demo.SAMPLE_TECH_REVIEW)
+
+    lines = []
+    with mock.patch.object(tech, "http_get", side_effect=fake), mock.patch.object(technews, "http_get", side_effect=fake), \
+            mock.patch.object(agent, "write_tech", side_effect=write), \
+            mock.patch.object(technews.cardnews, "render_tech_and_store", return_value=([], {})):
+        stats = technews.run_stage(db.pipeline_settings(), say=lines.append,
+                                   item_ids=[db.get_tech_by_uid(u)["id"] for u in ("hn:70", "geeknews:96", "geeknews:62")])
+    log_text = "\n".join(lines)
+    assert stats["tech_done"] == 2 and stats["tech_failed"] == 1, log_text
+    texts = dict(written)
+    assert "38.2% to 46.9%" in texts["hn:70"] and "side by side" in texts["geeknews:96"]
+    assert db.get_tech_by_uid("geeknews:96")["url"] == "https://t3.codes/"
+    assert db.get_tech_by_uid("geeknews:62")["status"] == "error"
+    assert "read: 원문 (https://arxiv.org/abs/2610.18861)" in log_text and "Invalid character" not in log_text
+    assert all("\n" not in line.strip() for line in lines)  # every log line is one line
+    done = db.get_tech_by_uid("hn:70")["review"]
+    assert done["_read"][0]["label"].startswith("원문") and done["_read"][0]["chars"] > 300

@@ -275,6 +275,7 @@ heroku pg:backups:download                                        # 내려받기
 | `card rendering failed: Could not launch Chromium` | 로컬: `python -m playwright install chromium`을 다시 실행. Heroku: `heroku buildpacks` 순서(chrome-for-testing → python)를 확인한 뒤 다시 배포. |
 | `arXiv API unavailable (HTTP 429 ...)` 또는 `arXiv API is busy` | arXiv는 같은 서버에서 너무 자주 요청하면 429로 막습니다(Heroku는 여러 앱이 IP를 함께 써서 더 자주 생깁니다). 이제 한 번 실행에 arXiv 분야 전체를 **요청 1번**으로 묻고, 429가 오면 arXiv가 알려 준 시간(없으면 15초, 45초)만큼 기다렸다 다시 묻습니다. 그래도 막히면 **arXiv RSS 피드**(rss.arxiv.org)로 그날 새 논문을 대신 가져오고, 10분 동안은 arXiv API에 다시 묻지 않습니다. 저널·학회의 arXiv 검색만 이번 실행에서 건너뛰고 다음 실행에 다시 시도하니 따로 할 일은 없습니다. |
 | 테크 소식이 `원문을 읽지 못해 쓸 내용이 없습니다`로 실패 | Hacker News 등이 가리키는 원문 사이트가 접속을 막았거나 내려가 있었습니다(괄호 안에 `HTTP 403 (사이트)` 같은 이유가 나옵니다). 제목과 댓글만으로 빈 카드뉴스를 만들지 않으려고 멈춘 것입니다. 시간이 지난 뒤 소식 페이지에서 **다시 읽기**를 누르세요. |
+| 로그에 `could not read GeekNews 글: HTTP 403 (news.hada.io)` | GeekNews가 서버의 요청을 막은 것입니다. 이때는 헤드리스 브라우저로 글을 다시 열어 보고, 그래도 막히면 RSS 피드에 담긴 요약과 그 안의 링크로 원문과 GitHub 저장소를 찾아 읽습니다. 원문을 읽었거나 요약이 충분하면 그대로 카드뉴스를 만들고, 둘 다 없으면 만들지 않고 멈춥니다. |
 | `arXiv ... failed: 503` | arXiv가 잠시 과부하 상태입니다. 다음 실행 때 다시 가져옵니다. |
 | 저널 논문이 모두 "초록만 읽음" | 오픈액세스 PDF가 없는 논문입니다. 정상 동작입니다. |
 | 업로드한 PDF의 제목이 이상함 | PDF 안의 정보로 제목을 추측합니다. 올릴 때 제목 칸에 직접 적으면 그 제목을 씁니다. 업로드한 PDF는 리뷰가 끝나면 서버에서 지웁니다. |

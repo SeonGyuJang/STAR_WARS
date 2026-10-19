@@ -62,18 +62,19 @@ def compact(n) -> str:
 def parse_github_trending(html: str, limit: int = 15):
     soup = BeautifulSoup(html, "lxml")
     out = []
-    for row in soup.select("article.Box-row"):
-        link = row.select_one("h2 a[href]")
+    for row in soup.find_all("article", class_="Box-row"):
+        h2 = row.find("h2")
+        link = h2.find("a", href=True) if h2 else None
         if not link:
             continue
         full = link["href"].strip("/")
         if full.count("/") != 1:
             continue
-        desc = row.select_one("p")
-        lang = row.select_one('[itemprop="programmingLanguage"]')
-        stars = row.select_one('a[href$="/stargazers"]')
-        forks = row.select_one('a[href$="/forks"]')
-        today = next((s for s in row.select("span") if "stars" in s.get_text() and ("today" in s.get_text() or "this week" in s.get_text())), None)
+        desc = row.find("p")
+        lang = row.find(attrs={"itemprop": "programmingLanguage"})
+        stars = row.find("a", href=lambda h: bool(h) and h.endswith("/stargazers"))
+        forks = row.find("a", href=lambda h: bool(h) and h.endswith("/forks"))
+        today = next((s for s in row.find_all("span") if "stars" in s.get_text() and ("today" in s.get_text() or "this week" in s.get_text())), None)
         out.append({
             "uid": f"github:{full.lower()}", "source": "github", "title": full,
             "url": f"https://github.com/{full}",
@@ -161,12 +162,16 @@ def parse_geeknews_feed(xml: str, limit: int = 15):
         if not title or not m:
             continue
         body = e.find("content") or e.find("description") or e.find("summary")
-        summary = BeautifulSoup(body.get_text() if body else "", "lxml").get_text(" ", strip=True)
+        body_html = BeautifulSoup(body.get_text() if body else "", "lxml")
+        summary = body_html.get_text(" ", strip=True)
+        # the original, in case the topic page cannot be opened later: an outside <link>, else links in the summary
+        links = [link] if _outside(link) else []
+        links += [a["href"] for a in body_html.find_all("a", href=True) if _outside(a["href"]) and a["href"] not in links]
         when = e.find("published") or e.find("updated") or e.find("pubDate")
         topic = f"https://news.hada.io/topic?id={m.group(1)}"
         out.append({
-            "uid": f"geeknews:{m.group(1)}", "source": "geeknews", "title": title, "url": topic, "summary": summary[:1200],
-            "meta": {"discussion": topic, "published": when.get_text(strip=True)[:32] if when else None},
+            "uid": f"geeknews:{m.group(1)}", "source": "geeknews", "title": title, "url": topic, "summary": summary[:4000],
+            "meta": {"discussion": topic, "published": when.get_text(strip=True)[:32] if when else None, "links": links[:5]},
         })
         if len(out) >= limit:
             break
@@ -292,10 +297,11 @@ def _content_root(soup):
     the page's paragraphs, else the block whose paragraphs add up to the most
     text (many blogs and news sites wrap the story in plain <div>s)."""
     total = sum(len(p.get_text(" ", strip=True)) for p in soup.find_all("p")) or 1
-    for sel in ("article", "main", "[role=main]", "#content", ".post-content", ".entry-content", ".article-body"):
-        for el in soup.select(sel):
-            if sum(len(p.get_text(" ", strip=True)) for p in el.find_all("p")) >= total * 0.5:
-                return el
+    candidates = (soup.find_all("article") + soup.find_all("main") + soup.find_all(attrs={"role": "main"})
+                  + soup.find_all(id="content") + soup.find_all(class_=["post-content", "entry-content", "article-body", "ltx_page_main"]))
+    for el in candidates:
+        if sum(len(p.get_text(" ", strip=True)) for p in el.find_all("p")) >= total * 0.5:
+            return el
     scores = {}
     for p in soup.find_all("p"):
         n = len(p.get_text(" ", strip=True))
@@ -318,15 +324,18 @@ def _page_text(html: str, limit: int = CONTEXT_CHARS):
             meta[prop] = tag["content"]
     for t in soup(["script", "style", "nav", "header", "footer", "aside", "form", "noscript", "svg", "iframe"]):
         t.decompose()
-    root = _content_root(soup)
     seen, paras = set(), []
-    for el in root.find_all(_TEXT_TAGS):
-        if el.find_parent(_TEXT_TAGS) is not None:  # a <p> inside an <li>: counted once
-            continue
-        t = el.get_text(" ", strip=True)
-        if len(t) > 1 and t not in seen:
-            seen.add(t)
-            paras.append(t)
+    try:
+        root = _content_root(soup)
+        for el in root.find_all(_TEXT_TAGS):
+            if el.find_parent(_TEXT_TAGS) is not None:  # a <p> inside an <li>: counted once
+                continue
+            t = el.get_text(" ", strip=True)
+            if len(t) > 1 and t not in seen:
+                seen.add(t)
+                paras.append(t)
+    except Exception as exc:  # an odd page never costs the article: all its text below
+        log.warning("article extraction failed, using the page text: %s", exc)
     text = "\n".join(paras)
     if len(text) < 200:  # no paragraphs to speak of: all the visible text
         body = soup.body or soup
@@ -437,20 +446,74 @@ def _from_hf(page_url: str, space: bool, rid: str):
 def repo_links(html: str, skip=()) -> list[str]:
     """GitHub repositories a page links to, in order ('owner/repo')."""
     out = []
-    for a in BeautifulSoup(html or "", "lxml").select("a[href]"):
+    for a in BeautifulSoup(html or "", "lxml").find_all("a", href=True):
         full = github_repo(a["href"])
         if full and full.lower() not in {x.lower() for x in [*skip, *out]}:
             out.append(full)
     return out
 
 
+def fetch_page(url: str):
+    """(html, content type, bytes) of a page, asked for like a browser. A site that
+    turns the request away (403/401/429/503, e.g. a bot check) is opened in
+    headless Chromium instead."""
+    try:
+        resp = http_get(url, retries=2, timeout=30, headers=BROWSER_HEADERS)
+    except Exception as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if status in (401, 403, 429, 503):
+            html = render_page(url)
+            if html and len(BeautifulSoup(html, "lxml").get_text(strip=True)) > 200:
+                return html, "text/html", html.encode()
+        raise
+    return resp.text, (resp.headers.get("Content-Type") or "").lower(), resp.content
+
+
+_ARXIV = re.compile(r"^https?://(?:www\.|export\.)?arxiv\.org/(?:abs|pdf|html)/(\d{4}\.\d{4,5}|[a-z\-]+(?:\.[A-Z]{2})?/\d{7})(v\d+)?", re.I)
+
+
+def _from_arxiv(aid: str):
+    """An arXiv paper: title, authors and abstract from the abstract page, the full
+    text and figures from the HTML version (or the PDF when there is none)."""
+    head, images, body = [], [], ""
+    try:
+        html, _, _ = fetch_page(f"https://arxiv.org/abs/{aid}")
+        soup = BeautifulSoup(html, "lxml")
+        meta = lambda name: [m["content"] for m in soup.find_all("meta", attrs={"name": name}) if m.get("content")]
+        title = (meta("citation_title") or [""])[0]
+        quote = soup.find("blockquote", class_="abstract")
+        abstract = (meta("citation_abstract") or [quote.get_text(" ", strip=True) if quote else ""])[0]
+        abstract = re.sub(r"^Abstract:\s*", "", abstract)
+        authors = meta("citation_author")
+        head = [f"논문 제목: {title}" if title else "", f"저자: {', '.join(authors[:12])}" if authors else "",
+                f"초록: {abstract}" if abstract else ""]
+    except Exception as exc:
+        log.warning("arXiv abstract page %s failed: %s", aid, short_error(exc))
+    try:
+        resp = http_get(f"https://arxiv.org/html/{aid}", retries=1, timeout=40, headers=BROWSER_HEADERS)
+        base = (getattr(resp, "url", None) or f"https://arxiv.org/html/{aid}").rstrip("/") + "/"
+        body, _ = _page_text(resp.text)
+        figs, _ = media_candidates(resp.text, base)
+        images = [u for u in figs if "arxiv.org/html/" in u][:6]
+    except Exception:
+        try:
+            pdf = http_get(f"https://arxiv.org/pdf/{aid}", retries=1, timeout=60, headers=BROWSER_HEADERS).content
+            body = _pdf_text(pdf) if pdf[:5] == b"%PDF-" else ""
+        except Exception as exc:
+            log.warning("arXiv full text %s failed: %s", aid, short_error(exc))
+    text = "\n".join(x for x in head if x)
+    if body:
+        text += ("\n\n본문:\n" if text else "") + body
+    if not text:
+        raise ValueError(f"arXiv {aid}: neither the abstract nor the paper could be read")
+    return text[:CONTEXT_CHARS], images, [], {}, repo_links_text(text)
+
+
 def _from_article(page_url: str):
-    resp = http_get(page_url, retries=2, timeout=30, headers=BROWSER_HEADERS)
-    ctype = (resp.headers.get("Content-Type") or "").lower()
-    if "pdf" in ctype or resp.content[:5] == b"%PDF-":  # papers, reports, slides
-        text = _pdf_text(resp.content)
+    html, ctype, data = fetch_page(page_url)
+    if "pdf" in ctype or data[:5] == b"%PDF-":  # papers, reports, slides
+        text = _pdf_text(data)
         return text, [], [], {}, repo_links_text(text)
-    html = resp.text
     body, tags = _page_text(html)
     if len(body) < MIN_ARTICLE_CHARS:
         rendered = render_page(page_url)
@@ -498,10 +561,21 @@ def read_source(url: str):
     full = github_repo(url)
     if full:
         return (*_from_github(full), [])
+    m = _ARXIV.match(url or "")
+    if m:
+        return _from_arxiv(m.group(1))
     m = _HF_PAGE.match(url or "")
     if m and m.group(2).split("/")[0] not in ("docs", "blog", "papers", "datasets", "learn"):
         return _from_hf(url.split("?")[0].split("#")[0], bool(m.group(1)), m.group(2))
     return _from_article(url)
+
+
+def _geeknews_body(soup):
+    return soup.find(id="topic_contents") or soup.find(class_="topic_contents") or soup.find(id="topic_content")
+
+
+def _outside(href: str) -> bool:
+    return (href or "").startswith("http") and "hada.io" not in href
 
 
 def geeknews_origin(html: str):
@@ -510,19 +584,19 @@ def geeknews_origin(html: str):
     a short summary, no pictures or clips."""
     soup = BeautifulSoup(html, "lxml")
     origin = None
-    for sel in (".topictitle a[href]", ".topic_title a[href]", "div.topictitle > a", "h1 a[href]", "a.ud[href]"):
-        el = soup.select_one(sel)
-        if el and el.get("href", "").startswith("http") and "news.hada.io" not in el["href"]:
+    heads = soup.find_all(class_=["topictitle", "topic_title"]) + soup.find_all("h1")
+    for el in [h.find("a", href=True) for h in heads] + soup.find_all("a", class_="ud", href=True):
+        if el is not None and _outside(el.get("href")):
             origin = el["href"]
             break
-    body = soup.select_one("#topic_contents") or soup.select_one(".topic_contents") or soup.select_one("#topic_content")
+    body = _geeknews_body(soup)
     if body is not None:  # links the poster put in the summary, e.g. the project's repository
-        for a in body.select("a[href^='http']"):
+        for a in body.find_all("a", href=re.compile(r"^http")):
             a.append(f" ({a['href']})")
     if not origin:  # the first outside link above the summary
         stop = body.sourceline if body is not None and body.sourceline else None
-        for a in soup.select("a[href^='http']"):
-            if "hada.io" in a["href"] or (stop and a.sourceline and a.sourceline > stop):
+        for a in soup.find_all("a", href=re.compile(r"^http")):
+            if not _outside(a["href"]) or (stop and a.sourceline and a.sourceline > stop):
                 continue
             origin = a["href"]
             break
@@ -575,22 +649,35 @@ def fetch_context(item: dict) -> dict:
                     failed.append((f"GitHub 저장소 {linked[0]}", short_error(exc)))
         else:
             name = SOURCES.get(src, {}).get("name", src)
-            if item.get("summary"):
-                pieces.append(f"{name} 목록의 소개:\n{item['summary']}")
             linked = []
-            if src == "geeknews" and meta.get("discussion"):
-                topic_html = http_get(meta["discussion"], retries=1, timeout=30).text
-                origin, summary = geeknews_origin(topic_html)
+            if src == "geeknews":
+                original["chars"] = 0  # a GeekNews topic always introduces an original
+                summary, origin = "", None
+                if meta.get("discussion"):
+                    try:
+                        topic_html, _, _ = fetch_page(meta["discussion"])
+                        origin, summary = geeknews_origin(topic_html)
+                        body = _geeknews_body(BeautifulSoup(topic_html, "lxml"))
+                        linked += repo_links(body.decode() if body is not None else "")
+                    except Exception as exc:
+                        log.warning("GeekNews topic of %s failed: %s", item["uid"], short_error(exc))
+                        failed.append(("GeekNews 글", short_error(exc)))
+                if not summary and item.get("summary"):  # the topic page was closed to us: the feed's copy of the summary
+                    summary = item["summary"]
+                    linked += repo_links_text(" ".join(meta.get("links") or []))
                 if summary:
                     pieces.append(f"GeekNews 요약 (원문을 소개한 글):\n{summary}")
                     read.append(("GeekNews 요약", len(summary)))
-                    body = BeautifulSoup(topic_html, "lxml").select_one("#topic_contents, .topic_contents, #topic_content")
-                    linked += repo_links(body.decode() if body is not None else "")
+                origin = origin or next((u for u in meta.get("links") or [] if not github_repo(u)), None) \
+                    or next(iter(meta.get("links") or []), None)
                 if origin:
                     item["url"] = origin
                     meta["origin"] = origin
+            elif item.get("summary"):
+                pieces.append(f"{name} 글 본문:\n{item['summary']}")
+                read.append((f"{name} 글 본문", len(item["summary"])))
             page_url = item.get("url") or ""
-            if page_url.startswith("http") and "news.ycombinator.com" not in page_url and "news.hada.io" not in page_url:
+            if page_url.startswith("http") and "news.ycombinator.com" not in page_url and "hada.io" not in page_url:
                 original["chars"] = 0
                 try:
                     got = read_source(page_url)

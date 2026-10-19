@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+from email.utils import format_datetime
 import pytest
 from unittest import mock
 
@@ -75,12 +77,12 @@ ARXIV_RSS = """<?xml version="1.0" encoding="UTF-8"?>
 <description>arXiv:2610.01234v1 Announce Type: new
 Abstract: We study large language model reasoning with a verification loop.</description>
 <guid isPermaLink="false">oai:arXiv.org:2610.01234v1</guid><category>cs.CL</category><category>cs.AI</category>
-<pubDate>Fri, 16 Oct 2026 00:00:00 -0400</pubDate><dc:creator>Ana Kim, Ben Lee</dc:creator></item>
+<pubDate>{today}</pubDate><dc:creator>Ana Kim, Ben Lee</dc:creator></item>
 <item><title>An old paper, revised</title><link>https://arxiv.org/abs/2401.00001</link>
 <description>arXiv:2401.00001v3 Announce Type: replace
 Abstract: Large language model things.</description><category>cs.CL</category>
-<pubDate>Fri, 16 Oct 2026 00:00:00 -0400</pubDate><dc:creator>X</dc:creator></item>
-</channel></rss>"""
+<pubDate>{today}</pubDate><dc:creator>X</dc:creator></item>
+</channel></rss>""".replace("{today}", format_datetime(datetime.now(timezone.utc)))  # always within the lookback
 
 
 def test_arxiv_rss_feed():

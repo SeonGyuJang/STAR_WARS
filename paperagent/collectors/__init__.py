@@ -47,7 +47,7 @@ def short_error(exc) -> str:
     if isinstance(exc, requests.ConnectionError):
         return f"could not connect{where}"
     text = re.sub(r"https?://\S+", lambda m: urlparse(m.group(0)).netloc, str(exc))
-    return text[:200]
+    return re.sub(r"\s+", " ", text).strip()[:200] or exc.__class__.__name__
 
 
 def http_get(url, params=None, retries=3, timeout=60, **kwargs):
