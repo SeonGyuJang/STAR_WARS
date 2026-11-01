@@ -418,11 +418,9 @@ STAR_WARS/
 
 카드뉴스 디자인은 `paperagent/templates/cards/cards.html` 한 파일에 있습니다.
 
-</details>
-
----
-
 <div align="center">
 <sub>요약과 평점은 에이전트가 원문을 읽고 자동으로 작성합니다. 틀릴 수 있으니 중요한 판단 전에는 원문을 확인하세요.<br>
 글꼴: Pretendard, JetBrains Mono (SIL Open Font License 1.1)</sub>
 </div>
+
+</details>
