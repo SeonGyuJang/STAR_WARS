@@ -4,438 +4,260 @@
 
 **S**mart **T**opic **A**nalysis & **R**ating : **W**orthwise **A**rticle **R**esearch **S**ystem
 
-읽을 가치가 있는 논문만 골라 읽고, 평가하고, 지금 화제인 기술 소식과 함께 인스타 카드뉴스로 만드는 Claude 에이전트
+**읽을 가치가 있는 논문만 골라 끝까지 읽고, 평가하고, 카드뉴스로 만드는 Claude 에이전트**<br>
+지금 개발자들이 주목하는 기술 소식도 원문까지 읽고 쉽게 풀어 줍니다.
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![Flask](https://img.shields.io/badge/Flask-3-000000?logo=flask&logoColor=white)
 ![Claude](https://img.shields.io/badge/Claude-Haiku%20%C2%B7%20Opus%20%C2%B7%20Sonnet-D97757)
 ![Heroku](https://img.shields.io/badge/Deploy-Heroku-430098?logo=heroku&logoColor=white)
 ![Postgres](https://img.shields.io/badge/DB-SQLite%20%7C%20Postgres-4169E1?logo=postgresql&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-119%20passed-2EA44F)
 
-[로컬에서 실행](#1-로컬에서-홈페이지-띄워-보기) ·
-[명령어](#2-명령어) ·
-[테스트](#3-테스트) ·
-[Heroku 업데이트](#5-heroku에-변경-사항-올리기) ·
-[처음 설정 (API 키·Heroku 첫 배포)](docs/SETUP.md)
+[빠른 시작](#-빠른-시작) ·
+[주요 기능](#-주요-기능) ·
+[작동 방식](#-작동-방식) ·
+[사용 설명서](docs/USAGE.md) ·
+[처음 설정](docs/SETUP.md) ·
+[FAQ](#-자주-묻는-질문)
 
-<img src="docs/preview-cards.png" width="640" alt="논문 카드뉴스 예시 (PAPER, 남색)">
+<img src="docs/images/cards-paper.png" width="860" alt="논문 카드뉴스: 질문형 표지, 작동 방식, 결과, 그래서 나랑 무슨 상관, 마지막 장">
 
-<img src="docs/preview-tech-cards.png" width="640" alt="테크 카드뉴스 예시 (TECH, 테라코타)">
+<img src="docs/images/cards-tech.png" width="860" alt="테크 카드뉴스: 표지, 무엇인가요, 실제 데모, 그래서 나랑 무슨 상관, 마지막 장">
 
-<sub>위 카드뉴스와 아래 화면은 데모용 가상 논문·가상 프로젝트로 만든 예시입니다. 남색은 논문(PAPER), 테라코타색은 테크 소식(TECH)입니다.</sub>
+<sub>위 카드뉴스와 아래 화면은 모두 데모용 가상 논문·가상 프로젝트로 만든 예시입니다. 남색은 논문(PAPER), 테라코타색은 테크 소식(TECH)입니다.</sub>
 
 </div>
 
 ---
 
-## 무엇을 하나요
+## 📢 업데이트
 
-관심 키워드와 arXiv 분야, 저널·학회를 등록해 두면 **12시간마다** 다음을 반복합니다.
+- **2026.11** 테크 소식도 논문처럼 **수집 기간**(오늘 · 일주일 · 최대 30일)을 정할 수 있습니다. 실행할 때 이번 한 번만 바꿀 수도 있습니다.
+- **2026.10** Hacker News · GeekNews 소식은 소개 글이 아니라 **원문을 끝까지 읽고** 씁니다. 기사, PDF, arXiv 논문 전문과 그림, GitHub 저장소까지 따라가 읽습니다. 원문을 읽지 못하면 제목만으로 만들지 않고 보류합니다.
+- **2026.10** 카드뉴스 표지를 바꿨습니다. 그림과 핵심 요점 3줄을 넣고, 그림이 없으면 핵심 수치를 크게 보여 줍니다. 테크 표지에는 흥미도와 AI 한줄평이 들어갑니다. 대시보드에서 카드뉴스를 **전체 화면**으로 볼 수 있습니다.
+- **2026.10** **TECH 카테고리**가 생겼습니다. GitHub Trending, Hacker News, GeekNews, Hugging Face에서 화제인 소식을 골라 카드뉴스로 만듭니다. 마지막 장은 글자가 움직이는 **MP4 영상**입니다.
+- **2026.10** arXiv가 요청을 막을 때(HTTP 429)는 기다렸다 다시 묻고, 그래도 안 되면 RSS 피드로 그날 논문을 가져옵니다.
 
-| | 단계 | 내용 |
-|:-:|---|---|
-| 1 | **수집** | arXiv 분야와 저널·학회(NeurIPS, CVPR 같은 학회 포함)에서 키워드에 맞는 새 논문을 모읍니다. 학회 논문은 arXiv에 "Accepted at NeurIPS"처럼 적힌 채택 논문과 OpenAlex 목록에서 찾습니다 |
-| 2 | **관련도 판단** | 모은 논문 전부에 0~10점을 매깁니다. 7점 미만은 **관련도 미달**로 남겨 두고, 관리자가 골라서 읽힐 수 있습니다 |
-| 3 | **정독 → 평가 → 작성** | PDF 전문을 읽고 **방법론 신뢰도**와 **참신성**으로 채점한 뒤, 한국어 리뷰를 씁니다 |
-| 4 | **카드뉴스** | 인스타용 1080×1350 카드 10장: 질문형 표지 → 문제 → 핵심 아이디어 → 작동 방식 → 실험 → 결과(큰 숫자와 막대) → **그래서 나랑 무슨 상관?** → 평가 → 정리 → 프로필 안내(**글자가 차례로 올라오는 영상 카드**), 그리고 캡션 |
-| 5 | **트렌드** | 오늘 화제인 논문, 인용이 빠르게 느는 논문을 모읍니다. 공개 데이터만 쓰므로 **Claude API 없이도** 갱신됩니다 |
-| 6 | **테크 소식** | GitHub Trending, Hacker News, GeekNews, Hugging Face에서 화제인 프로젝트와 소식을 모아 흥미도를 매기고, 가장 좋은 것(기본 2개)을 쉬운 한국어 설명과 **TECH 카드뉴스**로 만듭니다. GeekNews·Hacker News는 소개 글이 가리키는 원문(기사, PDF, arXiv 논문 전문과 그림, GitHub 저장소 등)까지 읽고 그 내용을 중심으로 씁니다. 봇을 막는 사이트는 브라우저처럼 요청하고, JavaScript로 그리는 페이지는 헤드리스 Chromium으로 열어 읽습니다. Hacker News 댓글은 참고용으로만 씁니다. 수집 기간은 논문처럼 설정에서 정하고(1일=오늘, 7일=일주일, 최대 30일), 테크·대기열 화면의 **지금 만들기** 옆에서 이번 한 번만 바꿀 수도 있습니다. 원문을 끝내 읽지 못하면 제목만으로 카드뉴스를 만들지 않고 이유를 남기니, 나중에 **다시 읽기**를 누르면 됩니다. 소식 페이지의 **읽은 자료**에서 무엇을 몇 자 읽었는지 볼 수 있습니다. 만든 회사(Meta, Apple, Google 등)가 확인되면 그 회사의 공식 로고를 함께 넣고, 원본에 데모 영상이 있고 그 영상이 소개 내용과 맞을 때만 그 장을 영상으로 만듭니다 |
+## ✨ 주요 기능
 
-결과는 누구나 볼 수 있는 대시보드에 올라가고, 출처(저널·학회·arXiv 분야)별로 나눠 볼 수 있습니다. **설정** 페이지와 키워드·저널 관리, 실행은 관리자만 쓸 수 있습니다.
+### 1. 읽을 가치가 있는 논문만, 끝까지 읽고 평가
+
+관심 키워드와 arXiv 분야, 저널·학회(NeurIPS, CVPR 등)를 등록하면 12시간마다 새 논문을 모읍니다. 모은 논문은 모두 관련도(0~10점)를 매기고, 기준 이상인 논문만 **PDF 전문**을 읽습니다. 그다음 **방법론 신뢰도**와 **참신성**으로 채점하고 한국어 리뷰를 씁니다.
+
+- **세 모델 분업:** 저렴한 Haiku가 PDF를 읽어 근거 노트를 만들고, Opus는 그 노트만 보고 점수를 매기고, Sonnet이 문장을 씁니다.
+- **근거가 남는 리뷰:** 요약, 기존 연구와 다른 점, 한계, 추천 독자, 용어 정리를 함께 보여 줍니다. 모든 판단은 노트에 적힌 근거에서 나옵니다.
+
+<img src="docs/images/paper.png" alt="논문 리뷰 화면: 평점, 요약, 카드뉴스">
+
+### 2. 바로 올릴 수 있는 카드뉴스
+
+리뷰마다 인스타그램 규격(1080×1350) 카드뉴스와 캡션을 만듭니다. 질문형 표지로 시작해 **그래서 나랑 무슨 상관?**으로 의미를 짚고, 평가와 정리로 끝납니다.
+
+<table>
+<tr>
+<td width="62%"><img src="docs/images/viewer.png" alt="카드뉴스 전체 화면 보기"></td>
+<td width="38%" align="center"><img src="docs/images/outro.gif" width="240" alt="마지막 장 영상: STAR WARS 머리글자의 뜻이 차례로 나타남"></td>
+</tr>
+<tr>
+<td align="center"><sub>대시보드에서 전체 화면으로 넘겨 보기 (← → · 스와이프 · Esc)</sub></td>
+<td align="center"><sub>마지막 장은 매번 같은 효과의 MP4 영상</sub></td>
+</tr>
+</table>
+
+- **전체 받기**를 누르면 카드 이미지, 마지막 장 영상, `caption.txt`가 든 ZIP을 받습니다. 파일 번호 순서대로 올리면 됩니다.
+- 그림은 논문 PDF에서 뽑습니다. 그림이 각주나 본문과 겹치지 않도록 크기를 자동으로 맞춥니다.
+
+### 3. 테크 소식: 소개 글이 아니라 원문을 읽습니다
+
+GitHub Trending, Hacker News, GeekNews, Hugging Face에서 화제인 프로젝트와 소식을 모아 흥미도를 매기고, 가장 흥미로운 것을 쉬운 한국어 설명과 TECH 카드뉴스로 만듭니다.
+
+- **원문까지 따라가 읽기:** 뉴스 사이트 → 원문 기사 → 그 기사가 소개하는 GitHub 저장소까지 읽습니다. arXiv 링크는 논문 전문과 그림을, PDF 링크는 PDF를 읽습니다.
+- **막힌 페이지 대처:** 봇을 막는 사이트는 브라우저처럼 요청하고, JavaScript로 그리는 페이지는 헤드리스 Chromium으로 엽니다.
+- **읽은 자료 확인:** 무엇을 몇 자 읽었는지 소식 페이지의 **읽은 자료**에 남습니다. 원문을 끝내 읽지 못하면 이유를 남기고 만들지 않으니, 나중에 **다시 읽기**를 누르면 됩니다.
+- **회사 로고와 데모 영상:** 만든 회사(Meta, Apple, Google 등)가 확인되면 공식 로고를 넣습니다. 원본에 있는 데모 영상은 소개 내용과 맞을 때만 카드에 씁니다.
+
+<img src="docs/images/tech-item.png" alt="테크 소식 상세 화면: 요약, 숫자로 보기, 읽은 자료">
+
+### 4. 대기열: 다음에 무엇을 읽을지 보고 고르기
+
+다음 실행에서 읽을 논문과 만들 테크 소식이 순서대로 보입니다. **논문 | 테크 소식**을 오가며 순서를 바꾸거나, 점수 미달 항목을 골라 바로 만들 수 있습니다. 테크 소식은 **지금 만들기** 옆에서 이번에 모을 기간(오늘 · 일주일 · 한 달 등)을 고를 수 있습니다.
+
+<img src="docs/images/queue.png" alt="대기열 화면: 테크 소식 탭, 수집 기간 선택, 다음에 만들 소식">
+
+### 5. 트렌드와 대시보드
+
+오늘 화제인 논문(Hugging Face Daily Papers)과 인용이 빠르게 느는 논문(OpenAlex, Semantic Scholar)을 모읍니다. 공개 데이터만 쓰므로 **Claude API 없이도** 갱신됩니다. 대시보드는 누구나 볼 수 있고, 설정과 실행은 관리자만 할 수 있습니다.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/home.png" alt="오늘의 논문"></td>
+<td width="50%"><img src="docs/images/tech.png" alt="테크 소식 목록"></td>
+</tr>
+<tr>
+<td align="center"><sub>오늘의 논문</sub></td>
+<td align="center"><sub>테크 소식</sub></td>
+</tr>
+</table>
 
 > [!NOTE]
-> **Claude API에 문제가 생겨도 멈추지 않습니다.** API 키가 없거나 틀렸거나 크레딧이 부족하면 AI 단계(관련도 판단·정독·평가·작성)만 건너뜁니다.
-> 논문 수집, 트렌드, 기존 리뷰와 카드뉴스는 그대로 동작합니다. 화면 위쪽에는 관리자에게 "API 키를 확인하라"는 안내가 뜨고, 방문자에게는 짧은 안내만 보입니다.
-> 키를 고친 뒤 **API 다시 확인**을 누르거나 다음 실행이 돌면 자동으로 다시 읽기 시작합니다.
+> **Claude API에 문제가 생겨도 멈추지 않습니다.** API 키가 없거나 크레딧이 부족하면 AI 단계만 건너뛰고, 논문 수집·트렌드·기존 리뷰와 카드뉴스는 그대로 동작합니다. 키를 고친 뒤 **API 다시 확인**을 누르면 이어서 읽습니다.
+
+## 🔍 작동 방식
 
 ```mermaid
 flowchart LR
-    A[arXiv · 저널] -->|새 논문| B(관련도 판단<br/>Haiku)
-    B -->|7점 이상| C(정독<br/>Haiku가 PDF 전문 읽기)
+    A[arXiv · 저널 · 학회] -->|새 논문| B(관련도 판단<br/>Haiku)
+    B -->|기준 이상| C(정독<br/>Haiku가 PDF 전문)
     C -->|근거 노트| D(평가<br/>Opus가 채점)
-    D --> E(작성<br/>Sonnet이 한국어 리뷰)
-    E --> F[PAPER 카드뉴스<br/>마지막 장 영상]
-    E --> G[(DB)]
-    F --> G
+    D --> E(작성<br/>Sonnet)
+    E --> F[PAPER 카드뉴스]
     T[GitHub · HN · GeekNews · HF] -->|화제인 소식| U(흥미도 판단<br/>Haiku)
-    U --> V(설명 작성<br/>Sonnet)
-    V --> W[TECH 카드뉴스<br/>마지막 장 영상]
-    W --> G
-    G --> H[대시보드]
+    U --> R(원문 · 저장소 · 논문<br/>끝까지 읽기)
+    R --> V(설명 작성<br/>Sonnet)
+    V --> W[TECH 카드뉴스]
+    F --> H[대시보드]
+    W --> H
 ```
 
-> [!TIP]
-> **비용을 아끼는 구조입니다.** 입력이 가장 큰 PDF 정독은 가장 저렴한 Haiku가 맡습니다. 비싼 Opus는 PDF 대신 짧은 노트만 읽고 점수를 정합니다.
-> 기본 설정으로 논문 한 편에 약 $0.15~0.22, 하루 약 $1~1.4가 듭니다. 실제로 쓴 비용은 대시보드 **설정 → 모델과 비용**에서 볼 수 있습니다.
+| 단계 | 모델 | 하는 일 |
+|---|---|---|
+| 관련도 · 흥미도 판단 | Haiku | 제목과 초록(소개)만 보고 0~10점 |
+| 정독 | Haiku | 입력이 가장 큰 PDF 전문을 읽고 근거 노트 작성 |
+| 평가 | Opus | 노트만 읽고 방법론 신뢰도 · 참신성 채점 |
+| 작성 | Sonnet | 한국어 리뷰, 카드뉴스 문구, 캡션 |
 
-> [!NOTE]
-> PDF는 서버의 임시 폴더에서 읽고 바로 지웁니다. 사용자는 대시보드의 **원문 PDF 받기** 버튼으로 arXiv 같은 원문 사이트에서 받습니다.
+기본 설정으로 논문 한 편에 약 **$0.15~0.22**, 하루 약 **$1~1.4**, 테크 소식 한 개에 약 **$0.05~0.15**가 듭니다. 실제 비용은 **설정 → 모델과 비용**에서 볼 수 있습니다. 자세한 표는 [SETUP.md 2장](docs/SETUP.md#2-anthropic-api-키와-비용)에 있습니다.
 
-<table>
-<tr>
-<td width="50%"><img src="docs/preview-home.png" alt="오늘의 논문 화면"><p align="center"><sub>오늘의 논문</sub></p></td>
-<td width="50%"><img src="docs/preview-paper.png" alt="논문 리뷰 화면"><p align="center"><sub>논문 리뷰와 평점</sub></p></td>
-</tr>
-<tr>
-<td width="50%"><img src="docs/preview-tech.png" alt="테크 소식 화면"><p align="center"><sub>테크 소식</sub></p></td>
-<td width="50%"><img src="docs/preview-tech-item.png" alt="테크 소식 상세 화면"><p align="center"><sub>테크 소식 설명과 카드뉴스</sub></p></td>
-</tr>
-</table>
+## 🚀 빠른 시작
 
----
-
-## 1. 로컬에서 홈페이지 띄워 보기
-
-내 컴퓨터(`127.0.0.1`)에서 대시보드를 실행하는 방법입니다. **API 키가 없어도** 데모 데이터로 모든 화면을 확인할 수 있습니다.
-
-### 준비물
-
-- Python 3.10 이상 (`python3 --version`으로 확인)
-- Git
-
-### 1단계: 코드 받기
+API 키 없이도 데모 데이터로 모든 화면을 볼 수 있습니다.
 
 ```bash
-git clone https://github.com/SeonGyuJang/STAR_WARS.git
-cd STAR_WARS
-```
-
-### 2단계: 가상환경 만들고 켜기
-
-<table>
-<tr><th>macOS · Linux</th><th>Windows (PowerShell)</th></tr>
-<tr><td>
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-</td><td>
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-```
-
-</td></tr>
-</table>
-
-켜지면 터미널 앞에 `(.venv)`가 붙습니다. 새 터미널을 열 때마다 이 명령으로 다시 켜야 합니다.
-
-### 3단계: 패키지와 브라우저 설치
-
-```bash
+git clone https://github.com/SeonGyuJang/STAR_WARS.git && cd STAR_WARS
+python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python -m playwright install chromium     # 카드뉴스를 PNG로 찍는 브라우저 (한 번만)
-```
+python -m playwright install chromium                 # 카드뉴스를 찍는 브라우저 (한 번만)
+cp .env.example .env
 
-> [!NOTE]
-> Linux에서 Chromium 실행에 필요한 시스템 라이브러리가 없다는 오류가 나면 `python -m playwright install --with-deps chromium`을 실행하세요 (`sudo` 권한 필요).
-
-### 4단계: 설정 파일 만들기
-
-```bash
-cp .env.example .env        # Windows: copy .env.example .env
-```
-
-데모만 볼 때는 `.env`를 고치지 않아도 됩니다. 실제 논문을 리뷰하려면 `.env`에 API 키를 넣으세요.
-
-```bash
-ANTHROPIC_API_KEY=sk-ant-...     # 발급 방법: docs/SETUP.md 2장
-ADMIN_PASSWORD=test1234          # 넣으면 설정·관리 기능에 로그인이 필요해집니다
-```
-
-### 5단계: 데모 데이터 넣기
-
-```bash
-python -m paperagent demo
-```
-
-`demo paper #1 and TECH post #1 added ...`가 나오면 성공입니다.
-가상 논문 1편(리뷰와 카드뉴스 10장)과 가상 테크 소식 1개(카드뉴스 9장)가 들어가고, 대기열에도 논문 3편이 들어갑니다. API 호출은 하지 않습니다.
-
-### 6단계: 서버 실행
-
-```bash
+python -m paperagent demo                             # 가상 논문 1편 + 테크 소식 1개
 python -m paperagent serve --host 127.0.0.1 --port 8000 --no-scheduler
 ```
 
-| 옵션 | 뜻 |
-|---|---|
-| `--host 127.0.0.1` | 내 컴퓨터에서만 접속 가능 (같은 와이파이의 다른 기기에서도 보려면 `0.0.0.0`) |
-| `--port 8000` | 주소의 포트 번호. 이미 쓰는 포트라면 `8080` 등으로 바꾸세요 |
-| `--no-scheduler` | 자동 실행 타이머를 끕니다. API 키 없이 데모만 볼 때 쓰세요. 빼면 30초 뒤 실제 수집과 리뷰가 시작됩니다 |
-
-`Running on http://127.0.0.1:8000`이 보이면 준비가 끝난 것입니다. 서버를 끌 때는 터미널에서 <kbd>Ctrl</kbd> + <kbd>C</kbd>를 누릅니다.
-
-### 7단계: 브라우저에서 확인
-
-| 주소 | 확인할 것 |
-|---|---|
-| http://127.0.0.1:8000 | **오늘의 논문**: 남색 블록 아래 데모 논문 한 편이 점수, 요약, 썸네일과 함께 보이는지. 오른쪽에 **새 테크 소식**이 보입니다. 실행 중에는 오른쪽 위 **논문 읽는 중**을 누르면 진행 상황과 로그가 나옵니다 |
-| http://127.0.0.1:8000/tech | **테크 소식**: 테라코타 블록 아래 데모 프로젝트, 출처별 탭(GitHub · Hacker News · GeekNews · Hugging Face), 다음에 만들 소식 |
-| http://127.0.0.1:8000/tech/1 | **테크 소식 상세**: 쉬운 설명, 그래서 나랑 무슨 상관?, 직접 써보기, 숫자로 보기, 카드뉴스(마지막 장은 영상으로 재생) |
-| http://127.0.0.1:8000/paper/1 | **논문 리뷰**: 평점 막대, 단계별 요약, 주요 그림, 카드뉴스 넘겨보기, 캡션 복사 |
-| http://127.0.0.1:8000/files/cards/1.zip | **카드뉴스 ZIP**: 카드 10장(마지막 10번은 `card_10.mp4` 영상)과 `caption.txt`가 들어 있는지. 번호 순서대로 인스타에 올리면 됩니다 |
-| http://127.0.0.1:8000/queue | **대기열**: 맨 위에 실행 상태(지금 실행 / 강제 종료)와 **다음 실행에서 읽을 논문**이 읽을 순서대로 나옵니다. 체크박스로 골라 **지금 읽기** / **다음 실행 때 먼저 읽기** / **읽지 않기**. 위쪽 **논문 | 테크 소식** 전환으로 테크 소식 대기열(다음 실행에서 만들 소식, 흥미도 미달 등)도 같은 방식으로 보고 고를 수 있습니다 |
-| http://127.0.0.1:8000/settings | **설정** (관리자 전용): **PDF로 논문 추가**(끌어다 놓으면 관련도 판단 → 정독 → 평가 → 카드뉴스), 키워드, 논문 출처(저널·학회·arXiv 분야와 출처별 논문 수), 실행 간격, API 상태, 단계별 모델과 비용, 실행 기록 (한국 시간) |
-| http://127.0.0.1:8000/trending | **트렌드**: 비어 있으면 **지금 새로고침**을 누르세요 (인터넷 필요, API 키 불필요) |
-| http://127.0.0.1:8000/api/status | 서버 상태(JSON) |
-
-**관리자 판단 규칙**
-- **`ADMIN_PASSWORD`를 넣었을 때:** 오른쪽 위 **관리자 로그인**으로 로그인해야 설정 메뉴와 관리 기능이 보입니다.
-- **비워 두었을 때:** 이 컴퓨터(`127.0.0.1`)에서 접속한 경우에만 관리자로 봅니다. 그래서 로컬 테스트는 로그인 없이 할 수 있습니다.
-- **공개 서버(Heroku 등)에서 비워 두었을 때:** 아무도 관리자가 될 수 없으니, 반드시 `ADMIN_PASSWORD`를 설정하세요.
-
-### 8단계: 실제 논문으로 해 보기 (API 키 필요)
+http://127.0.0.1:8000 을 열면 됩니다. 실제 논문을 읽히려면 `.env`에 `ANTHROPIC_API_KEY`를 넣고 화면의 **지금 실행**을 누르거나, 논문 하나를 바로 리뷰해 보세요.
 
 ```bash
-python -m paperagent review 1706.03762      # "Attention Is All You Need"를 바로 리뷰 (1~3분)
+python -m paperagent review 1706.03762    # "Attention Is All You Need" (1~3분)
+python -m paperagent run                  # 수집부터 카드뉴스까지 한 번 실행
 ```
 
-끝나면 대시보드를 새로고침하세요. 실행 기록과 비용은 **설정** 페이지에서 볼 수 있습니다.
+단계별 설명, 전체 명령어, 테스트 방법은 **[사용 설명서](docs/USAGE.md)**에 있습니다.
 
-### 정리하기
+### Heroku에 배포
+
+Postgres와 Scheduler 애드온, Chromium 빌드팩으로 동작합니다. 처음 한 번 하는 설정(앱 · 빌드팩 · 애드온 · 환경 변수 · 스케줄러)은 [SETUP.md 4장](docs/SETUP.md#4-heroku-첫-배포)에, 이후 변경 사항을 올리는 방법은 [사용 설명서 5장](docs/USAGE.md#5-heroku에-변경-사항-올리기)에 있습니다.
 
 ```bash
-python -m paperagent demo --clear     # 데모 데이터만 지우기
-rm -rf data                           # 로컬 DB와 이미지를 모두 지우고 처음부터 (Windows: rmdir /s data)
+git push heroku main                     # 배포
+heroku run python -m paperagent demo     # 데모 데이터로 확인
 ```
 
----
+## ⚙️ 주요 설정
 
-## 2. 명령어
+대부분의 값은 대시보드 **설정** 화면에서 바꿉니다. 환경 변수 전체 목록은 [SETUP.md 3장](docs/SETUP.md#3-환경-변수-전체-목록)에 있습니다.
 
-모든 명령은 저장소 폴더에서 가상환경을 켠 상태로 실행합니다. Heroku에서는 앞에 `heroku run`을 붙입니다 (예: `heroku run python -m paperagent demo`).
+| 구분 | 설정 | 기본값 | 설명 |
+|---|---|---|---|
+| 논문 | 실행 간격 | 12시간 | 자동 실행 주기 |
+| | 수집 기간 | 3일 | 며칠 전 논문까지 모을지 |
+| | 한 번에 정독할 논문 | 3편 | 실행마다 PDF 전문을 읽는 수 |
+| | 최소 관련도 | 7.0 | 이보다 낮으면 대기열의 관련도 미달로 남김 |
+| 테크 | 수집 기간 | 1일 | 1 = 오늘, 7 = 일주일, 최대 30 |
+| | 실행마다 만드는 수 | 2개 | 0이면 정기 실행에서 만들지 않음 |
+| | 최소 흥미도 | 7.0 | 이보다 낮으면 흥미도 미달로 남김 |
+| 공통 | `CARD_HANDLE` | `@starwars.research` | 카드뉴스에 찍히는 계정 |
 
-| 명령 | 하는 일 | 언제 쓰나 |
-|---|---|---|
-| `python -m paperagent serve` | 대시보드 실행 (기본 `0.0.0.0:8000`, 자동 실행 타이머 포함) | 로컬에서 계속 돌릴 때 |
-| `python -m paperagent serve --host 127.0.0.1 --port 8000 --no-scheduler` | 타이머 없이 대시보드만 실행 | 화면만 확인할 때 |
-| `python -m paperagent run` | 수집 → 관련도 판단 → 정독·평가 → 카드뉴스 → 트렌드를 지금 1회 실행 | 바로 돌려 보고 싶을 때 |
-| `python -m paperagent run --if-due` | 설정한 간격이 지났을 때만 1회 실행 | Heroku Scheduler, cron |
-| `python -m paperagent review <arXiv ID 또는 링크>` | 특정 논문 한 편을 바로 리뷰 | 원하는 논문을 직접 넣을 때 |
-| `python -m paperagent cards <논문 번호>` | 저장된 리뷰로 카드뉴스만 다시 렌더링 (Claude 호출 없음) | 카드 디자인을 고친 뒤 |
-| `python -m paperagent trending` | 트렌드 패널만 갱신 (Claude 호출 없음, 외부 사이트 조회) | 트렌드 화면 확인 |
-| `python -m paperagent demo` | 가상 논문과 카드뉴스 넣기 (인터넷·API 키 필요 없음) | 화면 확인, 시연 |
-| `python -m paperagent demo --clear` | 데모 데이터 지우기 | 시연이 끝난 뒤 |
-| `python -m paperagent initdb` | DB 테이블 만들기·새 컬럼 추가 | Heroku 배포 때 자동 실행 |
-| `python -m pytest tests` | 테스트 실행 | 수정한 뒤 |
+## ❓ 자주 묻는 질문
 
 <details>
-<summary><b>예시 모음</b></summary>
+<summary><b>로그에 <code>arXiv ... 429</code>가 나옵니다</b></summary>
 
-```bash
-# 논문 번호 12의 카드뉴스를 다시 만들기 (번호는 주소 /paper/12 의 숫자)
-python -m paperagent cards 12
-
-# 링크 그대로 넣어도 됩니다
-python -m paperagent review https://arxiv.org/abs/2410.01234
-
-# 포트를 바꿔 실행
-python -m paperagent serve --host 127.0.0.1 --port 8080
-
-# 데이터 위치를 바꿔서 실행 (기본: ./data)
-DATA_DIR=/tmp/starwars-test python -m paperagent serve --no-scheduler
-```
-
+arXiv는 같은 서버에서 요청이 몰리면 잠시 막습니다(Heroku는 여러 앱이 IP를 함께 써서 더 자주 생깁니다). 한 번 실행에 arXiv 분야 전체를 요청 1번으로 묻고, 막히면 arXiv가 알려 준 시간만큼 기다렸다 다시 묻습니다. 그래도 안 되면 RSS 피드로 그날 논문을 가져오므로 따로 할 일은 없습니다.
 </details>
-
-대시보드에서도 같은 일을 할 수 있습니다.
-- **설정 → 실행**: 지금 한 번 실행, arXiv 링크로 바로 리뷰
-- **논문 페이지**: 다시 읽기, 카드 다시 만들기
-- **대기열**: 관련도 미달·오류 논문을 골라 지금 읽기, 또는 다음 실행 때 먼저 읽기
-- **트렌드**: 지금 새로고침 (Claude API 불필요)
-- **설정 → 모델과 비용**: API 다시 확인
-
----
-
-## 3. 테스트
-
-```bash
-pip install pytest
-python -m pytest tests             # 약 15초, 34개
-```
-
-외부 사이트와 Claude API는 가짜 응답으로 대체하므로 인터넷과 API 키 없이 돌아갑니다. 확인하는 내용은 아래와 같습니다.
-- 수집·스크리닝·리뷰·카드뉴스 전체 흐름
-- 단계별 모델과 비용 계산
-- PDF가 끝나면 지워지는지
-- 관리자 권한과 CSRF 방어, 설정 페이지 접근 제한
-- API 키 없음·잘못된 키일 때 AI만 건너뛰고 수집·트렌드는 진행되는지
-- 관련도 미달 논문을 골라 읽히기, 한국 시간 표시
-- 중복 실행 방지
-- 새 컬럼 자동 추가
 
 <details>
-<summary><b>Heroku와 같은 Postgres로 테스트하기</b></summary>
+<summary><b>테크 소식이 <code>원문을 읽지 못해 쓸 내용이 없습니다</code>로 멈췄습니다</b></summary>
 
-로컬에 Postgres가 있다면 Heroku와 같은 조건(Postgres + DB 이미지 저장)으로 전체 테스트를 돌릴 수 있습니다.
-
-```bash
-createdb starwars_test
-TEST_DATABASE_URL=postgresql://localhost/starwars_test python -m pytest tests
-```
-
-로컬 서버도 Postgres로 띄울 수 있습니다.
-
-```bash
-DATABASE_URL=postgresql://localhost/starwars_test python -m paperagent demo
-DATABASE_URL=postgresql://localhost/starwars_test python -m paperagent serve --host 127.0.0.1 --no-scheduler
-```
-
+원문 사이트가 접속을 막았거나 내려가 있었던 경우입니다. 빈 카드뉴스를 만들지 않으려고 멈춘 것이니, 시간이 지난 뒤 소식 페이지에서 **다시 읽기**를 누르세요. 괄호 안에 `HTTP 403 (사이트)`처럼 이유가 나옵니다.
 </details>
-
----
-
-## 4. Heroku 첫 배포
-
-처음 한 번만 하는 과정입니다. 앱 만들기, 빌드팩, Postgres·Scheduler 애드온, 환경 변수, 스케줄러 등록까지 **[docs/SETUP.md 4장](docs/SETUP.md#4-heroku-첫-배포)**에 순서대로 정리했습니다.
-
----
-
-## 5. Heroku에 변경 사항 올리기
-
-코드를 고친 뒤 운영 중인 Heroku 앱에 반영하는 순서입니다. 처음 배포가 끝나 있다고 가정합니다.
-
-### ① 로컬에서 고치고 확인하기
-
-```bash
-source .venv/bin/activate            # 가상환경 켜기 (Windows: .venv\Scripts\Activate.ps1)
-python -m pytest tests               # 테스트가 모두 통과하는지
-python -m paperagent serve --host 127.0.0.1 --no-scheduler   # 화면 확인 후 Ctrl+C
-```
-
-> [!TIP]
-> 카드뉴스 디자인(`paperagent/templates/cards/cards.html`)을 고쳤다면 `python -m paperagent demo`로 바로 결과를 볼 수 있습니다.
-> 결과 이미지는 `data/cards/<번호>/` 폴더에 생깁니다.
-
-### ② 변경 내용 커밋하기
-
-```bash
-git status                           # 바뀐 파일 확인
-git add -A                           # .env 와 data/ 는 .gitignore 때문에 올라가지 않습니다
-git commit -m "카드뉴스 표지 문구 수정"
-```
-
-### ③ GitHub에 올리기 (코드 보관용)
-
-```bash
-git push origin main                 # 지금 브랜치가 main 이 아니면 그 브랜치 이름으로
-```
-
-### ④ Heroku에 올리기 (실제 배포)
-
-```bash
-heroku git:remote -a my-starwars     # 이 컴퓨터에서 처음 한 번만. heroku 원격 저장소 연결
-git push heroku main                 # main 브랜치를 배포
-```
-
-> [!IMPORTANT]
-> Heroku는 자기 쪽 `main` 브랜치에 들어온 코드만 배포합니다. 다른 브랜치에서 작업했다면 `로컬브랜치:main` 형태로 보내세요.
-> ```bash
-> git push heroku claude/blissful-heisenberg-ybixq0:main
-> ```
-
-### ⑤ 배포 로그 확인
-
-`git push heroku` 출력에서 다음 순서가 보이면 정상입니다.
-
-| 순서 | 출력 | 뜻 |
-|:-:|---|---|
-| 1 | `Building on the Heroku-24 stack` · `Installing requirements with pip` | 빌드 (`requirements.txt`가 바뀌었으면 새 패키지도 설치) |
-| 2 | `Running release command...` · `database ready` | `python -m paperagent initdb` 실행. 새 테이블과 새 컬럼이 자동으로 추가됨 |
-| 3 | `Released v12` · `deployed to Heroku` | 새 버전 배포 완료. 웹 dyno가 자동으로 재시작됨 |
-
-### ⑥ 동작 확인
-
-```bash
-heroku ps                            # web.1: up 이면 정상
-heroku logs --tail                   # 실시간 로그 (Ctrl+C로 종료)
-heroku open                          # 브라우저로 열어서 화면 확인
-```
-
-수정한 기능을 바로 확인하고 싶다면 아래 명령을 씁니다.
-
-```bash
-heroku run python -m paperagent cards 12                                # 카드 디자인만 고친 경우
-heroku run:detached --size=standard-2x python -m paperagent run         # 전체 실행을 지금 한 번
-```
-
-### ⑦ 설정값만 바꿀 때 (코드 수정 없음)
-
-```bash
-heroku config:set JUDGE_EFFORT=medium        # 값 추가·변경 → 앱이 자동 재시작
-heroku config:unset JUDGE_EFFORT             # 값 삭제 (기본값으로)
-heroku config                                # 현재 값 확인
-```
-
-실행 간격, 정독 수, 최소 관련도, 키워드, 저널은 재배포 없이 **대시보드 설정 페이지**에서 바꾸면 됩니다.
-
-### ⑧ 문제가 생기면 되돌리기
-
-```bash
-heroku releases                      # 배포 기록 (v11, v12 ...)
-heroku rollback v11                  # 바로 전 버전으로 되돌리기
-```
-
-롤백은 코드만 되돌립니다. DB 데이터는 그대로입니다. 고친 뒤에는 ②~④를 다시 하면 됩니다.
 
 <details>
-<summary><b>GitHub에 push하면 자동으로 배포되게 하기 (선택)</b></summary>
+<summary><b>마지막 장이 영상이 아니라 그림으로 나옵니다</b></summary>
 
-1. Heroku 대시보드 → 앱 → **Deploy** 탭
-2. **Deployment method**에서 **GitHub**을 선택하고 저장소를 연결합니다
-3. **Automatic deploys**에서 배포할 브랜치(예: `main`)를 고르고 **Enable Automatic Deploys**를 누릅니다
-
-이후에는 ③ `git push origin main`만 하면 Heroku가 자동으로 ④~⑤를 진행합니다.
-
+영상은 ffmpeg로 만듭니다. 시스템에 ffmpeg가 없으면 `requirements.txt`의 `imageio-ffmpeg`에 들어 있는 것을 씁니다. 둘 다 없거나 `VIDEO_CARDS=0`이면 그림 카드로 대신합니다.
 </details>
 
----
+<details>
+<summary><b>API 키 없이 어디까지 쓸 수 있나요?</b></summary>
 
-## 6. 프로젝트 구조
+논문 수집, 트렌드, 대시보드, 데모 데이터, 이미 만든 리뷰와 카드뉴스는 모두 동작합니다. 관련도 판단·정독·평가·작성 같은 AI 단계만 멈춥니다.
+</details>
+
+<details>
+<summary><b>카드뉴스의 회사 로고는 써도 되나요?</b></summary>
+
+[Simple Icons](https://simpleicons.org)(CC0)의 공식 브랜드 마크를 씁니다. 누가 만든 프로젝트인지 알리는 용도로만 쓰며, 상표권은 각 회사에 있습니다. Simple Icons에 없는 회사(예: OpenAI, Microsoft)는 로고 없이 이름만 표시합니다.
+</details>
+
+더 많은 문제 해결 방법은 [SETUP.md 6장](docs/SETUP.md#6-문제-해결)에 있습니다.
+
+<details>
+<summary><b>📁 프로젝트 구조</b></summary>
 
 ```
 STAR_WARS/
 ├── paperagent/
-│   ├── collectors/          arXiv · 저널·학회(venues) · OpenAlex · 트렌드 수집
-│   ├── agent.py             Claude 단계별 호출 (관련도 · 정독 · 평가 · 작성)과 비용 계산
-│   ├── pipeline.py          한 번의 실행: 수집 → 판단 → 리뷰 → 카드뉴스 → 트렌드
-│   ├── pdfs.py              PDF 임시 다운로드, 그림 추출
-│   ├── cardnews.py          카드뉴스 렌더링 (Chromium)
-│   ├── db.py                DB (로컬 SQLite / Heroku Postgres)
-│   ├── storage.py           이미지 저장 (로컬 파일 / DB)
-│   ├── scheduler.py         로컬용 자동 실행 타이머
-│   ├── demo.py              데모 데이터
-│   ├── web.py               대시보드 라우트
-│   ├── templates/           대시보드와 카드뉴스 HTML
-│   └── static/              CSS · JS · 글꼴
-├── tests/                   pytest
-├── docs/SETUP.md            처음 설정 (API 키 · 비용 · Heroku 첫 배포 · 문제 해결)
-├── Procfile · app.json · .python-version · .slugignore    Heroku 설정
-├── requirements.txt
-└── .env.example             환경 변수 예시
+│   ├── collectors/        arXiv · 저널·학회 · OpenAlex · 트렌드 · 테크 소식(tech.py) 수집
+│   ├── agent.py           Claude 호출 (관련도 · 정독 · 평가 · 작성 · 테크 설명)과 비용 계산
+│   ├── pipeline.py        한 번의 실행: 수집 → 판단 → 리뷰 → 카드뉴스 → 트렌드 → 테크 소식
+│   ├── technews.py        테크 소식: 원문 읽기 → 그림·영상 → 작성 → 카드뉴스
+│   ├── cardnews.py        카드뉴스 렌더링 (Chromium)
+│   ├── video.py           마지막 장 영상 · 데모 영상 (ffmpeg)
+│   ├── logos.py           회사 로고 (Simple Icons)
+│   ├── pdfs.py            PDF 임시 다운로드, 그림 추출
+│   ├── db.py · storage.py DB와 파일 저장 (로컬 SQLite / Heroku Postgres)
+│   ├── web.py             대시보드
+│   ├── templates/         대시보드와 카드뉴스 HTML (cards/cards.html)
+│   └── static/            CSS · JS · 글꼴 · 로고
+├── tests/                 pytest (SQLite · Postgres)
+├── docs/                  USAGE.md(사용 설명서) · SETUP.md(처음 설정) · images/
+└── Procfile · app.json · requirements.txt · .env.example
 ```
-
-<details>
-<summary><b>디자인 원칙</b></summary>
-
-[awesome-claude-design](https://github.com/VoltAgent/awesome-claude-design)에 정리된 Vercel·Linear·Notion 계열의 원칙을 따랐습니다.
-
-- **서체 하나:** Pretendard만 씁니다. 고정폭 글꼴은 arXiv ID에만 씁니다.
-- **문장형 제목:** 대문자 라벨이나 장식 아이콘 대신 평범한 한국어 제목을 씁니다.
-- **색은 최소한:** 흰 바탕, 잉크 `#171717`, 포인트 컬러 코발트 `#2B59C3` 한 가지입니다. 다크 모드를 지원합니다.
-- **카드 한 장에 메시지 하나:** 단계 → 헤드라인 → 두 줄 설명 → 그림이나 핵심 수치 순서를 지킵니다.
-
-카드뉴스 디자인은 `paperagent/templates/cards/cards.html` 한 파일에 있습니다.
-
 </details>
+
+## 🙏 감사의 말
+
+- 논문 메타데이터: [arXiv](https://arxiv.org), [OpenAlex](https://openalex.org), [Semantic Scholar](https://www.semanticscholar.org), [Hugging Face Daily Papers](https://huggingface.co/papers). *Thank you to arXiv for use of its open access interoperability.*
+- 테크 소식: [GitHub Trending](https://github.com/trending), [Hacker News](https://news.ycombinator.com) ([HN Search API](https://hn.algolia.com/api)), [GeekNews](https://news.hada.io), [Hugging Face](https://huggingface.co)
+- 브랜드 마크: [Simple Icons](https://simpleicons.org) (CC0 1.0)
+- 글꼴: [Pretendard](https://github.com/orioncactus/pretendard), [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (SIL Open Font License 1.1)
+- 렌더링: [Playwright](https://playwright.dev), [FFmpeg](https://ffmpeg.org)
+
+## 📝 인용
+
+연구나 발표에서 이 프로젝트를 언급할 때는 아래 형식을 쓸 수 있습니다.
+
+```bibtex
+@software{star_wars_2026,
+  title  = {STAR WARS: Smart Topic Analysis \& Rating -- Worthwise Article Research System},
+  author = {Jang, SeonGyu},
+  year   = {2026},
+  url    = {https://github.com/SeonGyuJang/STAR_WARS}
+}
+```
 
 ---
 
 <div align="center">
-<sub>요약과 평점은 에이전트가 원문을 읽고 자동으로 작성합니다. 틀릴 수 있으니 중요한 판단 전에는 원문을 확인하세요.<br>
-글꼴: Pretendard, JetBrains Mono (SIL Open Font License 1.1)</sub>
+<sub>요약과 평점은 에이전트가 원문을 읽고 자동으로 작성합니다. 틀릴 수 있으니 중요한 판단 전에는 원문을 확인하세요.</sub>
 </div>

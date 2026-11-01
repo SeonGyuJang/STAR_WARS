@@ -867,7 +867,8 @@ def test_geeknews_period_keeps_only_recent_feed_topics_when_the_site_is_closed()
         raise requests.HTTPError("403", response=mock.Mock(status_code=403, url=url))
 
     with mock.patch.object(tech, "http_get", side_effect=fake), mock.patch.object(tech, "render_page", return_value=None):
-        week = tech.geeknews(10, days=7)
+        with mock.patch.object(tech.time, "time", return_value=tech._published("2026-10-18T00:00:00+09:00")):
+            week = tech.geeknews(10, days=7)  # two days after the feed's topic, whatever today is
         with mock.patch.object(tech.time, "time", return_value=tech._published("2026-12-30T00:00:00+09:00")):
             later = tech.geeknews(10, days=7)
     assert [i["uid"] for i in week] == ["geeknews:23456"]  # the past lists are closed: the feed alone

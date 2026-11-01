@@ -531,6 +531,8 @@ def seed_tech(render_cards=True):
     db.update_tech(iid, media=media, interest=8.5, interest_reason="개발자 관심이 높은 새 도구 (데모)")
     review = copy.deepcopy(SAMPLE_TECH_REVIEW)
     review["_cost"] = {"total_usd": 0.0, "calls": [], "note": "demo data - no API calls"}
+    review["_read"] = [{"label": "GitHub 저장소 README (demo/termpilot)", "chars": 18420},
+                       {"label": "원문이 소개하는 문서 (https://example.com/termpilot/docs)", "chars": 9310}]
     cards, videos = ([], {})
     if render_cards:
         cards, videos = cardnews.render_tech_and_store(db.get_tech(iid), review)
