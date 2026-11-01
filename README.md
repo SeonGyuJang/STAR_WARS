@@ -4,260 +4,267 @@
 
 **S**mart **T**opic **A**nalysis & **R**ating : **W**orthwise **A**rticle **R**esearch **S**ystem
 
-**읽을 가치가 있는 논문만 골라 끝까지 읽고, 평가하고, 카드뉴스로 만드는 Claude 에이전트**<br>
-지금 개발자들이 주목하는 기술 소식도 원문까지 읽고 쉽게 풀어 줍니다.
+**읽을 가치가 있는 논문과 기술 소식만 골라, 끝까지 읽고, 쉽게 풀어 주는 AI 연구 비서**
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
-![Flask](https://img.shields.io/badge/Flask-3-000000?logo=flask&logoColor=white)
-![Claude](https://img.shields.io/badge/Claude-Haiku%20%C2%B7%20Opus%20%C2%B7%20Sonnet-D97757)
-![Heroku](https://img.shields.io/badge/Deploy-Heroku-430098?logo=heroku&logoColor=white)
-![Postgres](https://img.shields.io/badge/DB-SQLite%20%7C%20Postgres-4169E1?logo=postgresql&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-119%20passed-2EA44F)
+[둘러보기](#-화면별-기능) · [시작하기](#-시작하기) · [자주 묻는 질문](#-자주-묻는-질문)
 
-[빠른 시작](#-빠른-시작) ·
-[주요 기능](#-주요-기능) ·
-[작동 방식](#-작동-방식) ·
-[사용 설명서](docs/USAGE.md) ·
-[처음 설정](docs/SETUP.md) ·
-[FAQ](#-자주-묻는-질문)
+<img src="docs/images/cards-paper.png" width="860" alt="논문 카드뉴스 예시">
 
-<img src="docs/images/cards-paper.png" width="860" alt="논문 카드뉴스: 질문형 표지, 작동 방식, 결과, 그래서 나랑 무슨 상관, 마지막 장">
+<img src="docs/images/cards-tech.png" width="860" alt="테크 카드뉴스 예시">
 
-<img src="docs/images/cards-tech.png" width="860" alt="테크 카드뉴스: 표지, 무엇인가요, 실제 데모, 그래서 나랑 무슨 상관, 마지막 장">
-
-<sub>위 카드뉴스와 아래 화면은 모두 데모용 가상 논문·가상 프로젝트로 만든 예시입니다. 남색은 논문(PAPER), 테라코타색은 테크 소식(TECH)입니다.</sub>
+<sub>이 문서의 화면과 카드뉴스는 모두 데모용 가상 논문·가상 프로젝트로 만든 예시입니다.</sub>
 
 </div>
 
 ---
 
-## 📢 업데이트
+## STAR WARS가 하는 일
 
-- **2026.11** 테크 소식도 논문처럼 **수집 기간**(오늘 · 일주일 · 최대 30일)을 정할 수 있습니다. 실행할 때 이번 한 번만 바꿀 수도 있습니다.
-- **2026.10** Hacker News · GeekNews 소식은 소개 글이 아니라 **원문을 끝까지 읽고** 씁니다. 기사, PDF, arXiv 논문 전문과 그림, GitHub 저장소까지 따라가 읽습니다. 원문을 읽지 못하면 제목만으로 만들지 않고 보류합니다.
-- **2026.10** 카드뉴스 표지를 바꿨습니다. 그림과 핵심 요점 3줄을 넣고, 그림이 없으면 핵심 수치를 크게 보여 줍니다. 테크 표지에는 흥미도와 AI 한줄평이 들어갑니다. 대시보드에서 카드뉴스를 **전체 화면**으로 볼 수 있습니다.
-- **2026.10** **TECH 카테고리**가 생겼습니다. GitHub Trending, Hacker News, GeekNews, Hugging Face에서 화제인 소식을 골라 카드뉴스로 만듭니다. 마지막 장은 글자가 움직이는 **MP4 영상**입니다.
-- **2026.10** arXiv가 요청을 막을 때(HTTP 429)는 기다렸다 다시 묻고, 그래도 안 되면 RSS 피드로 그날 논문을 가져옵니다.
+관심 키워드만 등록해 두면, 매일 쏟아지는 논문과 기술 소식 중 **읽을 가치가 있는 것만** 골라 정리해 줍니다.
 
-## ✨ 주요 기능
+| | 📄 논문 (PAPER) | 🛠️ 테크 소식 (TECH) |
+|---|---|---|
+| **어디서** | arXiv 분야, 저널, 학회(NeurIPS, CVPR 등) | GitHub Trending, Hacker News, GeekNews, Hugging Face |
+| **고르는 기준** | 관심 키워드와의 관련도 (0~10점) | 일반 독자와 개발자에게 흥미로운 정도 (0~10점) |
+| **읽는 범위** | PDF 전문 | 소개 글이 가리키는 원문 기사 · GitHub 저장소 · 논문까지 |
+| **결과** | 방법론 · 참신성 평점과 한국어 리뷰 | 쉬운 한국어 설명 |
+| **카드뉴스** | 남색 PAPER 카드 10장 + 캡션 | 테라코타색 TECH 카드 + 캡션 |
 
-### 1. 읽을 가치가 있는 논문만, 끝까지 읽고 평가
+이 과정은 12시간마다 자동으로 돌고, 결과는 누구나 볼 수 있는 대시보드에 올라갑니다. 설정을 바꾸거나 직접 실행하는 일은 관리자만 할 수 있습니다.
 
-관심 키워드와 arXiv 분야, 저널·학회(NeurIPS, CVPR 등)를 등록하면 12시간마다 새 논문을 모읍니다. 모은 논문은 모두 관련도(0~10점)를 매기고, 기준 이상인 논문만 **PDF 전문**을 읽습니다. 그다음 **방법론 신뢰도**와 **참신성**으로 채점하고 한국어 리뷰를 씁니다.
+---
 
-- **세 모델 분업:** 저렴한 Haiku가 PDF를 읽어 근거 노트를 만들고, Opus는 그 노트만 보고 점수를 매기고, Sonnet이 문장을 씁니다.
-- **근거가 남는 리뷰:** 요약, 기존 연구와 다른 점, 한계, 추천 독자, 용어 정리를 함께 보여 줍니다. 모든 판단은 노트에 적힌 근거에서 나옵니다.
+## 🧭 화면별 기능
 
-<img src="docs/images/paper.png" alt="논문 리뷰 화면: 평점, 요약, 카드뉴스">
+위쪽 메뉴는 **오늘의 논문 · 테크 소식 · 트렌드 · 대기열 · 설정** 다섯 개입니다.
 
-### 2. 바로 올릴 수 있는 카드뉴스
+### 1. 오늘의 논문
 
-리뷰마다 인스타그램 규격(1080×1350) 카드뉴스와 캡션을 만듭니다. 질문형 표지로 시작해 **그래서 나랑 무슨 상관?**으로 의미를 짚고, 평가와 정리로 끝납니다.
+에이전트가 끝까지 읽고 평가한 논문이 모이는 첫 화면입니다.
+
+<img src="docs/images/home.png" alt="오늘의 논문 화면">
+
+- **논문 카드:** 왼쪽에 종합 평점(방법론 · 참신성)을, 가운데에 한국어 제목, 원래 제목, 한 줄 요약을 보여 줍니다. 카드뉴스 표지 미리보기도 함께 나옵니다.
+- **바로가기:** 카드마다 **리뷰 읽기 · 원문 · PDF · 카드뉴스** 링크와 해당 키워드가 붙어 있습니다.
+- **찾기와 정렬:** 검색(키보드 `/`), 출처(arXiv 분야 · 저널 · 학회), 키워드, 기간(24시간 · 7일 · 30일)으로 거를 수 있습니다. 정렬은 최근 분석순 · 평점순 · 관련도순입니다.
+- **오른쪽 패널:** 새 테크 소식, 오늘 화제인 논문, 인용이 늘고 있는 논문, 출처별 논문 수, 관심 키워드가 있습니다. 출처 이름을 누르면 그 출처의 논문만 볼 수 있습니다.
+
+### 2. 논문 리뷰
+
+논문 하나를 누르면 리뷰 전체를 볼 수 있습니다. 논문을 직접 읽기 전에 핵심을 빠르게 파악하는 용도입니다.
+
+<img src="docs/images/paper.png" alt="논문 리뷰 화면">
+
+- **리뷰 본문:** 아래 순서로 정리합니다.
+  - 요약
+  - 어떤 문제를 푸나요 · 배경
+  - 핵심 아이디어 · 어떻게 풀었나요
+  - 실험 설정 · 핵심 결과 · 분석과 추가 실험
+  - 기여 · 기존 연구와 다른 점 · 왜 중요한가요
+  - 한계 · 추천 독자 · 용어 정리
+  - 논문에서 뽑은 **주요 그림**과 초록
+- **평점:** 방법론 신뢰도와 참신성 점수, 각각의 이유, 에이전트가 얼마나 확신하는지(확신도)를 보여 줍니다.
+- **버튼:** 원문 PDF 받기, 논문 페이지, 링크 공유, **다시 읽기**(처음부터 다시 읽고 리뷰를 새로 씀)가 있습니다.
+- **카드뉴스 칸:** 오른쪽에서 이 논문의 카드뉴스를 넘겨 보고 받을 수 있습니다. 자세한 내용은 [카드뉴스](#3-카드뉴스)에 있습니다.
+
+### 3. 카드뉴스
+
+논문 리뷰와 테크 소식 페이지 오른쪽에 있는 카드뉴스 칸입니다. 인스타그램 규격(1080×1350)으로 만들어 바로 올릴 수 있습니다.
 
 <table>
 <tr>
 <td width="62%"><img src="docs/images/viewer.png" alt="카드뉴스 전체 화면 보기"></td>
-<td width="38%" align="center"><img src="docs/images/outro.gif" width="240" alt="마지막 장 영상: STAR WARS 머리글자의 뜻이 차례로 나타남"></td>
+<td width="38%" align="center"><img src="docs/images/outro.gif" width="240" alt="마지막 장 영상"></td>
 </tr>
 <tr>
-<td align="center"><sub>대시보드에서 전체 화면으로 넘겨 보기 (← → · 스와이프 · Esc)</sub></td>
-<td align="center"><sub>마지막 장은 매번 같은 효과의 MP4 영상</sub></td>
+<td align="center"><sub><b>크게 보기</b>: 전체 화면에서 ← → · 스와이프로 넘기기, Esc로 닫기</sub></td>
+<td align="center"><sub>마지막 장은 글자가 움직이는 MP4 영상</sub></td>
 </tr>
 </table>
 
-- **전체 받기**를 누르면 카드 이미지, 마지막 장 영상, `caption.txt`가 든 ZIP을 받습니다. 파일 번호 순서대로 올리면 됩니다.
-- 그림은 논문 PDF에서 뽑습니다. 그림이 각주나 본문과 겹치지 않도록 크기를 자동으로 맞춥니다.
+- **논문 카드뉴스(10장):** 질문형 표지 → 문제 → 핵심 아이디어 → 작동 방식 → 실험 → 결과(큰 숫자와 막대) → **그래서 나랑 무슨 상관?** → 평가 → 정리 → 마지막 장
+- **테크 카드뉴스:** 질문형 표지 → 무엇인가요 → 실제 데모(원본 데모 영상이 내용과 맞을 때만) → 어떻게 작동하나요 → 그래서 나랑 무슨 상관? → 직접 써보기 → 정리 → 마지막 장
+- **표지:** 그림과 핵심 요점 3줄을 넣습니다. 그림이 없으면 핵심 수치를 크게 보여 줍니다. 테크 표지에는 흥미도와 AI 한줄평이 들어갑니다.
+- **받기:** **이 장 받기**, **전체 받기 (ZIP)**(카드 이미지, 마지막 장 영상, `caption.txt`), **캡션 복사**가 있습니다. ZIP 안의 파일 번호 순서대로 올리면 됩니다.
+- **고치기:** 관리자는 **카드 다시 만들기**로 카드만 새로 그릴 수 있습니다. 리뷰 내용은 그대로 둡니다.
 
-### 3. 테크 소식: 소개 글이 아니라 원문을 읽습니다
+### 4. 테크 소식
 
-GitHub Trending, Hacker News, GeekNews, Hugging Face에서 화제인 프로젝트와 소식을 모아 흥미도를 매기고, 가장 흥미로운 것을 쉬운 한국어 설명과 TECH 카드뉴스로 만듭니다.
+지금 개발자들이 주목하는 프로젝트와 기술 뉴스를 쉬운 한국어로 풀어 놓은 화면입니다.
 
-- **원문까지 따라가 읽기:** 뉴스 사이트 → 원문 기사 → 그 기사가 소개하는 GitHub 저장소까지 읽습니다. arXiv 링크는 논문 전문과 그림을, PDF 링크는 PDF를 읽습니다.
-- **막힌 페이지 대처:** 봇을 막는 사이트는 브라우저처럼 요청하고, JavaScript로 그리는 페이지는 헤드리스 Chromium으로 엽니다.
-- **읽은 자료 확인:** 무엇을 몇 자 읽었는지 소식 페이지의 **읽은 자료**에 남습니다. 원문을 끝내 읽지 못하면 이유를 남기고 만들지 않으니, 나중에 **다시 읽기**를 누르면 됩니다.
-- **회사 로고와 데모 영상:** 만든 회사(Meta, Apple, Google 등)가 확인되면 공식 로고를 넣습니다. 원본에 있는 데모 영상은 소개 내용과 맞을 때만 카드에 씁니다.
+<img src="docs/images/tech.png" alt="테크 소식 화면">
 
-<img src="docs/images/tech-item.png" alt="테크 소식 상세 화면: 요약, 숫자로 보기, 읽은 자료">
+- **소식 카드:** 출처 배지(GitHub · Hacker News · GeekNews · Hugging Face), 분야, 핵심 숫자(GitHub 스타, 추천 수 등)를 보여 줍니다. 만든 회사(Meta, Apple, Google 등)가 확인되면 **공식 로고**도 붙습니다.
+- **찾기와 정렬:** 검색, 출처, 기간으로 거르고 최근 작성순 · 흥미도순으로 정렬합니다.
+- **오른쪽 패널:** 다음에 만들 소식과 출처별 소식 수가 있습니다.
+- **지금 만들기:** 관리자는 이번에 모을 기간(오늘 · 3일 · 일주일 · 2주 · 한 달)을 골라 바로 만들 수 있습니다.
 
-### 4. 대기열: 다음에 무엇을 읽을지 보고 고르기
+### 5. 테크 소식 상세
 
-다음 실행에서 읽을 논문과 만들 테크 소식이 순서대로 보입니다. **논문 | 테크 소식**을 오가며 순서를 바꾸거나, 점수 미달 항목을 골라 바로 만들 수 있습니다. 테크 소식은 **지금 만들기** 옆에서 이번에 모을 기간(오늘 · 일주일 · 한 달 등)을 고를 수 있습니다.
+소식 하나를 누르면 설명 전체를 볼 수 있습니다.
 
-<img src="docs/images/queue.png" alt="대기열 화면: 테크 소식 탭, 수집 기간 선택, 다음에 만들 소식">
+<img src="docs/images/tech-item.png" alt="테크 소식 상세 화면">
 
-### 5. 트렌드와 대시보드
+- **설명:** 요약 · 무엇인가요 · 어떻게 작동하나요 · 그래서 나랑 무슨 상관? · 직접 써보기 · 알아 둘 점 · 용어 정리 순서입니다.
+- **원문까지 읽고 씁니다.** 뉴스 사이트의 짧은 소개 대신, 소개 글이 가리키는 원문을 끝까지 읽습니다.
+  - 기사가 소개하는 **GitHub 저장소**도 따라가 읽습니다.
+  - arXiv 링크는 **논문 전문과 그림**을, PDF 링크는 PDF를 읽습니다.
+  - 접속을 막는 사이트나 JavaScript로 그리는 페이지도 브라우저로 열어 읽습니다.
+- **숫자로 보기:** 스타 수, 오늘 받은 스타, 추천 수, 댓글 수처럼 출처가 공개한 숫자를 보여 줍니다.
+- **읽은 자료:** 무엇을 몇 자 읽고 썼는지 나옵니다(관리자에게만 보임). 원문을 끝내 읽지 못하면 제목만으로 만들지 않고 이유를 남깁니다.
+- **버튼:** 원문 보기, GitHub 저장소, 출처의 토론 페이지(Hacker News 등), 링크 공유, **다시 읽기**가 있습니다.
 
-오늘 화제인 논문(Hugging Face Daily Papers)과 인용이 빠르게 느는 논문(OpenAlex, Semantic Scholar)을 모읍니다. 공개 데이터만 쓰므로 **Claude API 없이도** 갱신됩니다. 대시보드는 누구나 볼 수 있고, 설정과 실행은 관리자만 할 수 있습니다.
+### 6. 트렌드
 
-<table>
-<tr>
-<td width="50%"><img src="docs/images/home.png" alt="오늘의 논문"></td>
-<td width="50%"><img src="docs/images/tech.png" alt="테크 소식 목록"></td>
-</tr>
-<tr>
-<td align="center"><sub>오늘의 논문</sub></td>
-<td align="center"><sub>테크 소식</sub></td>
-</tr>
-</table>
+지금 연구자들 사이에서 화제인 논문을 모은 화면입니다. 공개 데이터만 쓰므로 Claude API가 없어도 실행할 때마다 갱신됩니다.
 
-> [!NOTE]
-> **Claude API에 문제가 생겨도 멈추지 않습니다.** API 키가 없거나 크레딧이 부족하면 AI 단계만 건너뛰고, 논문 수집·트렌드·기존 리뷰와 카드뉴스는 그대로 동작합니다. 키를 고친 뒤 **API 다시 확인**을 누르면 이어서 읽습니다.
+<img src="docs/images/trending.png" alt="트렌드 화면">
 
-## 🔍 작동 방식
+| 패널 | 내용 | 데이터 |
+|---|---|---|
+| **키워드별 새 논문** | 최근 14일 동안 키워드마다 모인 논문 수 (막대) | 이 대시보드 |
+| **오늘 화제인 논문** | 연구자들이 추천을 많이 한 오늘의 논문 | Hugging Face Daily Papers |
+| **인용이 빠르게 느는 논문** | 최근 3년 논문 중 올해 인용 속도가 작년보다 빠른 순 | OpenAlex |
+| **많이 인용된 최근 논문** | 최근 1년, 관심 키워드별 누적 인용 순 | OpenAlex |
+| **리뷰한 논문의 인용 변화** | 지난 7일 동안 늘어난 인용 수 | Semantic Scholar |
 
-```mermaid
-flowchart LR
-    A[arXiv · 저널 · 학회] -->|새 논문| B(관련도 판단<br/>Haiku)
-    B -->|기준 이상| C(정독<br/>Haiku가 PDF 전문)
-    C -->|근거 노트| D(평가<br/>Opus가 채점)
-    D --> E(작성<br/>Sonnet)
-    E --> F[PAPER 카드뉴스]
-    T[GitHub · HN · GeekNews · HF] -->|화제인 소식| U(흥미도 판단<br/>Haiku)
-    U --> R(원문 · 저장소 · 논문<br/>끝까지 읽기)
-    R --> V(설명 작성<br/>Sonnet)
-    V --> W[TECH 카드뉴스]
-    F --> H[대시보드]
-    W --> H
+- 항목마다 **요약 보기**로 초록을 펼칠 수 있습니다.
+- 관리자는 **이 논문 리뷰하기**로 화제인 논문을 바로 리뷰에 넣을 수 있습니다.
+
+### 7. 대기열
+
+다음 실행에서 무엇을 읽고 만들지 미리 보고 고르는 화면입니다. 위쪽 **논문 | 테크 소식** 스위치로 오갑니다.
+
+<img src="docs/images/queue.png" alt="대기열 화면">
+
+- **다음 실행에서 읽을 논문(만들 소식):** 직접 고른 항목이 먼저 오고, 그다음 점수가 높은 순서입니다. 실행 중에는 진행 상황이 함께 표시됩니다.
+- **점수 미달:** 기준보다 낮은 항목도 버리지 않고 남겨 둡니다. **초록 보기**(테크는 **소개 보기**)로 내용을 확인할 수 있습니다.
+- **관리자가 할 수 있는 일:**
+  - 고른 항목을 **지금 읽기**
+  - **다음 실행 때 먼저 읽기**로 순서를 앞당기기
+  - **읽지 않기**(테크는 **만들지 않기**)로 빼기
+- **출처별 탭:** 출처마다 대기 중인 항목만 볼 수 있습니다.
+
+### 8. 설정 (관리자)
+
+에이전트가 무엇을, 얼마나 자주 읽을지 정하는 화면입니다.
+
+<img src="docs/images/settings.png" width="560" alt="설정 화면">
+
+- **실행:**
+  - 실행 간격, 수집 기간(며칠 전 논문까지 모을지), 소스당 최대 수집, 한 번에 정독할 논문 수, 최소 관련도
+  - **arXiv 링크 또는 ID로 바로 리뷰**
+  - **지금 한 번 실행**
+- **테크 소식:** 사용할 출처, 실행마다 만드는 수, 최소 흥미도, 수집 기간(1 = 오늘, 7 = 일주일, 최대 30), 소스당 최대 수집
+- **관심 키워드:** 제목이나 초록에 이 단어가 들어간 논문을 모읍니다. 에이전트가 관련도를 다시 판단하므로 넓게 적어도 됩니다.
+- **논문 출처:** arXiv 분야와 저널 · 학회를 검색해서 추가합니다. 출처마다 모인 논문 수가 보입니다.
+- **PDF로 논문 추가:** 가지고 있는 논문 PDF를 올리면 점수와 상관없이 끝까지 읽고 리뷰와 카드뉴스를 만듭니다.
+- **모델과 비용 · 실행 기록:** 최근 30일 비용, 논문당 평균 비용, 실행별 결과를 볼 수 있습니다.
+
+> [!TIP]
+> 위쪽의 **실행 콘솔**을 누르면 지금 무엇을 하고 있는지(수집 → 관련도 판단 → 정독·리뷰 → 트렌드 → 테크 소식)와 실행 로그를 실시간으로 볼 수 있습니다. 실행 중에는 그 자리에서 **강제 종료**도 할 수 있습니다.
+
+---
+
+## 🧠 어떻게 읽고 평가하나요
+
+세 가지 Claude 모델이 일을 나눠 맡습니다. 가장 긴 글(PDF 전문)은 가장 저렴한 모델이 읽고, 점수는 가장 좋은 모델이 매깁니다.
+
+```
+논문   모으기 ─▶ 관련도 판단 ─▶ PDF 정독 ─▶ 평가 ─▶ 리뷰 작성 ─▶ PAPER 카드뉴스
+                 (Haiku)        (Haiku)     (Opus)   (Sonnet)
+
+테크   모으기 ─▶ 흥미도 판단 ─▶ 원문 · 저장소 · 논문 읽기 ─▶ 설명 작성 ─▶ TECH 카드뉴스
+                 (Haiku)                                     (Sonnet)
 ```
 
-| 단계 | 모델 | 하는 일 |
-|---|---|---|
-| 관련도 · 흥미도 판단 | Haiku | 제목과 초록(소개)만 보고 0~10점 |
-| 정독 | Haiku | 입력이 가장 큰 PDF 전문을 읽고 근거 노트 작성 |
-| 평가 | Opus | 노트만 읽고 방법론 신뢰도 · 참신성 채점 |
-| 작성 | Sonnet | 한국어 리뷰, 카드뉴스 문구, 캡션 |
+- **근거 기반 평가:** 정독 모델이 PDF에서 근거를 뽑아 노트로 남기고, 평가 모델은 그 노트만 보고 방법론과 참신성을 채점합니다.
+- **지어내지 않기:** 리뷰와 설명은 읽은 자료에 있는 사실과 숫자만 씁니다. 모르는 내용은 빼고, 어려운 용어는 따로 풀이합니다.
+- **멈추지 않기:** Claude API에 문제가 생기면 AI 단계만 쉬고, 논문 수집 · 트렌드 · 기존 리뷰와 카드뉴스는 그대로 동작합니다.
 
-기본 설정으로 논문 한 편에 약 **$0.15~0.22**, 하루 약 **$1~1.4**, 테크 소식 한 개에 약 **$0.05~0.15**가 듭니다. 실제 비용은 **설정 → 모델과 비용**에서 볼 수 있습니다. 자세한 표는 [SETUP.md 2장](docs/SETUP.md#2-anthropic-api-키와-비용)에 있습니다.
+기본 설정으로 논문 한 편에 약 **$0.15~0.22**, 하루 약 **$1~1.4**, 테크 소식 한 개에 약 **$0.05~0.15**가 듭니다. 실제로 쓴 비용은 **설정 → 모델과 비용**에서 볼 수 있습니다.
 
-## 🚀 빠른 시작
+---
 
-API 키 없이도 데모 데이터로 모든 화면을 볼 수 있습니다.
+## 🚀 시작하기
+
+API 키가 없어도 데모 데이터로 모든 화면을 둘러볼 수 있습니다. Python 3.10 이상이 필요합니다.
 
 ```bash
 git clone https://github.com/SeonGyuJang/STAR_WARS.git && cd STAR_WARS
 python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python -m playwright install chromium                 # 카드뉴스를 찍는 브라우저 (한 번만)
+python -m playwright install chromium
 cp .env.example .env
 
-python -m paperagent demo                             # 가상 논문 1편 + 테크 소식 1개
+python -m paperagent demo        # 가상 논문 1편과 테크 소식 1개 넣기
 python -m paperagent serve --host 127.0.0.1 --port 8000 --no-scheduler
 ```
 
-http://127.0.0.1:8000 을 열면 됩니다. 실제 논문을 읽히려면 `.env`에 `ANTHROPIC_API_KEY`를 넣고 화면의 **지금 실행**을 누르거나, 논문 하나를 바로 리뷰해 보세요.
+브라우저에서 http://127.0.0.1:8000 을 엽니다.
 
-```bash
-python -m paperagent review 1706.03762    # "Attention Is All You Need" (1~3분)
-python -m paperagent run                  # 수집부터 카드뉴스까지 한 번 실행
-```
+**실제로 써 보려면**
 
-단계별 설명, 전체 명령어, 테스트 방법은 **[사용 설명서](docs/USAGE.md)**에 있습니다.
+1. `.env`에 Claude API 키를 넣습니다: `ANTHROPIC_API_KEY=sk-ant-...` (발급 방법은 [처음 설정](docs/SETUP.md#2-anthropic-api-키와-비용)에 있습니다)
+2. **설정**에서 관심 키워드와 arXiv 분야 · 저널 · 학회를 등록합니다.
+3. **지금 한 번 실행**을 누르고, 위쪽 **실행 콘솔**에서 진행 상황을 봅니다.
 
-### Heroku에 배포
+논문 하나만 먼저 시험해 보고 싶다면 설정의 **바로 리뷰** 칸에 arXiv 링크를 넣거나 `python -m paperagent review 1706.03762`를 실행하세요.
 
-Postgres와 Scheduler 애드온, Chromium 빌드팩으로 동작합니다. 처음 한 번 하는 설정(앱 · 빌드팩 · 애드온 · 환경 변수 · 스케줄러)은 [SETUP.md 4장](docs/SETUP.md#4-heroku-첫-배포)에, 이후 변경 사항을 올리는 방법은 [사용 설명서 5장](docs/USAGE.md#5-heroku에-변경-사항-올리기)에 있습니다.
+> 서버에 올려 계속 돌리는 방법(Heroku 배포, 환경 변수, 명령어 전체)은 [사용 설명서](docs/USAGE.md)와 [처음 설정](docs/SETUP.md)에 정리했습니다.
 
-```bash
-git push heroku main                     # 배포
-heroku run python -m paperagent demo     # 데모 데이터로 확인
-```
-
-## ⚙️ 주요 설정
-
-대부분의 값은 대시보드 **설정** 화면에서 바꿉니다. 환경 변수 전체 목록은 [SETUP.md 3장](docs/SETUP.md#3-환경-변수-전체-목록)에 있습니다.
-
-| 구분 | 설정 | 기본값 | 설명 |
-|---|---|---|---|
-| 논문 | 실행 간격 | 12시간 | 자동 실행 주기 |
-| | 수집 기간 | 3일 | 며칠 전 논문까지 모을지 |
-| | 한 번에 정독할 논문 | 3편 | 실행마다 PDF 전문을 읽는 수 |
-| | 최소 관련도 | 7.0 | 이보다 낮으면 대기열의 관련도 미달로 남김 |
-| 테크 | 수집 기간 | 1일 | 1 = 오늘, 7 = 일주일, 최대 30 |
-| | 실행마다 만드는 수 | 2개 | 0이면 정기 실행에서 만들지 않음 |
-| | 최소 흥미도 | 7.0 | 이보다 낮으면 흥미도 미달로 남김 |
-| 공통 | `CARD_HANDLE` | `@starwars.research` | 카드뉴스에 찍히는 계정 |
+---
 
 ## ❓ 자주 묻는 질문
 
 <details>
-<summary><b>로그에 <code>arXiv ... 429</code>가 나옵니다</b></summary>
+<summary><b>평점과 리뷰는 믿을 만한가요?</b></summary>
 
-arXiv는 같은 서버에서 요청이 몰리면 잠시 막습니다(Heroku는 여러 앱이 IP를 함께 써서 더 자주 생깁니다). 한 번 실행에 arXiv 분야 전체를 요청 1번으로 묻고, 막히면 arXiv가 알려 준 시간만큼 기다렸다 다시 묻습니다. 그래도 안 되면 RSS 피드로 그날 논문을 가져오므로 따로 할 일은 없습니다.
+에이전트가 원문을 끝까지 읽고 근거를 남긴 뒤 평가하지만, AI가 쓴 글이라 틀릴 수 있습니다. 리뷰는 읽을 논문을 고르고 핵심을 빠르게 파악하는 데 쓰고, 중요한 판단 전에는 원문을 확인하세요.
 </details>
 
 <details>
-<summary><b>테크 소식이 <code>원문을 읽지 못해 쓸 내용이 없습니다</code>로 멈췄습니다</b></summary>
+<summary><b>관련도가 낮다고 빠진 논문도 볼 수 있나요?</b></summary>
 
-원문 사이트가 접속을 막았거나 내려가 있었던 경우입니다. 빈 카드뉴스를 만들지 않으려고 멈춘 것이니, 시간이 지난 뒤 소식 페이지에서 **다시 읽기**를 누르세요. 괄호 안에 `HTTP 403 (사이트)`처럼 이유가 나옵니다.
+네. **대기열**의 관련도 미달 목록에 그대로 남아 있습니다. 관리자는 골라서 **지금 읽기**를 누르면 됩니다.
 </details>
 
 <details>
-<summary><b>마지막 장이 영상이 아니라 그림으로 나옵니다</b></summary>
+<summary><b>테크 소식을 일주일치 모을 수 있나요?</b></summary>
 
-영상은 ffmpeg로 만듭니다. 시스템에 ffmpeg가 없으면 `requirements.txt`의 `imageio-ffmpeg`에 들어 있는 것을 씁니다. 둘 다 없거나 `VIDEO_CARDS=0`이면 그림 카드로 대신합니다.
+**설정 → 테크 소식 → 수집 기간**을 7로 바꾸면 됩니다. 한 번만 바꾸고 싶으면 테크 소식이나 대기열 화면의 **지금 만들기** 옆에서 기간을 고르세요. 이미 모은 소식은 다시 모으지 않습니다.
+</details>
+
+<details>
+<summary><b>테크 소식이 "원문을 읽지 못해 쓸 내용이 없습니다"로 멈췄어요.</b></summary>
+
+원문 사이트가 접속을 막았거나 내려가 있었던 경우입니다. 빈 카드뉴스를 만들지 않으려고 멈춘 것이니, 시간이 지난 뒤 소식 페이지에서 **다시 읽기**를 누르세요.
+</details>
+
+<details>
+<summary><b>카드뉴스를 인스타그램에 어떻게 올리나요?</b></summary>
+
+카드뉴스 칸의 **전체 받기 (ZIP)** 로 받은 파일을 번호 순서대로 한 게시물에 올리고, **캡션 복사**로 캡션을 붙여 넣으면 됩니다. 마지막 장은 영상(MP4)이고, 사진과 영상은 한 게시물에 섞어 올릴 수 있습니다.
 </details>
 
 <details>
 <summary><b>API 키 없이 어디까지 쓸 수 있나요?</b></summary>
 
-논문 수집, 트렌드, 대시보드, 데모 데이터, 이미 만든 리뷰와 카드뉴스는 모두 동작합니다. 관련도 판단·정독·평가·작성 같은 AI 단계만 멈춥니다.
+논문 수집, 트렌드, 대시보드, 데모 데이터, 이미 만든 리뷰와 카드뉴스는 모두 동작합니다. 관련도 판단 · 정독 · 평가 · 작성 같은 AI 단계만 멈춥니다.
 </details>
 
-<details>
-<summary><b>카드뉴스의 회사 로고는 써도 되나요?</b></summary>
-
-[Simple Icons](https://simpleicons.org)(CC0)의 공식 브랜드 마크를 씁니다. 누가 만든 프로젝트인지 알리는 용도로만 쓰며, 상표권은 각 회사에 있습니다. Simple Icons에 없는 회사(예: OpenAI, Microsoft)는 로고 없이 이름만 표시합니다.
-</details>
-
-더 많은 문제 해결 방법은 [SETUP.md 6장](docs/SETUP.md#6-문제-해결)에 있습니다.
-
-<details>
-<summary><b>📁 프로젝트 구조</b></summary>
-
-```
-STAR_WARS/
-├── paperagent/
-│   ├── collectors/        arXiv · 저널·학회 · OpenAlex · 트렌드 · 테크 소식(tech.py) 수집
-│   ├── agent.py           Claude 호출 (관련도 · 정독 · 평가 · 작성 · 테크 설명)과 비용 계산
-│   ├── pipeline.py        한 번의 실행: 수집 → 판단 → 리뷰 → 카드뉴스 → 트렌드 → 테크 소식
-│   ├── technews.py        테크 소식: 원문 읽기 → 그림·영상 → 작성 → 카드뉴스
-│   ├── cardnews.py        카드뉴스 렌더링 (Chromium)
-│   ├── video.py           마지막 장 영상 · 데모 영상 (ffmpeg)
-│   ├── logos.py           회사 로고 (Simple Icons)
-│   ├── pdfs.py            PDF 임시 다운로드, 그림 추출
-│   ├── db.py · storage.py DB와 파일 저장 (로컬 SQLite / Heroku Postgres)
-│   ├── web.py             대시보드
-│   ├── templates/         대시보드와 카드뉴스 HTML (cards/cards.html)
-│   └── static/            CSS · JS · 글꼴 · 로고
-├── tests/                 pytest (SQLite · Postgres)
-├── docs/                  USAGE.md(사용 설명서) · SETUP.md(처음 설정) · images/
-└── Procfile · app.json · requirements.txt · .env.example
-```
-</details>
-
-## 🙏 감사의 말
-
-- 논문 메타데이터: [arXiv](https://arxiv.org), [OpenAlex](https://openalex.org), [Semantic Scholar](https://www.semanticscholar.org), [Hugging Face Daily Papers](https://huggingface.co/papers). *Thank you to arXiv for use of its open access interoperability.*
-- 테크 소식: [GitHub Trending](https://github.com/trending), [Hacker News](https://news.ycombinator.com) ([HN Search API](https://hn.algolia.com/api)), [GeekNews](https://news.hada.io), [Hugging Face](https://huggingface.co)
-- 브랜드 마크: [Simple Icons](https://simpleicons.org) (CC0 1.0)
-- 글꼴: [Pretendard](https://github.com/orioncactus/pretendard), [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (SIL Open Font License 1.1)
-- 렌더링: [Playwright](https://playwright.dev), [FFmpeg](https://ffmpeg.org)
-
-## 📝 인용
-
-연구나 발표에서 이 프로젝트를 언급할 때는 아래 형식을 쓸 수 있습니다.
-
-```bibtex
-@software{star_wars_2026,
-  title  = {STAR WARS: Smart Topic Analysis \& Rating -- Worthwise Article Research System},
-  author = {Jang, SeonGyu},
-  year   = {2026},
-  url    = {https://github.com/SeonGyuJang/STAR_WARS}
-}
-```
+더 많은 문제 해결 방법은 [처음 설정 · 문제 해결](docs/SETUP.md#6-문제-해결)에 있습니다.
 
 ---
 
+## 🙏 감사의 말
+
+- 논문 데이터: [arXiv](https://arxiv.org), [OpenAlex](https://openalex.org), [Semantic Scholar](https://www.semanticscholar.org), [Hugging Face Daily Papers](https://huggingface.co/papers). *Thank you to arXiv for use of its open access interoperability.*
+- 테크 소식: [GitHub Trending](https://github.com/trending), [Hacker News](https://news.ycombinator.com), [GeekNews](https://news.hada.io), [Hugging Face](https://huggingface.co)
+- 회사 로고: [Simple Icons](https://simpleicons.org) (CC0). 로고는 누가 만든 프로젝트인지 알리는 용도로만 쓰며, 상표권은 각 회사에 있습니다.
+- 글꼴: [Pretendard](https://github.com/orioncactus/pretendard), [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (SIL Open Font License 1.1)
+
 <div align="center">
+<br>
 <sub>요약과 평점은 에이전트가 원문을 읽고 자동으로 작성합니다. 틀릴 수 있으니 중요한 판단 전에는 원문을 확인하세요.</sub>
 </div>
