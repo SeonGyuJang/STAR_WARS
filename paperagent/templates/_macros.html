@@ -11,28 +11,38 @@
   {% if cats %}<optgroup label="arXiv 분야">{% for s in cats %}<option value="{{ s.id }}" {{ 'selected' if current and current.id == s.id }}>{{ s.name }} ({{ s.count }})</option>{% endfor %}</optgroup>{% endif %}
 </select>
 {% endmacro %}
-{% macro ig_check(p) %}
-<form method="post" action="{{ url_for('web.toggle_instagram', paper_id=p.id) }}" class="ig-check" data-ig>
-  <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="posted" value="1">
-  <button type="submit" aria-label="인스타 업로드 완료로 표시: {{ (p.review or {}).title_ko or p.title }}" title="인스타에 올렸다면 체크하세요"><span></span></button>
-</form>
+{# the card news of a post: carousel (a video slide plays in place), downloads, caption #}
+{% macro cards_panel(slides, zip_url, caption, rerender_url=None, theme='paper', rendering=False) %}
+<section class="card cards-panel {{ theme }}" id="cards">
+  {% if rendering %}<p class="rendering" data-reload="12"><span class="spin" aria-hidden="true"></span>카드뉴스를 다시 만드는 중입니다. 끝나면 자동으로 새로고침됩니다.</p>{% endif %}
+  <div class="score-top"><h3>카드뉴스 {% if slides %}<span class="count">{{ slides | length }}장{% if slides | selectattr('mp4') | list %} · 영상 포함{% endif %}</span>{% endif %}</h3>
+    {% if slides %}<a class="small strong" href="{{ zip_url }}">전체 받기 (ZIP)</a>{% endif %}</div>
+  {% if slides %}
+    <div class="carousel" data-carousel>
+      <div class="slides">{% for s in slides %}{% if s.mp4 %}<video src="{{ s.mp4 }}" poster="{{ s.png }}" muted loop playsinline preload="metadata" aria-label="카드 {{ s.n }} (영상)"></video>{% else %}<img src="{{ s.png }}" alt="카드 {{ s.n }}" loading="lazy">{% endif %}{% endfor %}</div>
+      <button class="nav-btn prev" data-prev aria-label="이전">‹</button><button class="nav-btn next" data-next aria-label="다음">›</button>
+      <button type="button" class="zoom-btn" data-zoom aria-label="카드뉴스 크게 보기" title="크게 보기 (F)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>크게 보기</button>
+      <div class="dots"></div>
+    </div>
+    <div class="dl">한 장씩 받기 {% for s in slides %}<a href="{{ (s.mp4 or s.png) ~ '?dl=1' }}" class="{{ 'vid' if s.mp4 }}" title="{{ '영상 (MP4)' if s.mp4 else '이미지 (PNG)' }}">{{ s.n }}{% if s.mp4 %}▶{% endif %}</a>{% endfor %}</div>
+    <p class="small muted post-tip">ZIP 안의 파일 번호 순서대로 인스타에 올리고, 아래 캡션을 붙여 넣으세요. 마지막 장(▶)은 영상(MP4)입니다.</p>
+  {% else %}<p class="small muted" style="margin-top: 8px">카드뉴스가 아직 없습니다.</p>{% endif %}
+  {% if caption %}
+    <div class="cap-label">캡션</div>
+    <textarea class="caption" readonly rows="8" id="caption">{{ caption }}</textarea>
+  {% endif %}
+  <div class="row-actions">
+    {% if caption %}<button class="btn sm" data-copy="#caption">캡션 복사</button>{% endif %}
+    {% if is_admin and rerender_url %}<form method="post" action="{{ rerender_url }}"><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="btn ghost sm">카드 다시 만들기</button></form>{% endif %}
+  </div>
+</section>
 {% endmacro %}
-{% macro ig_cancel(p) %}
-<form method="post" action="{{ url_for('web.toggle_instagram', paper_id=p.id) }}" class="inline" data-confirm="인스타 업로드 표시를 취소할까요? 이 논문은 다시 업로드 전 목록으로 돌아갑니다.">
-  <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="posted" value="0"><input type="hidden" name="back" value="main">
-  <button class="link small ig-cancel">업로드 취소</button>
-</form>
-{% endmacro %}
-{# post the card news to Instagram through the API; shows progress and the result #}
-{% macro ig_publish(p, compact=False) %}{% set st = p.instagram_status %}
-<div class="ig-pub {{ 'compact' if compact }}" data-ig-pub data-status-url="{{ url_for('web.instagram_status', paper_id=p.id) }}" data-state="{{ st or '' }}">
-  <form method="post" action="{{ url_for('web.instagram_publish', paper_id=p.id) }}" data-ig-pub-form {{ 'hidden' if st in ('publishing', 'posted') }}
-        data-confirm="카드뉴스 {{ (p.card_paths or [])|length }}장과 캡션으로 인스타그램에 게시할까요? 게시 후에는 인스타그램 앱에서만 지울 수 있습니다.">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-    <button class="btn {{ 'sm ghost' if compact else 'sm' }} ig-btn">{{ '다시 시도' if st == 'error' else '인스타에 바로 올리기' }}</button>
-  </form>
-  <span class="ig-pub-state" data-ig-pub-msg>{% if st == 'publishing' %}<span class="spin" aria-hidden="true"></span>인스타그램에 올리는 중…
-    {% elif st == 'posted' and p.instagram_permalink %}<a href="{{ p.instagram_permalink }}" target="_blank" rel="noopener">인스타에서 보기 ↗</a>
-    {% elif st == 'error' %}<span class="err">{{ p.instagram_error }}</span>{% endif %}</span>
-</div>
-{% endmacro %}
+{# a tech post's source: neutral GitHub-style label with the source's own small mark #}
+{% macro sbadge(key, name) %}<span class="sbadge s-{{ key }}" title="출처: {{ name }}">{% if key == 'github' %}<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>{% elif key == 'hn' %}<i class="ico hn" aria-hidden="true">Y</i>{% elif key == 'geeknews' %}<i class="ico geeknews" aria-hidden="true">G</i>{% elif key == 'hf' %}<i class="ico hf" aria-hidden="true">🤗</i>{% endif %}{{ name }}</span>{% endmacro %}
+
+{% macro tech_days_select(settings) -%}
+<select name="days" class="days-select" aria-label="이번에 모을 기간" title="이번 실행에서 모을 기간">
+  <option value="">설정대로 · {{ settings.tech_lookback_days }}일</option>
+  {% for d, label in [(1, '오늘'), (3, '3일'), (7, '일주일'), (14, '2주'), (30, '한 달')] %}{% if d != settings.tech_lookback_days %}<option value="{{ d }}">{{ label }}</option>{% endif %}{% endfor %}
+</select>
+{%- endmacro %}

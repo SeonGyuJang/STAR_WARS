@@ -8,8 +8,8 @@ from pathlib import Path
 
 import anthropic
 
-from . import agent, cardnews, config, db, pdfs, storage
-from .collectors import arxiv, match_keywords, openalex, trending, venues
+from . import agent, cardnews, config, db, pdfs, storage, technews
+from .collectors import arxiv, match_keywords, openalex, short_error, trending, venues
 
 log = logging.getLogger(__name__)
 _start_lock = threading.Lock()  # makes "nothing running? then start" atomic within this process
@@ -20,6 +20,10 @@ STAGE_LABELS = {"screen": "관련도 판단", "read": "원문 읽는 중", "judg
 
 class RunCancelled(Exception):
     """The admin stopped the run from the dashboard."""
+
+
+class _SkipPapers(Exception):
+    """A TECH-only run: go straight to the TECH stage."""
 
 
 def is_running() -> bool:
@@ -93,7 +97,7 @@ def resolve_journals(say):
         try:
             hit = venues.best_openalex_match(known) if known else openalex.resolve_source(src["name"])
         except Exception as exc:
-            say(f"journal lookup failed for {src['name']}: {exc}")
+            say(f"journal lookup failed for {src['name']}: {short_error(exc)}")
             continue
         meta["openalex_checked"] = True
         if hit:
@@ -109,12 +113,26 @@ def resolve_journals(say):
 
 def collect(keywords, settings, say):
     new = 0
-    for src in db.list_sources(kind="arxiv", enabled_only=True):
-        try:
-            found = arxiv.fetch_category(src["value"], keywords, settings["lookback_days"], settings["max_per_source"])
+    cats = db.list_sources(kind="arxiv", enabled_only=True)
+    per_cat = {src["id"]: [] for src in cats}
+    if cats:
+        try:  # one request for every category (arXiv limits how often a server may ask)
+            found = arxiv.fetch_categories([c["value"] for c in cats], keywords, settings["lookback_days"], settings["max_per_source"])
+            for p in found:  # each paper goes to the first configured category it is in (its main one first)
+                order = [p.get("primary_category")] + list(p.get("categories") or [])
+                src = next((c for name in order for c in cats if c["value"] == name), cats[0])
+                if len(per_cat[src["id"]]) < settings["max_per_source"]:
+                    per_cat[src["id"]].append(p)
+            say(f"arXiv: {len(found)} matched in {len(cats)} categories (one request)")
         except Exception as exc:
-            say(f"arXiv {src['value']} failed: {exc}")
-            continue
+            say(f"arXiv API unavailable ({short_error(exc)}); using the daily RSS feeds instead")
+            for src in cats:
+                try:
+                    per_cat[src["id"]] = arxiv.fetch_rss(src["value"], keywords, settings["lookback_days"])[: settings["max_per_source"]]
+                except Exception as rss_exc:
+                    say(f"arXiv {src['value']} RSS failed: {short_error(rss_exc)}")
+    for src in cats:
+        found = per_cat[src["id"]]
         added = sum(db.insert_paper({**p, "source_id": src["id"],
                                      "source_name": f"arXiv · {p.get('primary_category') or src['value']}"}) for p in found)
         new += added
@@ -129,14 +147,14 @@ def collect(keywords, settings, say):
                 found += hits
                 notes.append(f"OpenAlex {len(hits)}")
             except Exception as exc:
-                notes.append(f"OpenAlex failed: {exc}")
+                notes.append(f"OpenAlex failed: {short_error(exc)}")
         if meta["arxiv_terms"]:
             try:
                 hits = venues.fetch_arxiv(src["name"], meta["arxiv_terms"], keywords, days, settings["max_per_source"])
                 found += hits
                 notes.append(f"arXiv {len(hits)}")
             except Exception as exc:
-                notes.append(f"arXiv failed: {exc}")
+                notes.append(f"arXiv failed: {short_error(exc)}")
         if not notes:
             say(f"{src['name']}: no way to collect yet (not in OpenAlex, no arXiv names)")
             continue
@@ -210,11 +228,11 @@ def process_paper(paper: dict, keywords, say=log.info) -> tuple[bool, float]:
         say(f"  reviewed ({depth}): method {review['methodology_score']} / novelty {review['novelty_score']}"
             f" · ${cost:.3f} ({breakdown})")
 
-        card_paths = []
+        card_paths, card_videos = [], {}
         try:
             stage("render")
-            card_paths = cardnews.render_and_store({**paper, "id": pid}, review)
-            say(f"  rendered {len(card_paths)} cards")
+            card_paths, card_videos = cardnews.render_and_store({**paper, "id": pid}, review)
+            say(f"  rendered {len(card_paths)} cards" + (f" + {len(card_videos)} video" if card_videos else ""))
         except Exception as exc:
             say(f"  card rendering failed: {exc}")
 
@@ -227,6 +245,7 @@ def process_paper(paper: dict, keywords, say=log.info) -> tuple[bool, float]:
             score_novelty=review["novelty_score"],
             score_overall=review["overall_score"],
             card_paths=card_paths,
+            card_videos=card_videos,
             cost_usd=cost,
             priority=0,
             reviewed_at=db.now_iso(),
@@ -260,8 +279,8 @@ def _spent(exc, say):
 
 def rerender_cards(paper_id: int):
     paper = db.get_paper(paper_id)
-    keys = cardnews.render_and_store(paper, paper["review"])
-    db.update_paper(paper_id, card_paths=keys)
+    keys, videos = cardnews.render_and_store(paper, paper["review"])
+    db.update_paper(paper_id, card_paths=keys, card_videos=videos)
     return keys
 
 
@@ -330,14 +349,18 @@ def add_uploaded_pdf(data: bytes, filename: str = "", title: str = "") -> tuple[
     return pid, True
 
 
-def run(trigger: str = "schedule", paper_ids=None):
+def run(trigger: str = "schedule", paper_ids=None, tech_only=False, tech_ids=None, tech_days=None):
     """One full cycle. Returns the run id, or None if a run is already in progress.
 
     Collecting papers and refreshing the trend panels need no Claude API, so
     they always run. If the API is unusable (no key, bad key, no credit...),
     only the AI steps stop; the run is marked 'partial' and the dashboard shows
     a notice asking the admin to check the API. The admin can stop a run at any
-    time from the dashboard (강제 종료)."""
+    time from the dashboard (강제 종료).
+
+    After the papers, the run also makes TECH posts from trending projects and
+    tech news (technews.py). tech_only=True runs just that part; tech_days
+    collects that many days of tech news this once instead of the setting."""
     with _start_lock:
         if db.active_run() is not None:  # running here or in another dyno/process
             return None
@@ -354,6 +377,8 @@ def run(trigger: str = "schedule", paper_ids=None):
         keywords = [k["term"] for k in db.list_keywords()]
         if not keywords:
             say("no keywords registered - add some on the settings page")
+        if tech_only:
+            raise _SkipPapers()
         if not paper_ids:
             say.update(phase="collect", stage="논문 수집 중")
             resolve_journals(say)
@@ -395,6 +420,8 @@ def run(trigger: str = "schedule", paper_ids=None):
             status = "partial"
             stats["api_error"] = exc.message
             say(f"AI 단계 중단: {exc.message} API 키와 결제 상태를 확인하세요. 수집과 트렌드는 계속 진행합니다.")
+    except _SkipPapers:
+        pass
     except RunCancelled:
         cancelled = True
     except Exception as exc:
@@ -404,8 +431,7 @@ def run(trigger: str = "schedule", paper_ids=None):
         except RunCancelled:
             cancelled = True
     finally:
-        agent.set_call_listener(None)
-        if not paper_ids and not cancelled:
+        if not paper_ids and not tech_only and not cancelled:
             try:
                 say.update(phase="trending", stage="트렌드 갱신 중", current=None)
                 trending.refresh_all(keywords, logger=say)
@@ -413,6 +439,30 @@ def run(trigger: str = "schedule", paper_ids=None):
                 cancelled = True
             except Exception as exc:  # never let trends break the run record
                 log.warning("trending failed: %s", exc)
+        settings = db.pipeline_settings()
+        if not paper_ids and not cancelled and status != "error" and "api_error" not in stats \
+                and (tech_only or (settings["tech_sources"] and settings["tech_per_run"] > 0)):
+            try:
+                say.update(phase="tech", stage="테크 소식 모으는 중", current=None)
+                agent.ensure_api()
+                if tech_days:
+                    settings = {**settings, "tech_lookback_days": tech_days}
+                tech = technews.run_stage(settings, say, meter, item_ids=tech_ids)
+                stats["tech_done"], stats["tech_failed"] = tech["tech_done"], tech["tech_failed"]
+                stats["cost_usd"] += tech["tech_cost_usd"]
+            except RunCancelled:
+                cancelled = True
+            except agent.ApiUnavailable as exc:
+                status = "partial"
+                stats["api_error"] = exc.message
+                say(f"테크 소식 단계 중단: {exc.message}")
+            except Exception as exc:  # the papers of this run are already saved
+                log.warning("tech stage failed: %s", exc)
+                try:
+                    say(f"tech stage failed: {exc}")
+                except RunCancelled:
+                    cancelled = True
+        agent.set_call_listener(None)
         stats["cost_usd"] = round(stats["cost_usd"] + meter.total_usd, 4)
         if not cancelled:
             try:
@@ -438,8 +488,11 @@ def refresh_trending_only(say=log.info):
     trending.refresh_all(keywords, logger=say)
 
 
-def run_in_background(trigger="manual", paper_ids=None) -> bool:
+def run_in_background(trigger="manual", paper_ids=None, tech_only=False, tech_ids=None, tech_days=None) -> bool:
     if is_running():
         return False
-    threading.Thread(target=run, kwargs={"trigger": trigger, "paper_ids": paper_ids}, daemon=True).start()
+    kwargs = {"trigger": trigger, "paper_ids": paper_ids, "tech_only": tech_only, "tech_ids": tech_ids}
+    if tech_days:
+        kwargs["tech_days"] = tech_days
+    threading.Thread(target=run, kwargs=kwargs, daemon=True).start()
     return True

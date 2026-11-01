@@ -1,4 +1,6 @@
 import copy
+import re
+from pathlib import Path
 
 from PIL import Image
 
@@ -29,7 +31,7 @@ def test_render_cards(sample_pdf, tmp_path):
     paper = {"uid": "arxiv:2610.01234", "title": "Self-Verification Loops", "authors": ["A. Kim"],
              "source_kind": "arxiv", "source_name": "arXiv · cs.CL", "published": "2026-10-09", "url": "https://arxiv.org/abs/2610.01234"}
     paths = cardnews.render(paper, review, figs, tmp_path / "cards")
-    assert len(paths) == 9
+    assert len(paths) == 10  # cover .. so-what, verdict, summary, outro
     for p in paths:
         assert Image.open(p).size == (1080, 1350)
     caption = (tmp_path / "cards" / "caption.txt").read_text()
@@ -77,3 +79,131 @@ def test_hard_words_are_explained_once(sample_pdf, tmp_path):
     html = cardnews.build_html(paper, copy.deepcopy(demo.SAMPLE_REVIEW), figs)
     assert html.count('<b>MATH</b>') == 1  # used on several cards, explained on the first only
     assert 'MATH<sup class="star">*</sup>' in html
+
+
+def test_card_text_and_figure_captions(sample_pdf, tmp_path):
+    figs = pdfs.extract_figures(sample_pdf, tmp_path / "figs")
+    review = copy.deepcopy(demo.SAMPLE_REVIEW)
+    html = cardnews.build_html({"uid": "arxiv:1", "title": "T", "url": "https://x"}, review, figs)
+    assert "작은 AI는 왜<br>수학 풀이에 약할까요?" in html  # the writer's line break is kept
+    assert '<div class="cap">Figure 1. Overview' in html  # "Figure 1." stays together on one line
+    assert "그래서 나랑 무슨 상관?" in html and 'class="hbar on"' in html  # so-what card, bars to scale
+    assert "page1" not in html  # no first-page screenshot as a picture
+    outro = html[html.index('class="slide outro"'):]
+    assert re.search(r"읽고,</i></span><br><span", outro) and "<b>@starwars.research</b></p>" in outro
+
+
+def test_closing_slide_video(sample_pdf, tmp_path):
+    """Only the closing slide is a video: its words rise into place; every other slide is an image."""
+    import subprocess
+
+    import pytest
+
+    from paperagent import video
+
+    if not video.available():
+        pytest.skip("ffmpeg not available")
+    figs = pdfs.extract_figures(sample_pdf, tmp_path / "figs")
+    paper = {"uid": "arxiv:1", "title": "T", "url": "https://x"}
+    paths, clips = cardnews.capture(cardnews.build_html(paper, copy.deepcopy(demo.SAMPLE_REVIEW), figs), tmp_path / "out")
+    assert list(clips) == [len(paths)] == [10]
+    info = subprocess.run([video.ffmpeg_exe(), "-i", clips[10]], capture_output=True, text=True).stderr
+    assert "h264" in info and "1080x1350" in info and "yuv420p" in info and "Duration: 00:00:07" in info
+    frames = []
+    for t in ("0.1", "5.5"):
+        out = tmp_path / f"f{t}.png"
+        subprocess.run([video.ffmpeg_exe(), "-v", "error", "-ss", t, "-i", clips[10], "-frames:v", "1", "-y", str(out)], check=True)
+        frames.append(Image.open(out).convert("L"))
+    claim = [f.crop((60, 600, 1020, 900)) for f in frames]
+    assert claim[0].getextrema()[1] < 80  # the claim is not there yet
+    initials = frames[0].crop((72, 180, 140, 520))  # ...but S T A R stand from the first frame
+    meanings = frames[0].crop((150, 180, 500, 520))  # while their meanings have not unfolded yet
+    assert initials.getextrema()[1] > 200 and meanings.getextrema()[1] < 140
+    # the last frame is the still card
+    still = Image.open(paths[-1]).convert("L")
+    from PIL import ImageChops, ImageStat
+
+    assert ImageStat.Stat(ImageChops.difference(frames[1], still)).mean[0] < 3
+
+
+def test_figures_never_touch_the_footnotes(sample_pdf, tmp_path):
+    """Crowded slides (long footnotes next to a figure): the figure keeps clear of the notes and nothing spills out."""
+    from playwright.sync_api import sync_playwright
+
+    figs = pdfs.extract_figures(sample_pdf, tmp_path / "figs")
+    review = copy.deepcopy(demo.SAMPLE_REVIEW)
+    card = review["card"]
+    card["terms"] = card["terms"] + [{"term": "Self-Consistency", "meaning": "같은 질문에 답을 여러 번 만든 뒤 가장 많이 나온 답을 고르는 방식"}]
+    card["results"]["highlight_label"] = "MATH* 정답률 상승, 파라미터* 7B, Self-Consistency* 대비"
+    card["problem"]["figure_number"], card["results"]["figure_number"] = 2, 0
+    card["problem"]["points"] = [p + " 파라미터* 기준으로도 같습니다." for p in card["problem"]["points"]]
+    path = tmp_path / "cards.html"
+    path.write_text(cardnews.build_html({"uid": "arxiv:1", "title": "T", "url": "https://x"}, review, figs), encoding="utf-8")
+    with sync_playwright() as p:
+        browser = cardnews._launch(p)
+        page = browser.new_page(viewport={"width": 1080, "height": 1350})
+        page.goto(path.as_uri())
+        page.wait_for_selector("body[data-ready='1']")
+        rows = page.evaluate("""() => [...document.querySelectorAll('.slide')].map((s) => {
+            const r = (e) => e && e.getBoundingClientRect(), f = s.querySelector('.figure'), m = s.querySelector('.main');
+            const next = f && f.nextElementSibling, line = s.querySelector('.bottom'), ft = s.querySelector('.foot');
+            const shown = m ? [...m.children].filter((c) => r(c).height > 0) : [];
+            const prev = ft && ft.previousElementSibling;
+            return {gap: f && next ? r(next).top - r(f).bottom : null,
+                    spill: m ? Math.max(0, ...shown.map((c) => r(c).bottom)) - r(m).bottom : 0,
+                    toLine: m && line ? r(line).top - Math.max(0, ...shown.map((c) => r(c).bottom)) : null,
+                    aboveNotes: ft && prev ? r(ft).top - r(prev).bottom : null};
+        })""")
+        browser.close()
+    assert any(r["gap"] is not None for r in rows)
+    assert all(r["gap"] is None or r["gap"] >= 18 for r in rows), rows
+    assert all(r["spill"] <= 1 for r in rows), rows
+    # nothing touches the line above the source/account, and the notes keep clear of what is above them
+    assert all(r["toLine"] is None or r["toLine"] >= 28 for r in rows), rows
+    assert all(r["aboveNotes"] is None or r["aboveNotes"] >= 28 for r in rows), rows
+
+
+def _cover_layout(html, tmp_path):
+    from playwright.sync_api import sync_playwright
+
+    path = tmp_path / "cover.html"
+    path.write_text(html, encoding="utf-8")
+    with sync_playwright() as p:
+        browser = cardnews._launch(p)
+        page = browser.new_page(viewport={"width": 1080, "height": 1350})
+        page.goto(path.as_uri())
+        page.wait_for_selector("body[data-ready='1']")
+        info = page.evaluate("""() => {
+            const s = document.querySelector('.slide.cover'), r = (e) => e.getBoundingClientRect();
+            const shown = (sel) => { const e = s.querySelector(sel); return !!e && r(e).height > 0; };
+            const stat = s.querySelector('.stat-card'), kids = [...s.querySelector('.main').children].filter((c) => r(c).height > 0);
+            const above = kids.filter((c) => !c.classList.contains('stat') && !c.classList.contains('foot')).pop();
+            return {figure: shown('.figure'), number: shown('.cover-num'), points: s.querySelectorAll('.cover-points li:not([hidden])').length,
+                    empty: stat ? r(stat).top - r(above).bottom : null, text: s.innerText};
+        }""")
+        browser.close()
+    return info
+
+
+def test_cover_is_filled_with_or_without_a_picture(sample_pdf, tmp_path):
+    """The first card never looks empty: a picture with key points, or - without one - the key number and the points."""
+    paper = {"uid": "arxiv:1", "title": "T", "url": "https://x"}
+    figs = pdfs.extract_figures(sample_pdf, tmp_path / "figs")
+    with_fig = _cover_layout(cardnews.build_html(paper, copy.deepcopy(demo.SAMPLE_REVIEW), figs), tmp_path)
+    assert with_fig["figure"] and not with_fig["number"] and with_fig["points"] >= 1
+    no_fig = _cover_layout(cardnews.build_html(paper, copy.deepcopy(demo.SAMPLE_REVIEW), []), tmp_path)
+    assert not no_fig["figure"] and no_fig["number"] and no_fig["points"] == 3 and "+12.4%p" in no_fig["text"]
+    assert no_fig["empty"] < 160  # no big hole above the score box
+
+
+def test_tech_cover_shows_interest_and_the_ai_take(tmp_path):
+    item = {**demo.SAMPLE_TECH, "id": 1, "interest": 8.5, "interest_reason": "관심 높음"}
+    html = cardnews.build_tech_html(item, copy.deepcopy(demo.SAMPLE_TECH_REVIEW), {"images": [], "video": None}, tmp_path)
+    cover = _cover_layout(html, tmp_path)
+    assert "흥미도" in cover["text"] and "8.5" in cover["text"] and "AI는 이렇게 봤어요" in cover["text"]
+    assert "써 보기 부담이 적은 도구예요" in cover["text"] and 'class="tiles-row"' not in html  # no more star/comment tiles
+    assert cover["points"] == 3 and cover["empty"] < 160
+    old = copy.deepcopy(demo.SAMPLE_TECH_REVIEW)
+    old.pop("ai_take")  # posts written before the AI take: the screening reason stands in
+    html = cardnews.build_tech_html(item, old, {"images": [], "video": None}, tmp_path)
+    assert "관심 높음" in html

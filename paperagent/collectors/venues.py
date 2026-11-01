@@ -151,8 +151,7 @@ def fetch_arxiv(name: str, terms, keywords, lookback_days: int, max_results: int
     """arXiv papers whose comments or journal-ref name the venue, newest updates first."""
     if not terms:
         return []
-    arxiv._throttle()
-    resp = arxiv.http_get(arxiv.API_URL, params={
+    resp = arxiv.api_get({
         "search_query": build_arxiv_query(terms, keywords),
         "sortBy": "lastUpdatedDate", "sortOrder": "descending", "start": 0, "max_results": max_results * 2,
     })

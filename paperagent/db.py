@@ -71,19 +71,45 @@ papers = Table(
     Column("cost_usd", Float),
     # when the review finished (what "최신순" on the dashboard follows)
     Column("reviewed_at", String(32), index=True),
-    # when the admin marked the card news as posted on Instagram (None = not yet)
-    Column("instagram_posted_at", String(32)),
-    # posting through the API: publishing / posted / error, and what Instagram returned
-    Column("instagram_status", String(20)),
-    Column("instagram_error", Text),
-    Column("instagram_media_id", String(64)),
-    Column("instagram_permalink", Text),
     # > 0 when an admin picked the paper by hand (read first, even if below the relevance threshold);
     # -1 when an admin set it aside (stays under 관련도 미달 whatever its relevance)
     Column("priority", Integer, default=0),
     Column("card_paths", Text, nullable=False, default="[]"),
+    # slide number -> storage key of the MP4 version of that slide (video card)
+    Column("card_videos", Text),
     Column("citation_count", Integer),
     Column("error", Text),
+    Column("created_at", String(32), nullable=False, index=True),
+    Column("updated_at", String(32), nullable=False),
+)
+
+# Trending projects and tech news (GitHub Trending, Hacker News, GeekNews,
+# Hugging Face), made into TECH card news. uid: "github:owner/repo",
+# "hn:<id>", "geeknews:<id>", "hf:model/<id>", "hf:space/<id>".
+# status: new -> screened (worth a post) | skipped -> done | error
+# meta (JSON): numbers from the source (stars, points, likes, ...), author, discussion link
+# media (JSON): {"image": storage key, "video": storage key, "image_url": ..., "video_url": ...}
+tech_items = Table(
+    "tech_items", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("uid", String(300), nullable=False, unique=True),
+    Column("source", String(20), nullable=False, index=True),
+    Column("title", Text, nullable=False),
+    Column("url", Text),
+    Column("summary", Text),
+    Column("meta", Text),
+    Column("media", Text),
+    Column("interest", Float),
+    Column("interest_reason", Text),
+    Column("status", String(20), nullable=False, default="new", index=True),
+    # > 0 when an admin picked it to be made next; -1 when an admin set it aside
+    Column("priority", Integer, default=0),
+    Column("review", Text),
+    Column("card_paths", Text, nullable=False, default="[]"),
+    Column("card_videos", Text),
+    Column("cost_usd", Float),
+    Column("error", Text),
+    Column("reviewed_at", String(32), index=True),
     Column("created_at", String(32), nullable=False, index=True),
     Column("updated_at", String(32), nullable=False),
 )
@@ -130,7 +156,7 @@ blobs = Table(
     Column("updated_at", String(32), nullable=False),
 )
 
-JSON_FIELDS = ("authors", "categories", "matched_keywords", "review", "card_paths", "meta")
+JSON_FIELDS = ("authors", "categories", "matched_keywords", "review", "card_paths", "card_videos", "meta", "media")
 
 DEFAULT_KEYWORDS = [
     "large language model",
@@ -324,6 +350,11 @@ def pipeline_settings() -> dict:
         "max_per_source": get_setting("max_per_source", config.DEFAULT_MAX_PER_SOURCE),
         "max_full_reads": get_setting("max_full_reads", config.DEFAULT_MAX_FULL_READS),
         "min_relevance": get_setting("min_relevance", config.DEFAULT_MIN_RELEVANCE),
+        "tech_per_run": get_setting("tech_per_run", config.DEFAULT_TECH_PER_RUN),
+        "tech_min_interest": get_setting("tech_min_interest", config.DEFAULT_TECH_MIN_INTEREST),
+        "tech_sources": get_setting("tech_sources", config.DEFAULT_TECH_SOURCES),
+        "tech_lookback_days": get_setting("tech_lookback_days", config.DEFAULT_TECH_LOOKBACK_DAYS),
+        "tech_max_per_source": get_setting("tech_max_per_source", config.DEFAULT_TECH_MAX_PER_SOURCE),
     }
 
 
@@ -409,22 +440,6 @@ def insert_paper(p: dict) -> bool:
         return result.first() is not None
 
 
-def set_instagram_posted(paper_id: int, posted: bool):
-    """Mark (or unmark) a paper's card news as posted on Instagram. Returns the new time or None."""
-    when = now_iso() if posted else None
-    with engine().begin() as conn:
-        conn.execute(update(papers).where(papers.c.id == paper_id).values(instagram_posted_at=when))
-    return when
-
-
-def instagram_counts():
-    with engine().connect() as conn:
-        posted = conn.execute(select(func.count()).select_from(papers)
-                              .where(papers.c.status == "done", papers.c.instagram_posted_at.is_not(None))).scalar()
-        total = conn.execute(select(func.count()).select_from(papers).where(papers.c.status == "done")).scalar()
-    return {"posted": posted, "pending": total - posted}
-
-
 def set_citation_count(paper_id: int, count: int):
     """Citation refreshes touch every reviewed paper each run; they are not edits,
     so updated_at stays as it was."""
@@ -493,7 +508,6 @@ _LATEST = func.coalesce(papers.c.reviewed_at, papers.c.created_at)
 
 _ORDERS = {
     "recent": (_LATEST.desc(), papers.c.id.desc()),
-    "posted": (papers.c.instagram_posted_at.desc(), _LATEST.desc()),
     "score": (papers.c.score_overall.desc(), _LATEST.desc()),
     "relevance": (func.coalesce(papers.c.priority, 0).desc(), papers.c.relevance.desc(), papers.c.created_at.desc()),
 }
@@ -553,13 +567,8 @@ def keyword_counts():
     return counts
 
 
-def query_papers(status="done", keyword=None, search=None, sort="recent", days=None, limit=60, offset=0, source=None,
-                 instagram=None):
+def query_papers(status="done", keyword=None, search=None, sort="recent", days=None, limit=60, offset=0, source=None):
     q = select(papers).where(papers.c.status == status)
-    if instagram == "posted":
-        q = q.where(papers.c.instagram_posted_at.is_not(None))
-    elif instagram == "pending":
-        q = q.where(papers.c.instagram_posted_at.is_(None))
     if source:
         q = q.where(source_filter(source))
     if keyword:
@@ -760,3 +769,97 @@ def get_blob(key: str):
 def delete_blobs(prefix: str, exact: bool = False):
     with engine().begin() as conn:
         conn.execute(delete(blobs).where(blobs.c.key == prefix if exact else blobs.c.key.like(f"{prefix}%")))
+
+
+# --- tech news ----------------------------------------------------------------
+
+def insert_tech(item: dict) -> bool:
+    """Insert a newly collected tech item. Returns False if it was already known."""
+    ts = now_iso()
+    values = dict(uid=item["uid"], source=item["source"], title=item["title"][:500], url=item.get("url"),
+                  summary=item.get("summary"), meta=json.dumps(item.get("meta") or {}, ensure_ascii=False),
+                  media=json.dumps(item.get("media") or {}, ensure_ascii=False), status="new", card_paths="[]",
+                  created_at=ts, updated_at=ts)
+    with engine().begin() as conn:
+        stmt = _insert(tech_items).values(**values).on_conflict_do_nothing(index_elements=["uid"]).returning(tech_items.c.id)
+        return conn.execute(stmt).first() is not None
+
+
+def update_tech(item_id: int, **fields):
+    if not fields:
+        return
+    fields["updated_at"] = now_iso()
+    for k in JSON_FIELDS:
+        if k in fields and not isinstance(fields[k], str) and fields[k] is not None:
+            fields[k] = json.dumps(fields[k], ensure_ascii=False)
+    with engine().begin() as conn:
+        conn.execute(update(tech_items).where(tech_items.c.id == item_id).values(**fields))
+
+
+def get_tech(item_id: int):
+    with engine().connect() as conn:
+        return _row(conn.execute(select(tech_items).where(tech_items.c.id == item_id)).first())
+
+
+def get_tech_by_uid(uid: str):
+    with engine().connect() as conn:
+        return _row(conn.execute(select(tech_items).where(tech_items.c.uid == uid)).first())
+
+
+def tech_by_status(status: str, limit: int = 200, source=None):
+    """Items in a state; hand-picked ones first, then by interest (newest first among equals)."""
+    q = select(tech_items).where(tech_items.c.status == status)
+    if source:
+        q = q.where(tech_items.c.source == source)
+    order = (func.coalesce(tech_items.c.priority, 0).desc(), tech_items.c.interest.desc().nulls_last(), tech_items.c.created_at.desc())
+    with engine().connect() as conn:
+        return _rows(conn.execute(q.order_by(*order).limit(limit)))
+
+
+def query_tech(source=None, search=None, limit=24, offset=0, sort="recent", days=None):
+    """Finished tech posts: newest first, or the most interesting first (sort="interest")."""
+    made = func.coalesce(tech_items.c.reviewed_at, tech_items.c.updated_at)
+    q = select(tech_items).where(tech_items.c.status == "done")
+    if source:
+        q = q.where(tech_items.c.source == source)
+    if search:
+        pat = f"%{search}%"
+        q = q.where(tech_items.c.title.ilike(pat) | tech_items.c.summary.ilike(pat) | tech_items.c.review.ilike(pat))
+    if days:
+        q = q.where(made >= ago_iso(days=int(days)))
+    order = (tech_items.c.interest.desc().nulls_last(), made.desc()) if sort == "interest" else (made.desc(),)
+    q = q.order_by(*order).limit(limit).offset(offset)
+    with engine().connect() as conn:
+        return _rows(conn.execute(q))
+
+
+def tech_counts():
+    """{"status": {status: n}, "done_by_source": {source: n}}"""
+    with engine().connect() as conn:
+        by_status = dict(conn.execute(select(tech_items.c.status, func.count()).group_by(tech_items.c.status)).all())
+        by_source = dict(conn.execute(select(tech_items.c.source, func.count()).where(tech_items.c.status == "done")
+                                      .group_by(tech_items.c.source)).all())
+    return {"status": by_status, "done_by_source": by_source}
+
+
+def tech_next_targets(n: int):
+    """What the next run will make: hand-picked items first, then the most interesting."""
+    return tech_by_status("screened", limit=max(n, 0)) if n > 0 else []
+
+
+def queue_tech(item_ids, priority: int = 1) -> int:
+    """Hand-pick items to be made next (also ones under the interest bar)."""
+    if not item_ids:
+        return 0
+    with engine().begin() as conn:
+        return conn.execute(update(tech_items).where(tech_items.c.id.in_(list(item_ids)), tech_items.c.status != "done")
+                            .values(status="screened", priority=priority, updated_at=now_iso())).rowcount
+
+
+def skip_tech(item_ids) -> int:
+    """Set items aside: they are not made unless picked again."""
+    if not item_ids:
+        return 0
+    with engine().begin() as conn:
+        return conn.execute(update(tech_items).where(tech_items.c.id.in_(list(item_ids)), tech_items.c.status != "done")
+                            .values(status="skipped", priority=-1, updated_at=now_iso())).rowcount

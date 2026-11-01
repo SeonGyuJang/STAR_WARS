@@ -1,0 +1,4 @@
+<nav class="seg" aria-label="대기열 종류">
+  <a href="{{ url_for('web.queue') }}" class="{{ 'on' if kind == 'paper' }}"><span class="sdot s-paper"></span>논문 <span>{{ counts.paper }}</span></a>
+  <a href="{{ url_for('web.queue', kind='tech') }}" class="{{ 'on' if kind == 'tech' }}"><span class="sdot s-tech"></span>테크 소식 <span>{{ counts.tech }}</span></a>
+</nav>

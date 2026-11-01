@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import csrf with context %}
+{% from "_macros.html" import csrf, sbadge with context %}
 {% block title %}설정 · {{ site_name }}{% endblock %}
 {% block content %}
 <section class="page-head"><div>
@@ -29,6 +29,23 @@
     {% endif %}
     <p class="note">PDF는 서버 임시 폴더에 받아 읽은 뒤 바로 지웁니다. 사용자에게는 원문 PDF 링크를 보여 줍니다.
       {% if not scheduler_enabled %}<br>이 서버는 자체 타이머를 쓰지 않습니다. 실행은 {{ 'Heroku Scheduler' if on_heroku else '외부 스케줄러' }}가 <code>python -m paperagent run --if-due</code>로 시작합니다.{% endif %}</p>
+  </section>
+  <section class="card panel tech-panel" id="tech">
+    <div class="panel-h"><h2><span class="sdot s-tech"></span>테크 소식</h2><span>만든 카드뉴스 {{ tech_counts.status.get('done', 0) }}개</span></div>
+    <p class="desc">정기 실행 때 논문 다음에, 아래 출처에서 화제인 프로젝트와 소식을 모아 가장 흥미로운 것을 TECH 카드뉴스로 만듭니다.</p>
+    <form method="post" action="{{ url_for('web.save_tech_settings') }}">{{ csrf() }}
+      <div class="check-grid">{% for key, s in tech_source_list.items() %}
+        <label class="check"><input type="checkbox" name="src_{{ key }}" value="1" {{ 'checked' if key in settings.tech_sources }}>{{ sbadge(key, s.short) }}{{ s.name }}</label>{% endfor %}</div>
+      <div class="form-grid">
+        <label>실행마다 만드는 수<input type="number" name="tech_per_run" min="0" max="10" value="{{ settings.tech_per_run }}"></label>
+        <label>최소 관심도 (0-10)<input type="number" step="0.5" name="tech_min_interest" min="0" max="10" value="{{ settings.tech_min_interest }}"></label>
+        <label>수집 기간 (일)<input type="number" name="tech_lookback_days" min="1" max="30" value="{{ settings.tech_lookback_days }}"></label>
+        <label>소스당 최대 수집<input type="number" name="tech_max_per_source" min="5" max="100" value="{{ settings.tech_max_per_source }}"></label>
+        <div><button class="btn ghost">저장</button></div>
+      </div>
+    </form>
+    <p class="note">수집 기간: 1이면 오늘, 7이면 지난 일주일 소식을 모읍니다. GitHub Trending은 오늘·이번 주·이번 달 중 가까운 범위를, Hacker News는 그 기간에 추천이 많은 글을, GeekNews는 날짜별 목록을 읽습니다. Hugging Face는 트렌딩 중 기간 안에 업데이트된 것만 남깁니다. 테크·대기열 화면의 <b>지금 만들기</b> 옆에서 이번 한 번만 기간을 바꿀 수도 있습니다.<br>
+      한 개를 만드는 데 Sonnet 한 번(약 $0.05~0.15)과 관심도 판단(Haiku, 몇 센트)이 듭니다. GitHub Trending 페이지를 읽지 못하면 GitHub 검색 API로 대신 가져옵니다(<code>GITHUB_TOKEN</code>을 넣으면 제한이 넉넉해집니다).</p>
   </section>
   <section class="card panel" id="upload">
     <div class="panel-h"><h2>PDF로 논문 추가</h2><span>파일당 60MB까지</span></div>
@@ -64,21 +81,6 @@
   </section>
 </div>
 <div class="col">
-  <section class="card panel" id="instagram">
-    <div class="panel-h"><h2>인스타그램 연결</h2><span class="{{ 'ok-text' if instagram_ready else 'muted' }}">{{ '연결됨' if instagram_ready else '연결 안 됨' }}</span></div>
-    {% if instagram_ready %}
-      <p class="desc">논문 페이지나 목록의 <b>인스타에 바로 올리기</b>를 누르면 카드뉴스 전체와 캡션이 한 게시물(캐러셀)로 올라갑니다.
-        인스타그램이 카드 이미지를 <code>{{ instagram_public or request.host_url }}</code>에서 내려받으므로, 이 주소가 외부에서 열리는 https 주소여야 합니다.</p>
-      <div class="row-actions">
-        <form method="post" action="{{ url_for('web.instagram_check') }}">{{ csrf() }}<button class="btn ghost sm">연결 확인</button></form>
-        <form method="post" action="{{ url_for('web.instagram_refresh') }}">{{ csrf() }}<button class="btn ghost sm">토큰 갱신 (60일 연장)</button></form>
-      </div>
-    {% else %}
-      <p class="desc">인스타그램 비즈니스(또는 크리에이터) 계정과 Meta 앱을 연결하면 카드뉴스와 캡션을 버튼 한 번으로 게시할 수 있습니다.
-        환경 변수 <code>INSTAGRAM_USER_ID</code>, <code>INSTAGRAM_ACCESS_TOKEN</code>, <code>PUBLIC_BASE_URL</code>을 설정하세요. 자세한 순서는 docs/SETUP.md의 "인스타그램 자동 게시"에 있습니다.</p>
-    {% endif %}
-  </section>
-
   <section class="card panel" id="cost">
     <div class="panel-h"><h2>모델과 비용</h2><span>최근 {{ cost.days }}일</span></div>
     <div class="api-line {{ 'ok' if api.ok else 'bad' }}">

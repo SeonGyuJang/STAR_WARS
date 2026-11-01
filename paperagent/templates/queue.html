@@ -6,12 +6,13 @@
   <h1>대기열</h1>
   <p>모은 논문은 모두 관련도(0~10)를 판단합니다. 기준({{ threshold }}점) 이상은 다음 실행 때 관련도 순으로 읽고,
      기준 미만은 <b>관련도 미달</b>로 남겨 둡니다.{% if is_admin %} 미달 논문도 골라서 AI에게 읽힐 수 있어요.{% endif %}</p>
+  {% set kind = 'paper' %}{% include "_queue_switch.html" %}
 </div></section>
 
 <section class="runbar card {{ 'running' if run else '' }}">
   {% if run %}
     <div class="rb-main"><span class="dot"></span><div><b>지금 실행 중</b>
-      <span class="muted small">{{ run.started_at | kst('%H:%M') }} 시작 · {{ {'collect': '논문 수집', 'screen': '관련도 판단', 'read': '정독·리뷰', 'trending': '트렌드 갱신'}.get(run.progress.get('phase'), '준비') }} 단계</span></div></div>
+      <span class="muted small">{{ run.started_at | kst('%H:%M') }} 시작 · {{ {'collect': '논문 수집', 'screen': '관련도 판단', 'read': '정독·리뷰', 'trending': '트렌드 갱신', 'tech': '테크 소식 작성'}.get(run.progress.get('phase'), '준비') }} 단계</span></div></div>
     <div class="rb-act">
       <button type="button" class="btn ghost sm" data-console-open>진행 상황 보기</button>
       {% if is_admin %}<form method="post" action="{{ url_for('web.run_stop') }}" data-confirm="실행을 강제 종료할까요? 지금 읽던 논문은 대기열로 돌아갑니다.">{{ csrf() }}<button class="btn sm danger-btn">강제 종료</button></form>{% endif %}

@@ -90,11 +90,17 @@ WRITER_MODEL=claude-haiku-5-5  # 한국어 문장이 약간 단조로워질 수 
 | `SEMANTIC_SCHOLAR_API_KEY` | | | 인용 추적용. [신청 폼](https://www.semanticscholar.org/product/api)에서 발급 |
 | `CARD_HANDLE` | 권장 | `@starwars.research` | 카드뉴스에 찍히는 인스타 계정 |
 | `CARD_BASE_HASHTAGS` | | `#인공지능,#AI,#논문리뷰` | 캡션에 항상 붙는 해시태그 (쉼표로 구분). 나머지는 AI가 논문 분야에 맞게 고릅니다 |
-| `INSTAGRAM_USER_ID` | 자동 게시 시 | | 인스타그램 프로페셔널 계정 ID (5장 참고) |
-| `INSTAGRAM_ACCESS_TOKEN` | 자동 게시 시 | | 게시 권한이 있는 액세스 토큰 |
-| `PUBLIC_BASE_URL` | 자동 게시 시 | | 대시보드의 공개 주소. 인스타그램이 여기서 카드 이미지를 내려받습니다 |
 | `CARD_HASHTAG_LIMIT` | | `5` | 캡션 해시태그 최대 개수. 인스타그램은 2025년 12월부터 게시물당 5개까지만 허용합니다 |
 | `CARD_BRAND` | | `STAR WARS` | 카드뉴스 로고 글자 |
+| `CARD_TECH_BASE_HASHTAGS` | | `#IT,#테크,#개발자` | 테크 카드뉴스 캡션에 항상 붙는 해시태그 |
+| `TECH_SOURCES` | | `github,hn,geeknews,hf` | 테크 소식을 가져올 곳의 처음 값 (이후에는 **설정 → 테크 소식**에서 바꿉니다) |
+| `TECH_PER_RUN` | | `2` | 실행마다 만드는 테크 카드뉴스 수의 처음 값. 0이면 정기 실행에서 만들지 않습니다 |
+| `TECH_LOOKBACK_DAYS` | | `1` | 테크 소식 수집 기간(일)의 처음 값. 1=오늘, 7=일주일, 최대 30. 설정 화면에서 바꿀 수 있습니다 |
+| `TECH_MAX_PER_SOURCE` | | `15` | 출처마다 모을 테크 소식 수의 처음 값 (5~100) |
+| `TECH_MIN_INTEREST` | | `7` | 테크 소식을 카드뉴스로 만들 최소 흥미도(0~10)의 처음 값 |
+| `GITHUB_TOKEN` | | | 선택. GitHub Trending 페이지를 못 읽을 때 쓰는 GitHub 검색 API의 호출 한도를 늘립니다 (권한 없는 토큰이면 충분) |
+| `VIDEO_CARDS` | | `1` | `0`이면 마지막 장 영상(MP4)을 만들지 않고 모두 이미지 카드로 만듭니다 |
+| `FFMPEG_EXECUTABLE` | | | 영상 카드에 쓸 ffmpeg 경로. 비우면 시스템 ffmpeg, 없으면 `imageio-ffmpeg` 패키지에 들어 있는 것을 씁니다 (Heroku는 따로 설치할 필요 없음) |
 | `SITE_NAME` | | `STAR WARS` | 대시보드 이름 |
 | `READER_MODEL` | | `claude-haiku-5-5` | PDF 정독 모델 |
 | `JUDGE_MODEL` | | `claude-opus-5-5` | 채점 모델 |
@@ -250,37 +256,13 @@ heroku pg:backups:download                                        # 내려받기
 
 ## 5. 인스타그램 업로드
 
-두 가지 방법이 있습니다.
+게시는 직접 합니다. 대시보드는 올릴 재료를 한 번에 준비해 줍니다.
 
-**A. 버튼 한 번으로 자동 게시 (인스타그램 연결 시)**
-논문 페이지나 오늘의 논문 목록에서 **인스타에 바로 올리기**를 누르면, 카드 9장이 한 게시물(캐러셀)로 올라가고 캡션(해시태그 5개 포함)이 함께 작성됩니다. 게시가 끝나면 카드가 초록색으로 바뀌고 **인스타에서 보기** 링크가 생깁니다.
+1. 논문(또는 테크 소식) 페이지의 카드뉴스 칸에서 **전체 받기**를 누르면 카드 이미지, 마지막 장 영상(`.mp4`, 만들 수 있을 때)와 `caption.txt`가 든 ZIP이 내려옵니다. 파일 이름의 번호가 올릴 순서입니다.
+2. 인스타 앱에서 새 게시물 → 여러 장 선택으로 번호 순서대로 고릅니다. 사진과 영상을 한 게시물에 섞어 올릴 수 있습니다(최대 20장, 영상은 장당 60초 이하).
+3. **캡션 복사**를 눌러 캡션을 붙여 넣습니다. 해시태그는 인스타 제한(게시물당 5개)에 맞춰 들어 있습니다.
 
-**B. 직접 올리기**
-**전체 받기**로 카드 9장과 `caption.txt`가 든 ZIP을 받아 인스타에 순서대로 올리고 **캡션 복사**로 캡션을 붙여 넣은 뒤, 목록에서 왼쪽 칸을 체크합니다.
-
-### 인스타그램 자동 게시 연결하기
-
-Meta의 Instagram API(콘텐츠 게시)를 씁니다. 처음 한 번만 설정하면 됩니다.
-
-1. **인스타 계정을 프로페셔널 계정으로 전환**: 인스타 앱 → 설정 → 계정 유형 및 도구 → 프로페셔널 계정(비즈니스 또는 크리에이터).
-2. **Meta 앱 만들기**: [developers.facebook.com](https://developers.facebook.com) → 내 앱 → 앱 만들기 → 사용 사례에서 **Instagram API**(Instagram 로그인 사용)를 고릅니다.
-3. **계정 연결과 토큰 발급**: 앱의 *Instagram 로그인으로 API 설정* 화면에서 인스타 계정을 추가하고 **액세스 토큰 생성**을 누릅니다. `instagram_business_basic`, `instagram_business_content_publish` 권한을 허용하세요. 화면에 나오는 **인스타그램 사용자 ID**와 **토큰**을 복사합니다. 내 계정에만 올리는 용도라면 보통 앱 검수 없이 개발 모드로 쓸 수 있습니다.
-4. **환경 변수 설정** (Heroku 예시)
-   ```bash
-   heroku config:set INSTAGRAM_USER_ID=1784xxxxxxxxxxx \
-                     INSTAGRAM_ACCESS_TOKEN=IGAA... \
-                     PUBLIC_BASE_URL=https://내앱이름.herokuapp.com
-   ```
-5. 대시보드 **설정 → 인스타그램 연결**에서 **연결 확인**을 누르면 연결된 계정 이름이 나옵니다.
-
-알아 둘 점
-- 인스타그램 서버가 카드 이미지를 **우리 서버 주소에서 직접 내려받습니다**. 그래서 `http://127.0.0.1`에서는 게시할 수 없고, Heroku처럼 외부에서 열리는 https 주소에서 눌러야 합니다.
-- 토큰은 60일 동안 유효합니다. 설정의 **토큰 갱신**을 누르면 60일 늘어납니다.
-- 캐러셀은 최대 10장, 하루 게시 한도가 있습니다(Meta 문서 기준 24시간 100개 수준).
-- API로 올린 게시물을 지우는 기능은 인스타그램이 제공하지 않으므로, 삭제는 인스타 앱에서 해 주세요. 대시보드의 **업로드 취소**는 표시만 지웁니다.
-- Facebook 페이지와 연결된 토큰(Instagram API with Facebook Login)을 쓰는 경우 `INSTAGRAM_GRAPH_HOST=graph.facebook.com`으로 바꿔 주세요.
-
----
+> 테크 카드뉴스의 회사 로고는 [Simple Icons](https://simpleicons.org)(CC0)의 공식 브랜드 마크를 `paperagent/static/logos/brands.json`에 담아 씁니다. 로고는 누가 만든 프로젝트인지 알리는 용도로만 쓰며, 상표권은 각 회사에 있습니다. Simple Icons에 없는 회사(예: OpenAI, Microsoft)는 로고 없이 이름만 표시합니다.
 
 ## 6. 문제 해결
 
@@ -292,6 +274,9 @@ Meta의 Instagram API(콘텐츠 게시)를 씁니다. 처음 한 번만 설정�
 | `400`에 credit / billing 관련 메시지 | 크레딧이나 결제 수단이 없습니다. 콘솔 결제 메뉴를 확인하세요. |
 | `429` / `rate_limit_error` | 요청이 몰렸습니다. 자동으로 재시도합니다. 자주 나오면 "한 번에 정독할 논문" 수를 줄이세요. |
 | `card rendering failed: Could not launch Chromium` | 로컬: `python -m playwright install chromium`을 다시 실행. Heroku: `heroku buildpacks` 순서(chrome-for-testing → python)를 확인한 뒤 다시 배포. |
+| `arXiv API unavailable (HTTP 429 ...)` 또는 `arXiv API is busy` | arXiv는 같은 서버에서 너무 자주 요청하면 429로 막습니다(Heroku는 여러 앱이 IP를 함께 써서 더 자주 생깁니다). 이제 한 번 실행에 arXiv 분야 전체를 **요청 1번**으로 묻고, 429가 오면 arXiv가 알려 준 시간(없으면 15초, 45초)만큼 기다렸다 다시 묻습니다. 그래도 막히면 **arXiv RSS 피드**(rss.arxiv.org)로 그날 새 논문을 대신 가져오고, 10분 동안은 arXiv API에 다시 묻지 않습니다. 저널·학회의 arXiv 검색만 이번 실행에서 건너뛰고 다음 실행에 다시 시도하니 따로 할 일은 없습니다. |
+| 테크 소식이 `원문을 읽지 못해 쓸 내용이 없습니다`로 실패 | Hacker News 등이 가리키는 원문 사이트가 접속을 막았거나 내려가 있었습니다(괄호 안에 `HTTP 403 (사이트)` 같은 이유가 나옵니다). 제목과 댓글만으로 빈 카드뉴스를 만들지 않으려고 멈춘 것입니다. 시간이 지난 뒤 소식 페이지에서 **다시 읽기**를 누르세요. |
+| 로그에 `could not read GeekNews 글: HTTP 403 (news.hada.io)` | GeekNews가 서버의 요청을 막은 것입니다. 이때는 헤드리스 브라우저로 글을 다시 열어 보고, 그래도 막히면 RSS 피드에 담긴 요약과 그 안의 링크로 원문과 GitHub 저장소를 찾아 읽습니다. 원문을 읽었거나 요약이 충분하면 그대로 카드뉴스를 만들고, 둘 다 없으면 만들지 않고 멈춥니다. |
 | `arXiv ... failed: 503` | arXiv가 잠시 과부하 상태입니다. 다음 실행 때 다시 가져옵니다. |
 | 저널 논문이 모두 "초록만 읽음" | 오픈액세스 PDF가 없는 논문입니다. 정상 동작입니다. |
 | 업로드한 PDF의 제목이 이상함 | PDF 안의 정보로 제목을 추측합니다. 올릴 때 제목 칸에 직접 적으면 그 제목을 씁니다. 업로드한 PDF는 리뷰가 끝나면 서버에서 지웁니다. |

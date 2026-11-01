@@ -1,12 +1,18 @@
 // Carousel for card-news previews
 document.querySelectorAll("[data-carousel]").forEach((root) => {
   const track = root.querySelector(".slides");
-  const imgs = track.querySelectorAll("img");
+  const items = [...track.children];
   const dots = root.querySelector(".dots");
-  imgs.forEach(() => dots.appendChild(document.createElement("i")));
+  items.forEach((el) => {
+    const d = document.createElement("i");
+    if (el.tagName === "VIDEO") d.className = "vid";
+    dots.appendChild(d);
+  });
   const update = () => {
     const i = Math.round(track.scrollLeft / track.clientWidth);
     dots.querySelectorAll("i").forEach((d, j) => d.classList.toggle("on", i === j));
+    // a video card plays while it is on screen
+    items.forEach((el, j) => { if (el.tagName === "VIDEO") { if (i === j) el.play().catch(() => {}); else el.pause(); } });
   };
   const go = (dir) => track.scrollBy({ left: dir * track.clientWidth, behavior: "smooth" });
   root.querySelector("[data-prev]").addEventListener("click", () => go(-1));
@@ -14,6 +20,90 @@ document.querySelectorAll("[data-carousel]").forEach((root) => {
   track.addEventListener("scroll", update, { passive: true });
   update();
 });
+
+// Full-screen viewer for the card news: opens from "크게 보기" or a click on a card;
+// arrows / swipe to move, Esc or the backdrop to close. The video cards play.
+(() => {
+  const carousels = document.querySelectorAll("[data-carousel]");
+  if (!carousels.length) return;
+  const box = document.createElement("div");
+  box.className = "lightbox";
+  box.hidden = true;
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-modal", "true");
+  box.setAttribute("aria-label", "카드뉴스 크게 보기");
+  box.innerHTML = `
+    <div class="lb-top"><span class="lb-count"></span><span class="lb-sp"></span>
+      <a class="lb-dl" download>이 장 받기</a><button type="button" class="lb-x" aria-label="닫기">✕</button></div>
+    <div class="lb-stage"></div>
+    <button type="button" class="lb-btn lb-prev" aria-label="이전 장">‹</button>
+    <button type="button" class="lb-btn lb-next" aria-label="다음 장">›</button>`;
+  document.body.appendChild(box);
+  const stage = box.querySelector(".lb-stage");
+  let items = [], at = 0, track = null, lastFocus = null;
+
+  const show = (i) => {
+    at = (i + items.length) % items.length;
+    const it = items[at];
+    stage.replaceChildren();
+    let el;
+    if (it.tagName === "VIDEO") {
+      el = document.createElement("video");
+      Object.assign(el, { src: it.currentSrc || it.src, poster: it.poster, muted: true, loop: true, playsInline: true, autoplay: true });
+      el.play().catch(() => {});
+    } else {
+      el = document.createElement("img");
+      el.src = it.currentSrc || it.src;
+      el.alt = it.alt || "";
+    }
+    stage.appendChild(el);
+    box.querySelector(".lb-count").textContent = `${at + 1} / ${items.length}${it.tagName === "VIDEO" ? " · 영상" : ""}`;
+    box.querySelector(".lb-dl").href = `${(it.currentSrc || it.src).split("?")[0]}?dl=1`;
+    box.querySelector(".lb-prev").hidden = box.querySelector(".lb-next").hidden = items.length < 2;
+  };
+  const open = (root, i) => {
+    track = root.querySelector(".slides");
+    items = [...track.children];
+    lastFocus = document.activeElement;
+    box.hidden = false;
+    document.body.classList.add("lb-open");
+    show(i);
+    box.querySelector(".lb-x").focus();
+  };
+  const close = () => {
+    box.hidden = true;
+    document.body.classList.remove("lb-open");
+    stage.replaceChildren();
+    if (track) track.scrollTo({ left: at * track.clientWidth }); // the small carousel follows
+    lastFocus?.focus();
+  };
+
+  carousels.forEach((root) => {
+    const tr = root.querySelector(".slides");
+    const current = () => Math.round(tr.scrollLeft / tr.clientWidth);
+    root.querySelector("[data-zoom]")?.addEventListener("click", () => open(root, current()));
+    [...tr.children].forEach((el, i) => { el.style.cursor = "zoom-in"; el.addEventListener("click", () => open(root, i)); });
+    root.addEventListener("keydown", (e) => { if (e.key === "f" || e.key === "F") open(root, current()); });
+  });
+  box.querySelector(".lb-x").addEventListener("click", close);
+  box.querySelector(".lb-prev").addEventListener("click", () => show(at - 1));
+  box.querySelector(".lb-next").addEventListener("click", () => show(at + 1));
+  box.addEventListener("click", (e) => { if (e.target === box || e.target === stage) close(); });
+  document.addEventListener("keydown", (e) => {
+    if (box.hidden) return;
+    if (e.key === "Escape") close();
+    else if (e.key === "ArrowLeft") show(at - 1);
+    else if (e.key === "ArrowRight") show(at + 1);
+  });
+  let x0 = null;
+  stage.addEventListener("touchstart", (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+  stage.addEventListener("touchend", (e) => {
+    if (x0 === null) return;
+    const dx = e.changedTouches[0].clientX - x0;
+    if (Math.abs(dx) > 40) show(at + (dx < 0 ? 1 : -1));
+    x0 = null;
+  });
+})();
 
 // Copy caption text
 document.querySelectorAll("[data-copy]").forEach((btn) => {
@@ -50,7 +140,7 @@ document.querySelectorAll("form[data-confirm]").forEach((f) => {
   const pill = document.querySelector(".live");
   const admin = drawer.dataset.admin === "1";
   const csrf = document.querySelector('meta[name="csrf-token"]').content;
-  const PHASES = ["collect", "screen", "read", "trending", "done"];
+  const PHASES = ["collect", "screen", "read", "trending", "tech", "done"];
   let timer = null, wasRunning = pill && !pill.hidden, followLog = true, selfScroll = false;
 
   const fmt = (s) => (s >= 3600 ? `${Math.floor(s / 3600)}시간 ` : "") + `${Math.floor((s % 3600) / 60)}분 ${s % 60}초`;
@@ -66,7 +156,7 @@ document.querySelectorAll("form[data-confirm]").forEach((f) => {
     drawer.dataset.status = run.status;
 
     // stepper
-    const at = running ? PHASES.indexOf(p.phase) : (run.status === "ok" || run.status === "partial" ? 4 : PHASES.indexOf(p.phase));
+    const at = running ? PHASES.indexOf(p.phase) : (run.status === "ok" || run.status === "partial" ? PHASES.length - 1 : PHASES.indexOf(p.phase));
     drawer.querySelectorAll("[data-step]").forEach((li) => {
       const i = PHASES.indexOf(li.dataset.step);
       li.className = i < at || (!running && i === at && run.status !== "aborted") ? "done" : i === at ? (running ? "now" : "stopped") : "";
@@ -80,10 +170,10 @@ document.querySelectorAll("form[data-confirm]").forEach((f) => {
     now.hidden = !running;
     if (running) {
       const cur = targets.find((t) => t.id === p.current);
-      $("[data-c-title]").textContent = cur ? cur.title : ({ collect: "새 논문 모으기", screen: "관련도 판단", trending: "트렌드 갱신" }[p.phase] || "준비 중");
+      $("[data-c-title]").textContent = cur ? cur.title : ({ collect: "새 논문 모으기", screen: "관련도 판단", trending: "트렌드 갱신", tech: "테크 소식 만들기" }[p.phase] || "준비 중");
       $("[data-c-stage]").textContent = p.stage ? `${p.stage}${p.model ? ` · ${p.model}` : ""}` : "";
       const pct = p.phase === "read" && targets.length ? Math.round(((finished + (cur ? 0.5 : 0)) / targets.length) * 100)
-        : { collect: 5, screen: 12, trending: 96, done: 100 }[p.phase] || 3;
+        : { collect: 5, screen: 12, trending: 90, tech: 95, done: 100 }[p.phase] || 3;
       $("[data-c-bar]").style.width = `${pct}%`;
       $("[data-c-count]").textContent = p.phase === "read" && targets.length ? `논문 ${finished}/${targets.length}편 완료` : "";
     }
@@ -192,7 +282,7 @@ document.querySelectorAll("[data-kw-list]").forEach((list) => {
   const btn = list.parentElement.querySelector("[data-kw-toggle]");
   if (!btn) return;
   const label = btn.textContent;
-  const items = list.querySelectorAll("li");
+  const items = list.children;
   const truncated = [...list.querySelectorAll(".t")].some((t) => t.scrollWidth > t.clientWidth + 1);
   if (items.length > 6 || truncated) btn.hidden = false;
   btn.addEventListener("click", () => {
@@ -236,36 +326,6 @@ document.querySelectorAll("[data-pick-all]").forEach((box) => {
   });
 });
 
-// Instagram mark: the checkbox left of a card. Checked -> the box goes away and the
-// card turns green. Undoing it is done from the 인스타에 올린 논문 tab.
-document.querySelectorAll("form[data-ig]").forEach((form) => {
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    form.classList.add("busy");
-    try {
-      const r = await fetch(form.action, { method: "POST", body: new FormData(form), headers: { Accept: "application/json" } });
-      if (!r.ok) throw new Error(r.status);
-      const s = await r.json();
-      const item = form.closest(".pitem");
-      if (item && s.posted) {
-        form.classList.add("gone");
-        setTimeout(() => form.remove(), 260);
-        item.classList.add("posted");
-        const ribbon = item.querySelector(".ig-ribbon");
-        ribbon.querySelector("[data-ig-date]").textContent = `· ${s.label}`;
-        ribbon.hidden = false;
-      } else {
-        location.reload(); // e.g. on the paper page
-      }
-      document.querySelectorAll("[data-ig-count]").forEach((el) => (el.textContent = s.counts[el.dataset.igCount]));
-    } catch {
-      form.submit(); // fall back to a normal post
-    } finally {
-      form.classList.remove("busy");
-    }
-  });
-});
-
 // After an undo, the paper is shown (and briefly highlighted) on the main list
 (() => {
   const hl = new URLSearchParams(location.search).get("hl");
@@ -299,60 +359,8 @@ document.querySelectorAll("[data-upload]").forEach((form) => {
   form.addEventListener("submit", () => { btn.disabled = true; btn.textContent = "올리는 중…"; });
 });
 
-// "인스타에 바로 올리기": post through the API in the background and follow it
-document.querySelectorAll("[data-ig-pub]").forEach((box) => {
-  const form = box.querySelector("[data-ig-pub-form]");
-  const msg = box.querySelector("[data-ig-pub-msg]");
-  let timer = null;
 
-  const show = (s) => {
-    box.dataset.state = s.status || "";
-    form.hidden = s.status === "publishing" || s.status === "posted";
-    form.querySelector("button").textContent = s.status === "error" ? "다시 시도" : "인스타에 바로 올리기";
-    msg.replaceChildren();
-    if (s.status === "publishing") {
-      const sp = document.createElement("span"); sp.className = "spin";
-      msg.append(sp, "인스타그램에 올리는 중…");
-    } else if (s.status === "posted") {
-      const a = document.createElement("a");
-      a.href = s.permalink || "#"; a.target = "_blank"; a.rel = "noopener"; a.textContent = "게시 완료 · 인스타에서 보기 ↗";
-      msg.append(a);
-      const item = box.closest(".pitem");
-      if (item) { // the list card turns green, like a manual check
-        item.classList.add("posted");
-        item.querySelector(".ig-check")?.remove();
-        const ribbon = item.querySelector(".ig-ribbon");
-        if (ribbon) ribbon.hidden = false;
-      }
-    } else if (s.status === "error") {
-      const e = document.createElement("span"); e.className = "err"; e.textContent = s.error || "게시하지 못했습니다";
-      msg.append(e);
-    }
-  };
-
-  const poll = () => {
-    clearInterval(timer);
-    timer = setInterval(async () => {
-      try {
-        const s = await (await fetch(box.dataset.statusUrl, { headers: { Accept: "application/json" } })).json();
-        show(s);
-        if (s.status !== "publishing") clearInterval(timer);
-      } catch { /* try again */ }
-    }, 3000);
-  };
-
-  form.addEventListener("submit", async (e) => {
-    if (e.defaultPrevented) return; // the confirm dialog was cancelled
-    e.preventDefault();
-    show({ status: "publishing" });
-    try {
-      const r = await fetch(form.action, { method: "POST", body: new FormData(form), headers: { Accept: "application/json" } });
-      const s = await r.json();
-      if (!s.ok) return show({ status: "error", error: s.error });
-      poll();
-    } catch {
-      show({ status: "error", error: "서버에 연결하지 못했습니다" });
-    }
-  });
-  if (box.dataset.state === "publishing") poll();
+// Cards being re-made in the background: reload until they are done
+document.querySelectorAll("[data-reload]").forEach((el) => {
+  setTimeout(() => location.reload(), (parseInt(el.dataset.reload, 10) || 12) * 1000);
 });

@@ -139,7 +139,7 @@ SAMPLE_REVIEW = {
     "overall_score": 7.8,
     "card": {
         "category": "LLM 추론",
-        "cover_headline": "작은 AI가\n스스로 답을 검산합니다",
+        "cover_headline": "작은 AI도 스스로\n검산하면 더 똑똑해질까?",
         "cover_sub": "답을 낸 뒤 스스로 다시 확인하고 고치게 했더니, 수학 문제 정답률이 크게 올랐습니다.",
         "cover_points": [
             "답 만들기 → 확인하기 → 고치기를 한 AI가 반복",
@@ -186,7 +186,20 @@ SAMPLE_REVIEW = {
                 {"item": "다수결 방식", "value": "42.4%", "note": "같은 계산량으로 비교했을 때"},
                 {"item": "다른 시험 3종", "value": "+2~6%p", "note": "모두 정답률이 올랐습니다"},
             ],
+            "bars": [
+                {"label": "이 논문 (스스로 검산)", "value": 53.6, "display": "53.6%", "highlight": True},
+                {"label": "여러 번 풀고 다수결", "value": 42.4, "display": "42.4%", "highlight": False},
+                {"label": "그냥 한 번 풀기", "value": 41.2, "display": "41.2%", "highlight": False},
+            ],
             "figure_number": 2,
+        },
+        "so_what": {
+            "headline": "비싼 AI 없이도\n더 정확한 답을 얻습니다",
+            "items": [
+                {"title": "휴대폰 속 AI가 더 정확해집니다", "detail": "인터넷 없이 기기 안에서 도는 작은 AI도, 이 방식을 붙이면 계산 문제를 더 잘 풉니다."},
+                {"title": "새로 학습시킬 필요가 없습니다", "detail": "이미 쓰고 있는 AI에 질문하는 방식만 바꾸면 되므로, 회사나 개인이 바로 시험해 볼 수 있습니다."},
+                {"title": "대신 답이 조금 늦어집니다", "detail": "검산하는 만큼 계산이 약 3배 늘어, 빠른 답보다 정확한 답이 중요한 곳에 어울립니다."},
+            ],
         },
         "verdict": {
             "strengths": ["추가 학습 없이 기존 AI에 바로 적용할 수 있습니다", "같은 계산량의 다수결보다 정답률이 11.2%p 높습니다"],
@@ -306,6 +319,7 @@ def make_pdf(path):
 # --------------------------------------------------------------------------
 
 def clear():
+    clear_tech()
     with db.engine().begin() as conn:
         ids = [r[0] for r in conn.execute(select(db.papers.c.id).where(db.papers.c.uid.like("demo:%")))]
         conn.execute(delete(db.papers).where(db.papers.c.uid.like("demo:%")))
@@ -329,14 +343,203 @@ def seed(render_cards=True):
         review["_figures"] = figures
         review["_page1"] = storage.put_file(f"figures/{pid}/page1.png", tmp / "figs" / "page1.png")
     review["_cost"] = {"total_usd": 0.0, "calls": [], "note": "demo data - no API calls"}
-    card_keys = cardnews.render_and_store({**SAMPLE_PAPER, "id": pid}, review) if render_cards else []
+    card_keys, videos = cardnews.render_and_store({**SAMPLE_PAPER, "id": pid}, review) if render_cards else ([], {})
     db.update_paper(pid, status="done", read_depth="full_pdf", review=review, relevance=9.0,
                     relevance_reason="관심 키워드와 직접 관련된 데모 논문",
                     score_method=review["methodology_score"], score_novelty=review["novelty_score"],
-                    score_overall=review["overall_score"], card_paths=card_keys, cost_usd=0.0,
+                    score_overall=review["overall_score"], card_paths=card_keys, card_videos=videos, cost_usd=0.0,
                     reviewed_at=db.now_iso())
     for uid, title, status, rel, reason in QUEUED:
         db.insert_paper({**SAMPLE_PAPER, "uid": uid, "title": title, "matched_keywords": SAMPLE_PAPER["matched_keywords"][:1]})
         db.update_paper(db.get_paper_by_uid(uid)["id"], status=status, relevance=rel, relevance_reason=reason)
     return pid
 
+
+
+# --------------------------------------------------------------------------
+# A fictional TECH post (GitHub Trending style) with a picture and a demo clip
+# --------------------------------------------------------------------------
+
+TECH_UID = "github:demo/termpilot"
+
+SAMPLE_TECH = {
+    "uid": TECH_UID,
+    "source": "github",
+    "title": "demo/termpilot",
+    "url": "https://github.com/demo/termpilot",
+    "summary": "An AI pair programmer that lives in your terminal: explains errors, fixes tests and writes commits (demo)",
+    "meta": {"stars": 12840, "stars_today": 2310, "forks": 640, "language": "Rust"},
+}
+
+SAMPLE_TECH_REVIEW = {
+    "title_ko": "터미널 안에서 일하는 AI 코딩 도우미 termpilot (데모)",
+    "one_liner": "에러 설명부터 테스트 수정, 커밋 메시지까지 터미널에서 바로 처리하는 오픈소스 AI 도우미입니다",
+    "summary": (
+        "termpilot은 개발자가 명령어를 입력하는 창(터미널)에서 바로 쓰는 AI 코딩 도우미입니다. "
+        "에러 메시지를 붙여 넣으면 원인을 설명하고, 실패한 테스트를 찾아 고친 뒤 결과를 다시 확인합니다. "
+        "바꾼 내용을 정리해 커밋 메시지도 써 줍니다. "
+        "하루 만에 GitHub 스타 2,310개를 받으며 이번 주 트렌딩 상위에 올랐습니다. "
+        "다만 아직 초기 버전이라 큰 프로젝트에서는 결과를 직접 확인하는 습관이 필요해 보입니다. (가상의 데모 프로젝트입니다)"
+    ),
+    "category": "개발 도구",
+    "kind": "project",
+    "cover_headline": "에러 해결을 터미널 속\nAI에게 맡겨도 될까?",
+    "cover_sub": "에러 설명, 테스트 수정, 커밋까지 한 창에서 끝내는 도구가 하루 만에 스타 2,310개를 받았습니다.",
+    "cover_points": ["터미널 안에서 바로 쓰는 AI 코딩 도우미", "에러 설명 → 코드 수정 → 테스트 재확인", "공개 하루 만에 GitHub 스타 2,310개"],
+    "ai_take": "지금 쓰는 터미널에 바로 붙일 수 있어 써 보기 부담이 적은 도구예요",
+    "what": {
+        "headline": "터미널에서 바로 쓰는 AI 도우미",
+        "points": [
+            "개발자가 명령어를 치는 창인 터미널* 안에서 질문하고 답을 받는 오픈소스 도구입니다.",
+            "에러 메시지를 보여 주면 원인을 설명하고, 고칠 코드를 직접 제안합니다.",
+            "고친 뒤 테스트를 다시 돌려 확인하고, 바꾼 내용으로 커밋* 메시지를 씁니다.",
+        ],
+        "why_now": "공개 하루 만에 GitHub 스타 2,310개를 받았습니다. 별도 프로그램 없이 지금 쓰는 터미널에 붙여 쓸 수 있다는 점이 관심을 모았습니다.",
+    },
+    "demo": {"headline": "에러를 붙여 넣으면\n이렇게 고칩니다", "body": "실패한 테스트를 찾고, 원인을 설명한 뒤, 코드를 고쳐 테스트를 다시 통과시키는 과정입니다.",
+             "use_clip": True},
+    "maker": "",
+    "how": [
+        {"title": "상황 읽기", "detail": "현재 폴더의 파일 목록과 방금 실행한 명령의 결과를 함께 읽습니다."},
+        {"title": "원인 설명", "detail": "에러가 난 줄과 이유를 쉬운 문장으로 설명합니다."},
+        {"title": "수정 제안", "detail": "고칠 코드를 보여 주고, 사용자가 승인하면 파일에 반영합니다."},
+        {"title": "다시 확인", "detail": "테스트를 다시 실행해 정말 고쳐졌는지 확인합니다."},
+    ],
+    "so_what": {
+        "headline": "막히는 시간을\n줄여 줄 수 있습니다",
+        "items": [
+            {"title": "검색 시간이 줄어듭니다", "detail": "에러 메시지를 검색창에 옮겨 붙이는 대신, 같은 창에서 원인과 해결책을 바로 봅니다."},
+            {"title": "코딩을 배우는 중이라면", "detail": "왜 틀렸는지 설명해 주므로, 에러를 고치면서 원리도 함께 익힐 수 있습니다."},
+            {"title": "결과 확인은 사람의 몫", "detail": "AI가 고친 코드도 틀릴 수 있어, 반영 전에 바뀐 내용을 꼭 읽어 봐야 합니다."},
+        ],
+    },
+    "try_it": {
+        "headline": "이렇게 시작해 보세요",
+        "steps": [
+            {"title": "설치하기", "detail": "README에 나온 설치 명령을 터미널에 입력합니다.", "code": "cargo install termpilot"},
+            {"title": "물어보기", "detail": "에러가 난 직후 tp 명령으로 질문합니다.", "code": "tp \"왜 테스트가 실패했어?\""},
+        ],
+    },
+    "caveats": ["아직 초기 버전이라 큰 프로젝트에서는 결과를 꼼꼼히 확인하는 것이 좋아 보입니다.",
+                "코드가 외부 AI 서버로 전송될 수 있어, 회사 코드에 쓰기 전 보안 정책 확인이 필요해 보입니다."],
+    "summary_rows": [
+        {"label": "무엇", "value": "터미널 속 AI 도우미", "value_sub": "오픈소스 · Rust로 작성"},
+        {"label": "특징", "value": "설명 → 수정 → 재확인", "value_sub": "커밋 메시지까지 작성"},
+        {"label": "화제", "value": "하루 스타 2,310개", "value_sub": "누적 1.2만 스타"},
+        {"label": "활용", "value": "에러 해결, 코딩 학습", "value_sub": "지금 쓰는 터미널에 바로"},
+        {"label": "주의", "value": "결과는 직접 확인", "value_sub": "회사 코드는 보안 정책 확인"},
+    ],
+    "terms": [
+        {"term": "터미널", "meaning": "글자로 명령을 입력해 컴퓨터를 다루는 창. 개발자가 프로그램을 실행하고 테스트할 때 씁니다"},
+        {"term": "커밋", "meaning": "코드를 바꾼 내용을 하나의 기록으로 저장하는 일. 나중에 무엇을 왜 바꿨는지 찾아볼 수 있습니다"},
+    ],
+    "caption": (
+        "에러 해결을 터미널 속 AI에게 맡겨도 될까요?\n\n"
+        "termpilot은 개발자가 명령어를 치는 창(터미널)에서 바로 쓰는 AI 도우미예요.\n"
+        "에러를 붙여 넣으면 원인을 설명하고, 코드를 고친 뒤 테스트로 다시 확인합니다.\n\n"
+        "⭐ 공개 하루 만에 GitHub 스타 2,310개\n"
+        "🛠 설명 → 수정 → 재확인 → 커밋 메시지까지\n\n"
+        "💡 아직 초기 버전이라, 고친 코드는 꼭 직접 확인해 주세요.\n"
+        "여러분은 AI가 고친 코드를 바로 반영하시나요? 댓글로 알려 주세요!\n"
+        "(가상의 데모 게시물입니다)"
+    ),
+    "hashtags": ["#오픈소스", "#코딩"],
+}
+
+
+def _demo_font(size):
+    from PIL import ImageFont
+
+    for path in ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/dejavu/DejaVuSansMono.ttf"):
+        if Path(path).exists():
+            return ImageFont.truetype(path, size)
+    return ImageFont.load_default(size=size)
+
+
+def _terminal_frames(lines_total=9):
+    """Frames of a fictional terminal session (the demo clip)."""
+    from PIL import Image, ImageDraw
+
+    script = [("$ cargo test", "#e6e6e6"), ("test parser::dates ... FAILED", "#ff6b6b"),
+              ("$ tp \"why did the test fail?\"", "#e6e6e6"), ("> reading src/parser.rs ...", "#8ab4ff"),
+              ("> month is parsed 0-based on line 42", "#8ab4ff"), ("> fix: use month + 1", "#8ab4ff"),
+              ("$ cargo test", "#e6e6e6"), ("test parser::dates ... ok", "#5ee38b"), ("> commit: fix 0-based month", "#8ab4ff")]
+    font = _demo_font(30)
+    frames = []
+    for shown in range(1, len(script) + 1):
+        for _ in range(3):
+            im = Image.new("RGB", (1200, 680), "#16171b")
+            d = ImageDraw.Draw(im)
+            d.rectangle((0, 0, 1200, 52), fill="#24262c")
+            for i, c in enumerate(("#ff5f57", "#febc2e", "#28c840")):
+                d.ellipse((24 + i * 34, 16, 44 + i * 34, 36), fill=c)
+            d.text((600, 26), "termpilot (demo)", fill="#9a9ca3", font=_demo_font(22), anchor="mm")
+            for i, (text, color) in enumerate(script[:shown]):
+                d.text((40, 84 + i * 62), text, fill=color, font=font)
+            frames.append(im)
+    return frames
+
+
+def make_tech_media(tmp: Path):
+    """(banner png, demo gif) for the fictional TECH post."""
+    from PIL import Image, ImageDraw
+
+    banner = Image.new("RGB", (1200, 630), "#0f1013")
+    d = ImageDraw.Draw(banner)
+    d.rectangle((0, 0, 1200, 10), fill="#f2541b")
+    d.text((80, 200), "termpilot", fill="#ffffff", font=_demo_font(96))
+    d.text((84, 330), "AI pair programmer in your terminal", fill="#a7a9ae", font=_demo_font(38))
+    d.text((84, 470), "* 12.8k    Rust    MIT    (demo)", fill="#f2541b", font=_demo_font(34))
+    banner_path = tmp / "banner.png"
+    banner.save(banner_path)
+    frames = _terminal_frames()
+    gif_path = tmp / "demo.gif"
+    frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=260, loop=0)
+    return banner_path, gif_path
+
+
+TECH_QUEUED = [
+    ("hn:demo-1", "hn", "Show HN: A spreadsheet that writes its own formulas (demo)", "screened", 8.0,
+     "누구나 써 볼 수 있는 AI 도구라 관심이 높음", {"points": 412, "comments": 133}),
+    ("geeknews:demo-2", "geeknews", "브라우저에서 바로 도는 오픈소스 음성 인식 (데모)", "screened", 7.5,
+     "설치 없이 써 볼 수 있어 일반 독자도 흥미로움", {}),
+    ("hf:model/demo/tiny-vision (demo)", "hf", "demo/tiny-vision", "skipped", 5.5,
+     "작은 개선이라 일반 독자에게는 설명이 어려움", {"likes": 210, "downloads": 9000}),
+    ("github:demo/dotfiles-sync", "github", "demo/dotfiles-sync", "new", None, None, {"stars": 640, "stars_today": 88}),
+]
+
+
+def clear_tech():
+    uids = [TECH_UID] + [q[0] for q in TECH_QUEUED]
+    with db.engine().begin() as conn:
+        ids = [r[0] for r in conn.execute(select(db.tech_items.c.id).where(db.tech_items.c.uid.in_(uids)))]
+        conn.execute(delete(db.tech_items).where(db.tech_items.c.uid.in_(uids)))
+    for iid in ids:
+        storage.delete_prefix(f"tech/{iid}/")
+    return len(ids)
+
+
+def seed_tech(render_cards=True):
+    """Insert the fictional TECH post (written, with cards)."""
+    clear_tech()
+    db.insert_tech(SAMPLE_TECH)
+    iid = db.get_tech_by_uid(TECH_UID)["id"]
+    with tempfile.TemporaryDirectory(prefix="demo-tech-") as tmp:
+        banner, gif = make_tech_media(Path(tmp))
+        media = {"images": [storage.put_file(f"tech/{iid}/media/image1.png", banner)],
+                 "video": storage.put_file(f"tech/{iid}/media/demo.gif", gif)}
+    db.update_tech(iid, media=media, interest=8.5, interest_reason="개발자 관심이 높은 새 도구 (데모)")
+    review = copy.deepcopy(SAMPLE_TECH_REVIEW)
+    review["_cost"] = {"total_usd": 0.0, "calls": [], "note": "demo data - no API calls"}
+    review["_read"] = [{"label": "GitHub 저장소 README (demo/termpilot)", "chars": 18420},
+                       {"label": "원문이 소개하는 문서 (https://example.com/termpilot/docs)", "chars": 9310}]
+    cards, videos = ([], {})
+    if render_cards:
+        cards, videos = cardnews.render_tech_and_store(db.get_tech(iid), review)
+    db.update_tech(iid, status="done", review=review, card_paths=cards, card_videos=videos, cost_usd=0.0,
+                   reviewed_at=db.now_iso())
+    for uid, source, title, status, interest, reason, meta in TECH_QUEUED:
+        db.insert_tech({"uid": uid, "source": source, "title": title, "url": "https://example.com/demo",
+                        "summary": "가상의 데모 소식입니다.", "meta": meta})
+        db.update_tech(db.get_tech_by_uid(uid)["id"], status=status, interest=interest, interest_reason=reason)
+    return iid

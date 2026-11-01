@@ -10,8 +10,9 @@ from functools import wraps
 from flask import (Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, session,
                    url_for)
 
-from . import agent, cardnews, config, db, instagram, pdfs, pipeline, scheduler, storage
+from . import agent, cardnews, config, db, pdfs, pipeline, scheduler, storage, technews
 from .collectors import arxiv as arxiv_collector
+from .collectors import tech as tech_sources
 from .collectors import venues
 
 bp = Blueprint("web", __name__)
@@ -70,7 +71,18 @@ def inject_globals():
         "admin_enabled": bool(config.ADMIN_PASSWORD),
         "running": pipeline.is_running(),
         "api": agent.api_status(),
+        "tech_tiles": cardnews.tech_tiles,
+        "tech_maker": _tech_maker,
+        "tech_source_names": {k: v["short"] for k, v in tech_sources.SOURCES.items()},
     }
+
+
+def _tech_maker(t):
+    """{name, mark} of the company behind a TECH post (mark: its official logo, or None)."""
+    from . import logos
+
+    made = logos.maker_for(t, t.get("review"))
+    return {"name": made["name"], "mark": logos.svg(made["logo"], 15) if made["logo"] else None} if made else None
 
 
 def _source_lookup():
@@ -171,14 +183,9 @@ def index():
     days = request.args.get("days", type=int)
     page = max(request.args.get("page", 1, type=int), 1)
     source = _source_from_args()
-    ig_tab = request.args.get("ig") if request.args.get("ig") in ("posted", "pending") else None
-    if ig_tab == "pending" and not is_admin():
-        ig_tab = None
-    if ig_tab == "posted" and "sort" not in request.args:
-        sort = "posted"
     per_page = 24
     papers = db.query_papers(keyword=keyword, search=search, sort=sort, days=days, limit=per_page + 1,
-                             offset=(page - 1) * per_page, source=source, instagram=ig_tab)
+                             offset=(page - 1) * per_page, source=source)
     has_more = len(papers) > per_page
     hf, _ = db.get_trending("hf_daily")
     surge, _ = db.get_trending("surge")
@@ -190,14 +197,13 @@ def index():
         keywords=db.list_keywords(),
         keyword_counts=db.keyword_counts(),
         counts=db.paper_counts(),
-        filters={"keyword": keyword, "sort": sort, "q": search or "", "days": days, "source": source, "ig": ig_tab},
+        filters={"keyword": keyword, "sort": sort, "q": search or "", "days": days, "source": source},
         filter_args={k: v for k, v in {"keyword": keyword, "sort": sort, "q": search, "days": days,
-                                       "source": source["id"] if source else None, "ig": ig_tab}.items() if v},
-        ig_counts=db.instagram_counts(),
-        instagram_ready=is_admin() and instagram.configured(),
+                                       "source": source["id"] if source else None}.items() if v},
         source_nav=_source_nav(("done",)),
         hf=(hf or [])[:6],
         surge=(surge or [])[:5],
+        tech_latest=db.query_tech(limit=4),
         runs=db.recent_runs(1),
         next_run=scheduler.next_run(),
     )
@@ -213,7 +219,122 @@ def paper_detail(paper_id):
         caption = cardnews.build_caption(p, p["review"])
     figures = [f for f in (p.get("review") or {}).get("_figures", []) if f.get("key")]
     return render_template("paper.html", p=p, r=p.get("review") or {}, caption=caption, figures=figures,
-                           share_url=request.url, instagram_ready=is_admin() and instagram.configured())
+                           share_url=request.url, slides=_slides("paper", p), rendering=_render_state(("paper", paper_id)))
+
+
+def _slides(kind, item):
+    """[{png, mp4, n}] for the card carousel (mp4 for the video slide)."""
+    videos = item.get("card_videos") or {}
+    out = []
+    for n in range(1, len(item.get("card_paths") or []) + 1):
+        if kind == "paper":
+            png = url_for("web.file_card", paper_id=item["id"], n=n)
+            mp4 = url_for("web.file_card_video", paper_id=item["id"], n=n) if str(n) in videos else None
+        else:
+            png = url_for("web.file_tech_card", item_id=item["id"], n=n)
+            mp4 = url_for("web.file_tech_video", item_id=item["id"], n=n) if str(n) in videos else None
+        out.append({"n": n, "png": png, "mp4": mp4})
+    return out
+
+
+# --- TECH posts -----------------------------------------------------------------
+
+@bp.route("/tech")
+def tech_index():
+    source = request.args.get("source") if request.args.get("source") in tech_sources.SOURCES else None
+    search = request.args.get("q") or None
+    sort = request.args.get("sort") if request.args.get("sort") in ("recent", "interest") else "recent"
+    days = request.args.get("days", type=int)
+    page = max(request.args.get("page", 1, type=int), 1)
+    per_page = 24
+    items = db.query_tech(source=source, search=search, sort=sort, days=days, limit=per_page + 1, offset=(page - 1) * per_page)
+    counts = db.tech_counts()
+    settings = db.pipeline_settings()
+    since_day = db.ago_iso(days=1)
+    return render_template(
+        "tech.html", items=items[:per_page], has_more=len(items) > per_page, page=page,
+        filters={"source": source, "q": search or "", "sort": sort, "days": days},
+        filter_args={k: v for k, v in {"source": source, "q": search, "sort": sort if sort != "recent" else None, "days": days}.items() if v},
+        counts=counts, sources=tech_sources.SOURCES, settings=settings,
+        today=sum(1 for t in db.query_tech(limit=200) if (t.get("reviewed_at") or "") >= since_day),
+        upcoming=db.tech_next_targets(max(settings["tech_per_run"], 5))[:5],
+        next_run=scheduler.next_run(),
+    )
+
+
+@bp.route("/tech/<int:item_id>")
+def tech_detail(item_id):
+    t = db.get_tech(item_id) or abort(404)
+    r = t.get("review") or {}
+    caption = technews.build_caption(t, r) if t["status"] == "done" and r.get("caption") else None
+    return render_template("tech_item.html", t=t, r=r, caption=caption, slides=_slides("tech", t), share_url=request.url,
+                           rendering=_render_state(("tech", item_id)),
+                           tiles=cardnews.tech_tiles(t), source=tech_sources.SOURCES.get(t["source"], {}))
+
+
+@bp.route("/tech/run", methods=["POST"])
+@admin_required
+def tech_run():
+    ids = [i for i in request.form.getlist("item_id", type=int) if db.get_tech(i)]
+    days = request.form.get("days", type=int)
+    days = min(max(days, 1), 30) if days else None  # this run only; empty = the setting
+    if not _api_ready_or_flash():
+        return redirect(request.referrer or url_for("web.tech_index"))
+    if pipeline.run_in_background("manual", tech_only=True, tech_ids=ids or None, tech_days=days):
+        span = f"최근 {days}일" if days else f"최근 {db.pipeline_settings()['tech_lookback_days']}일"
+        flash(f"선택한 {len(ids)}개로 테크 카드뉴스를 만드는 중입니다." if ids else
+              f"{span} 테크 소식을 모아 카드뉴스를 만드는 중입니다. 오른쪽 위 진행 상황에서 볼 수 있어요.", "ok")
+    else:
+        flash("다른 실행이 진행 중입니다. 끝난 뒤 다시 눌러 주세요.", "warn")
+    return redirect(request.referrer or url_for("web.tech_index"))
+
+
+@bp.route("/tech/<int:item_id>/reprocess", methods=["POST"])
+@admin_required
+def tech_reprocess(item_id):
+    """Read the item again from scratch (source, original, pictures, clips) and rewrite its post and cards."""
+    if not db.get_tech(item_id):
+        abort(404)
+    if not _api_ready_or_flash():
+        return redirect(url_for("web.tech_detail", item_id=item_id))
+    if pipeline.run_in_background("manual", tech_only=True, tech_ids=[item_id]):
+        flash("이 소식을 원문부터 다시 읽고 있습니다. 1~2분 뒤 새로고침해 주세요.", "ok")
+    else:
+        db.queue_tech([item_id])
+        flash("다른 실행이 진행 중입니다. 대기열 맨 앞에 넣었습니다.", "warn")
+    return redirect(url_for("web.tech_detail", item_id=item_id))
+
+
+@bp.route("/tech/<int:item_id>/rerender", methods=["POST"])
+@admin_required
+def tech_rerender(item_id):
+    if not db.get_tech(item_id):
+        abort(404)
+    started = _render_in_background(("tech", item_id), technews.rerender, item_id)
+    flash("카드뉴스를 다시 만들고 있습니다. 30초~1분 뒤 자동으로 새로고침됩니다." if started else "이미 만드는 중입니다.", "ok")
+    return redirect(url_for("web.tech_detail", item_id=item_id) + "#cards")
+
+
+@bp.route("/files/tech/<int:item_id>/card/<int:n>")
+def file_tech_card(item_id, n):
+    return _send_stored(f"tech/{item_id}/cards/card_{n:02d}.png", f"tech{item_id}_card_{n:02d}.png",
+                        as_attachment=request.args.get("dl") == "1")
+
+
+@bp.route("/files/tech/<int:item_id>/card/<int:n>.mp4")
+def file_tech_video(item_id, n):
+    key = ((db.get_tech(item_id) or {}).get("card_videos") or {}).get(str(n)) or abort(404)
+    return _send_stored(key, f"tech{item_id}_card_{n:02d}.mp4", as_attachment=request.args.get("dl") == "1")
+
+
+@bp.route("/files/tech/<int:item_id>/cards.zip")
+def file_tech_zip(item_id):
+    t = db.get_tech(item_id)
+    if not t or not t.get("card_paths"):
+        abort(404)
+    data = cardnews.zip_cards(f"tech/{item_id}/cards/", t["card_paths"], t.get("card_videos"))
+    return send_file(io.BytesIO(data), mimetype="application/zip", as_attachment=True,
+                     download_name=f"technews-{cardnews.slug(t['title'])}.zip")
 
 
 @bp.route("/trending")
@@ -235,6 +356,8 @@ def trending_view():
 
 @bp.route("/queue")
 def queue():
+    if request.args.get("kind") == "tech":
+        return tech_queue()
     settings = db.pipeline_settings()
     threshold = settings["min_relevance"]
     db.apply_threshold(threshold)
@@ -267,8 +390,74 @@ def queue():
     lists["reading"] = [p for p in lists["reading"] if p["id"] not in planned]
     return render_template("queue.html", lists=lists, threshold=threshold, source=source, plan=plan,
                            plan_running=plan_running, run=run, max_reads=settings["max_full_reads"],
-                           next_run=scheduler.next_run(),
+                           next_run=scheduler.next_run(), counts=_queue_counts(),
                            source_nav=_source_nav(("screened", "reading", "error", "skipped", "new")))
+
+
+def _queue_counts():
+    """Items waiting on each side, for the 논문 | 테크 switch."""
+    papers = db.paper_counts()
+    tech = db.tech_counts()["status"]
+    return {"paper": sum(papers.get(k, 0) for k in ("screened", "reading", "new")),
+            "tech": sum(tech.get(k, 0) for k in ("screened", "new"))}
+
+
+def tech_queue():
+    """The TECH side of the queue: what the next run will make, and everything waiting."""
+    settings = db.pipeline_settings()
+    source = request.args.get("source") if request.args.get("source") in tech_sources.SOURCES else None
+    lists = {st: db.tech_by_status(st, limit=300, source=source) for st in ("screened", "error", "skipped", "new")}
+    active = db.active_run()
+    run = db.get_run(active["id"]) if active else None
+    progress = (run or {}).get("progress") or {}
+    if run and progress.get("tech_targets"):
+        plan = []
+        for t in progress["tech_targets"]:
+            item = db.get_tech(t["id"]) or {"id": t["id"], "title": t["title"], "source": ""}
+            state = ("done" if t["id"] in progress.get("tech_done", []) else "failed" if t["id"] in progress.get("tech_failed", [])
+                     else "now" if t["id"] == progress.get("tech_current") else "wait")
+            plan.append({**item, "state": state})
+        plan_running = True
+    else:
+        plan = [{**t, "state": "next"} for t in db.tech_next_targets(settings["tech_per_run"])]
+        plan_running = False
+    for i, t in enumerate(plan, start=1):
+        t["order"] = i
+    planned = {t["id"] for t in plan}
+    if source:
+        plan = [t for t in plan if t.get("source") == source]
+    lists["screened"] = [t for t in lists["screened"] if t["id"] not in planned]
+    by_source = {}
+    for st in ("screened", "error", "skipped", "new"):
+        for t in db.tech_by_status(st, limit=1000):
+            by_source[t["source"]] = by_source.get(t["source"], 0) + 1
+    return render_template("queue_tech.html", lists=lists, plan=plan, plan_running=plan_running, run=run,
+                           settings=settings, source=source, sources=tech_sources.SOURCES, by_source=by_source,
+                           next_run=scheduler.next_run(), counts=_queue_counts())
+
+
+@bp.route("/queue/tech", methods=["POST"])
+@admin_required
+def queue_tech_pick():
+    """Make picked TECH items now, put them first for the next run, or set them aside."""
+    ids = [int(i) for i in request.form.getlist("item_id") if i.isdigit()]
+    back = url_for("web.queue", kind="tech")
+    if not ids:
+        flash("만들 소식을 하나 이상 선택해 주세요.", "warn")
+        return redirect(back)
+    when = request.form.get("when")
+    if when == "skip":
+        flash(f"{db.skip_tech(ids)}개를 만들지 않기로 했습니다. '흥미도 미달'에서 언제든 다시 고를 수 있어요.", "ok")
+        return redirect(back)
+    n = db.queue_tech(ids)
+    if when == "now" and _api_ready_or_flash():
+        if pipeline.run_in_background("manual", tech_only=True, tech_ids=ids):
+            flash(f"선택한 {n}개로 테크 카드뉴스를 만들기 시작했습니다. 오른쪽 위에서 진행 상황을 볼 수 있어요.", "ok")
+        else:
+            flash(f"다른 실행이 진행 중이라 {n}개를 맨 앞에 넣었습니다. 다음 실행 때 가장 먼저 만듭니다.", "warn")
+    else:
+        flash(f"{n}개를 맨 앞에 넣었습니다. 다음 실행 때 가장 먼저 만듭니다.", "ok")
+    return redirect(back)
 
 
 def _api_ready_or_flash() -> bool:
@@ -321,17 +510,13 @@ def file_card(paper_id, n):
                         as_attachment=request.args.get("dl") == "1")
 
 
-@bp.route("/files/card/<int:paper_id>/<int:n>.jpg")
-def file_card_jpeg(paper_id, n):
-    """A card as JPEG - the format Instagram reliably accepts for publishing."""
-    item = storage.get(f"cards/{paper_id}/card_{n:02d}.png")
-    if item is None:
+@bp.route("/files/card/<int:paper_id>/<int:n>.mp4")
+def file_card_video(paper_id, n):
+    p = db.get_paper(paper_id)
+    key = ((p or {}).get("card_videos") or {}).get(str(n))
+    if not key:
         abort(404)
-    from PIL import Image
-
-    out = io.BytesIO()
-    Image.open(io.BytesIO(item[0])).convert("RGB").save(out, "JPEG", quality=92, optimize=True)
-    return send_file(io.BytesIO(out.getvalue()), mimetype="image/jpeg", max_age=86400)
+    return _send_stored(key, f"paper{paper_id}_card_{n:02d}.mp4", as_attachment=request.args.get("dl") == "1")
 
 
 @bp.route("/files/cards/<int:paper_id>.zip")
@@ -339,7 +524,7 @@ def file_cards_zip(paper_id):
     p = db.get_paper(paper_id)
     if not p or not p.get("card_paths"):
         abort(404)
-    data = cardnews.zip_cards(paper_id, p["card_paths"])
+    data = cardnews.zip_cards(f"cards/{paper_id}/", p["card_paths"], p.get("card_videos"))
     return send_file(io.BytesIO(data), mimetype="application/zip", as_attachment=True,
                      download_name=f"cardnews-{cardnews.slug(p['title'])}.zip")
 
@@ -364,6 +549,8 @@ def settings():
         source_counts=db.source_counts(),
         arxiv_categories=arxiv_collector.CATEGORY_NAMES,
         type_label=venues.TYPE_LABEL,
+        tech_source_list=tech_sources.SOURCES,
+        tech_counts=db.tech_counts(),
         settings=db.pipeline_settings(),
         runs=db.recent_runs(8),
         next_run=scheduler.next_run(),
@@ -374,8 +561,6 @@ def settings():
         on_heroku=config.ON_HEROKU,
         scheduler_enabled=config.SCHEDULER_ENABLED,
         timezone_name=str(config.TIMEZONE),
-        instagram_ready=instagram.configured(),
-        instagram_public=config.PUBLIC_BASE_URL,
     )
 
 
@@ -531,6 +716,27 @@ def save_pipeline():
     return redirect(url_for("web.settings") + "#pipeline")
 
 
+@bp.route("/settings/tech", methods=["POST"])
+@admin_required
+def save_tech_settings():
+    f = request.form
+    try:
+        per_run = min(max(int(f["tech_per_run"]), 0), 10)
+        min_interest = min(max(float(f["tech_min_interest"]), 0.0), 10.0)
+        lookback = min(max(int(f.get("tech_lookback_days") or 1), 1), 30)
+        per_source = min(max(int(f.get("tech_max_per_source") or 15), 5), 100)
+    except (KeyError, ValueError):
+        flash("숫자를 확인해 주세요.", "error")
+        return redirect(url_for("web.settings") + "#tech")
+    db.set_setting("tech_per_run", per_run)
+    db.set_setting("tech_min_interest", min_interest)
+    db.set_setting("tech_lookback_days", lookback)
+    db.set_setting("tech_max_per_source", per_source)
+    db.set_setting("tech_sources", [k for k in tech_sources.SOURCES if f.get(f"src_{k}")])
+    flash("테크 소식 설정을 저장했습니다." + (" 실행마다 만드는 수가 0이라 정기 실행에서는 만들지 않습니다." if per_run == 0 else ""), "ok")
+    return redirect(url_for("web.settings") + "#tech")
+
+
 @bp.route("/run", methods=["POST"])
 @admin_required
 def run_now():
@@ -640,94 +846,49 @@ def reprocess(paper_id):
     return redirect(url_for("web.paper_detail", paper_id=paper_id))
 
 
+# Card rendering (10 slides plus the closing video) can take longer than the
+# 30 seconds Heroku's router waits for a response, so it runs in the background;
+# the page shows that it is being made and reloads itself.
+_rendering = set()
+_render_errors = {}
+_render_lock = threading.Lock()
+
+
+def _render_in_background(key, fn, item_id) -> bool:
+    with _render_lock:
+        if key in _rendering:
+            return False
+        _rendering.add(key)
+        _render_errors.pop(key, None)
+
+    def work():
+        try:
+            fn(item_id)
+        except Exception as exc:  # shown on the page next time
+            _render_errors[key] = str(exc)[:300]
+        finally:
+            _rendering.discard(key)
+
+    threading.Thread(target=work, daemon=True).start()
+    return True
+
+
+def _render_state(key):
+    """(being made now?, last error) for a post's cards; the error is shown once."""
+    err = _render_errors.pop(key, None)
+    if err:
+        flash(f"카드뉴스 생성 실패: {err}", "error")
+    return key in _rendering
+
+
 @bp.route("/paper/<int:paper_id>/rerender", methods=["POST"])
 @admin_required
 def rerender(paper_id):
-    try:
-        pipeline.rerender_cards(paper_id)
-        flash("카드뉴스를 다시 만들었습니다.", "ok")
-    except Exception as exc:
-        flash(f"카드뉴스 생성 실패: {exc}", "error")
-    return redirect(url_for("web.paper_detail", paper_id=paper_id) + "#cards")
-
-
-@bp.route("/paper/<int:paper_id>/instagram/publish", methods=["POST"])
-@admin_required
-def instagram_publish(paper_id):
-    """Post the card news and caption to Instagram (in the background)."""
-    p = db.get_paper(paper_id)
-    if not p or p["status"] != "done":
+    if not db.get_paper(paper_id):
         abort(404)
-    want_json = request.accept_mimetypes.best == "application/json"
-    try:
-        if not instagram.configured():
-            raise instagram.InstagramError("인스타그램 계정이 연결되지 않았습니다. 설정의 '인스타그램 연결'을 확인해 주세요.")
-        instagram.public_base(request.host_url)
-        if not p.get("card_paths"):
-            raise instagram.InstagramError("카드뉴스가 없습니다. '카드 다시 만들기'를 먼저 해 주세요.")
-        started = instagram.publish_in_background(paper_id, request.host_url)
-    except instagram.InstagramError as exc:
-        if want_json:
-            return jsonify(ok=False, error=str(exc)), 400
-        flash(str(exc), "error")
-        return redirect(url_for("web.paper_detail", paper_id=paper_id) + "#cards")
-    msg = "인스타그램에 올리는 중입니다. 카드 9장을 처리하는 데 1분 정도 걸려요." if started else "이미 올리는 중입니다."
-    if want_json:
-        return jsonify(ok=True, message=msg)
-    flash(msg, "ok")
+    started = _render_in_background(("paper", paper_id), pipeline.rerender_cards, paper_id)
+    flash("카드뉴스를 다시 만들고 있습니다. 30초~1분 뒤 자동으로 새로고침됩니다." if started else "이미 만드는 중입니다.", "ok")
     return redirect(url_for("web.paper_detail", paper_id=paper_id) + "#cards")
-
-
-@bp.route("/api/paper/<int:paper_id>/instagram")
-@admin_required
-def instagram_status(paper_id):
-    p = db.get_paper(paper_id) or abort(404)
-    return jsonify(status=p.get("instagram_status"), error=p.get("instagram_error"),
-                   permalink=p.get("instagram_permalink"), posted_at=p.get("instagram_posted_at"))
-
-
-@bp.route("/settings/instagram/check", methods=["POST"])
-@admin_required
-def instagram_check():
-    try:
-        acct = instagram.account()
-        flash(f"인스타그램 @{acct.get('username')} 계정에 연결되어 있습니다.", "ok")
-    except instagram.InstagramError as exc:
-        flash(f"인스타그램 연결 확인 실패: {exc}", "error")
-    return redirect(url_for("web.settings") + "#instagram")
-
-
-@bp.route("/settings/instagram/refresh", methods=["POST"])
-@admin_required
-def instagram_refresh():
-    try:
-        days = (instagram.refresh_token() or 0) // 86400
-        flash(f"인스타그램 토큰을 갱신했습니다{f' ({days}일 유효)' if days else ''}.", "ok")
-    except instagram.InstagramError as exc:
-        flash(f"토큰 갱신 실패: {exc}", "error")
-    return redirect(url_for("web.settings") + "#instagram")
-
-
-@bp.route("/paper/<int:paper_id>/instagram", methods=["POST"])
-@admin_required
-def toggle_instagram(paper_id):
-    """Mark the card news as posted on Instagram (or undo it)."""
-    p = db.get_paper(paper_id)
-    if not p or p["status"] != "done":
-        abort(404)
-    want = request.form.get("posted")
-    posted = (want == "1") if want in ("0", "1") else not p.get("instagram_posted_at")
-    when = db.set_instagram_posted(paper_id, posted)
-    if not posted:
-        db.update_paper(paper_id, instagram_status=None, instagram_error=None)
-    if request.accept_mimetypes.best == "application/json":
-        return jsonify({"posted": bool(when), "posted_at": when, "label": to_local(when, "%m.%d") if when else None,
-                        "counts": db.instagram_counts()})
-    if not posted and request.form.get("back") == "main":
-        flash("인스타 업로드를 취소했습니다. 이 논문은 다시 업로드 전 상태로 돌아왔습니다.", "ok")
-        return redirect(url_for("web.index", hl=paper_id) + f"#p-{paper_id}")
-    flash("인스타 업로드 완료로 표시했습니다." if posted else "인스타 업로드 표시를 지웠습니다.", "ok")
-    return redirect(request.referrer or url_for("web.paper_detail", paper_id=paper_id))
 
 
 # --- JSON API -----------------------------------------------------------------

@@ -144,7 +144,7 @@ def _full_run(fresh_db, sample_pdf, tmp_path):
     payloads[id(agent.SCREEN_SCHEMA)] = {"results": [{"index": 0, "relevance": 9, "reason": "핵심 주제"}]}
     client = _fake_client(by_schema=payloads)
 
-    with mock.patch.object(pipeline.arxiv, "fetch_category", return_value=[_paper()]), \
+    with mock.patch.object(pipeline.arxiv, "fetch_categories", return_value=[_paper()]), \
          mock.patch.object(pipeline.openalex, "resolve_source", return_value=None), \
          mock.patch.object(pipeline.pdfs, "download_pdf", side_effect=fake_download), \
          mock.patch.object(pipeline.trending, "refresh_all"), \
@@ -158,7 +158,7 @@ def _full_run(fresh_db, sample_pdf, tmp_path):
     assert len(done) == 1
     p = done[0]
     assert p["status"] == "done" and p["read_depth"] == "full_pdf"
-    assert p["score_overall"] == 7.8 and len(p["card_paths"]) == 9
+    assert p["score_overall"] == 7.8 and len(p["card_paths"]) == 10
     assert [f["number"] for f in p["review"]["_figures"]] == [1, 2]
     # the PDF was only kept for the review, then deleted with its temp dir
     assert downloaded and not downloaded[0].exists() and not downloaded[0].parent.exists()
@@ -278,7 +278,7 @@ def test_demo_seed_and_clear(fresh_db):
 
     pid = demo.seed()
     p = fresh_db.get_paper(pid)
-    assert p["status"] == "done" and len(p["card_paths"]) == 9
+    assert p["status"] == "done" and len(p["card_paths"]) == 10
     assert [f["number"] for f in p["review"]["_figures"]] == [1, 2]
     assert len(fresh_db.papers_by_status("screened")) == 2
     c = create_app(start_scheduler=False).test_client()
@@ -414,48 +414,86 @@ def test_old_reviews_get_their_real_review_time(fresh_db):
     assert db.get_paper(a)["updated_at"] == before and db.get_paper(a)["citation_count"] == 12
 
 
-def test_instagram_posted_mark_and_list(fresh_db):
-    import re as _re
-
+def test_no_instagram_features_left(fresh_db):
+    """Posting to Instagram was removed; the caption and ZIP stay for manual posting."""
     from paperagent import create_app, db
 
-    for uid, title in (("arxiv:p1", "Posted paper"), ("arxiv:p2", "Not posted paper")):
-        db.insert_paper({"uid": uid, "source_kind": "arxiv", "title": title})
-        db.update_paper(db.get_paper_by_uid(uid)["id"], status="done", score_overall=7, reviewed_at=db.now_iso())
+    db.insert_paper({"uid": "arxiv:p1", "source_kind": "arxiv", "title": "A paper"})
     pid = db.get_paper_by_uid("arxiv:p1")["id"]
+    db.update_paper(pid, status="done", score_overall=7, reviewed_at=db.now_iso())
     app = create_app(start_scheduler=False)
     admin = app.test_client()
     admin.environ_base["REMOTE_ADDR"] = "127.0.0.1"
-    token = _re.search(r'name="csrf-token" content="([^"]+)"', admin.get("/").get_data(as_text=True)).group(1)
-    assert "인스타 업로드 완료" in admin.get("/").get_data(as_text=True)  # the button, for the admin
+    for path in ("/", f"/paper/{pid}", "/settings"):
+        html = admin.get(path).get_data(as_text=True)
+        assert "인스타 업로드" not in html and "인스타그램 연결" not in html and "data-ig" not in html
+    assert admin.post(f"/paper/{pid}/instagram").status_code in (400, 404, 405)
+    assert "instagram_posted_at" not in db.get_paper(pid)
 
-    # the page's script posts with Accept: application/json and updates in place
-    r = admin.post(f"/paper/{pid}/instagram", data={"_csrf": token, "posted": "1"}, headers={"Accept": "application/json"})
-    assert r.get_json()["posted"] is True and r.get_json()["counts"] == {"posted": 1, "pending": 1}
-    assert db.get_paper(pid)["instagram_posted_at"]
 
-    posted = admin.get("/?ig=posted").get_data(as_text=True)
-    assert "Posted paper" in posted and "Not posted paper" not in posted
-    pending = admin.get("/?ig=pending").get_data(as_text=True)
-    assert "Not posted paper" in pending and "Posted paper" not in pending
+def test_remaking_cards_runs_in_the_background(fresh_db):
+    """Heroku answers H12 after 30 s, so "카드 다시 만들기" returns at once and the page follows the work."""
+    import re as _re
+    import threading
+    import time as _time
 
-    # visitors see the posted list and a badge, but not the button or the 'not yet' list
-    visitor = app.test_client()
-    visitor.environ_base["REMOTE_ADDR"] = "10.0.0.9"
-    html = visitor.get("/?ig=posted").get_data(as_text=True)
-    assert "Posted paper" in html and "인스타 게시" in html and "아직 안 올림" not in html and "data-ig>" not in html
-    assert "Not posted paper" in visitor.get("/?ig=pending").get_data(as_text=True)  # ignored -> everything
-    assert visitor.post(f"/paper/{pid}/instagram", data={"_csrf": token}).status_code in (302, 400)  # refused
-    assert db.get_paper(pid)["instagram_posted_at"]
+    from paperagent import create_app, db, pipeline, web
 
-    # posted cards are green with no checkbox; the undo button is only on the posted tab
-    main = admin.get("/").get_data(as_text=True)
-    card = main[main.index(f'id="p-{pid}"'):main.index("</article>", main.index(f'id="p-{pid}"'))]
-    assert 'class="pitem posted"' in main and "data-ig>" not in card and "업로드 취소" not in card
-    assert "업로드 취소" in posted
-    # undoing it sends the admin back to the main list, at that paper
-    r = admin.post(f"/paper/{pid}/instagram", data={"_csrf": token, "posted": "0", "back": "main"})
-    assert r.status_code == 302 and r.headers["Location"].endswith(f"/?hl={pid}#p-{pid}")
-    assert db.get_paper(pid)["instagram_posted_at"] is None
-    main = admin.get(f"/?hl={pid}").get_data(as_text=True)
-    assert 'class="pitem posted"' not in main and "인스타 업로드를 취소했습니다" in main
+    db.insert_paper({"uid": "arxiv:bg", "source_kind": "arxiv", "title": "Paper"})
+    pid = db.get_paper_by_uid("arxiv:bg")["id"]
+    db.update_paper(pid, status="done", review={"title_ko": "논문"}, reviewed_at=db.now_iso())
+    app = create_app(start_scheduler=False)
+    c = app.test_client()
+    c.environ_base["REMOTE_ADDR"] = "127.0.0.1"
+    token = _re.search(r'name="csrf-token" content="([^"]+)"', c.get("/").get_data(as_text=True)).group(1)
+    release = threading.Event()
+
+    def slow(paper_id):
+        release.wait(5)
+        raise RuntimeError("no figures")
+
+    try:
+        with mock.patch.object(pipeline, "rerender_cards", side_effect=slow):
+            started = _time.monotonic()
+            r = c.post(f"/paper/{pid}/rerender", data={"_csrf": token})
+            assert r.status_code == 302 and _time.monotonic() - started < 2
+            page = c.get(f"/paper/{pid}").get_data(as_text=True)
+            assert "카드뉴스를 다시 만드는 중입니다" in page and "data-reload" in page
+            assert "이미 만드는 중입니다" in c.get(c.post(f"/paper/{pid}/rerender", data={"_csrf": token}).headers["Location"]).get_data(as_text=True)
+    finally:
+        release.set()
+    for _ in range(50):
+        if ("paper", pid) not in web._rendering:
+            break
+        _time.sleep(0.05)
+    page = c.get(f"/paper/{pid}").get_data(as_text=True)
+    assert "카드뉴스 생성 실패: no figures" in page and "다시 만드는 중" not in page  # the error is shown once
+
+
+def test_pages_survive_incomplete_data(fresh_db):
+    """Old or half-saved reviews must not break any page."""
+    from paperagent import create_app, db
+
+    reviews = [None, {}, {"card": {}}, {"title_ko": "제목만"}, {"card": {"caption": "c"}, "overall_score": None},
+               {"card": {"category": "LLM", "results": {}, "verdict": {}}, "results": [], "setup": None}]
+    ids = []
+    for i, review in enumerate(reviews):
+        db.insert_paper({"uid": f"arxiv:x{i}", "source_kind": "arxiv", "title": f"Paper {i}"})
+        pid = db.get_paper_by_uid(f"arxiv:x{i}")["id"]
+        db.update_paper(pid, status="done", review=review, reviewed_at=db.now_iso())
+        ids.append(pid)
+    tech_reviews = [None, {}, {"what": {}, "so_what": {}, "try_it": {}}, {"caption": "c", "how": None}]
+    tids = []
+    for i, review in enumerate(tech_reviews):
+        db.insert_tech({"uid": f"hn:t{i}", "source": "hn", "title": f"Tech {i}", "url": "https://x", "meta": None})
+        tid = db.get_tech_by_uid(f"hn:t{i}")["id"]
+        db.update_tech(tid, status="done", review=review, reviewed_at=db.now_iso())
+        tids.append(tid)
+    app = create_app(start_scheduler=False)
+    for addr in ("127.0.0.1", "10.0.0.9"):
+        c = app.test_client()
+        c.environ_base["REMOTE_ADDR"] = addr
+        paths = ["/", "/?sort=score", "/tech", "/tech?sort=interest", "/queue", "/queue?kind=tech", "/trending"]
+        paths += [f"/paper/{i}" for i in ids] + [f"/tech/{t}" for t in tids]
+        for path in paths:
+            assert c.get(path).status_code == 200, (addr, path)

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>GeekNews - 개발/기술/스타트업 뉴스 서비스</title>
+  <entry>
+    <title>오픈소스 음성 비서 Hoot 공개</title>
+    <link rel="alternate" type="text/html" href="https://news.hada.io/topic?id=23456"/>
+    <id>https://news.hada.io/topic?id=23456</id>
+    <published>2026-10-16T01:02:03+09:00</published>
+    <content type="html">&lt;ul&gt;&lt;li&gt;로컬에서 도는 음성 비서&lt;/li&gt;&lt;li&gt;MIT 라이선스&lt;/li&gt;&lt;/ul&gt;</content>
+  </entry>
+  <entry>
+    <title>No id here</title>
+    <link rel="alternate" href="https://example.com/x"/>
+  </entry>
+</feed>
